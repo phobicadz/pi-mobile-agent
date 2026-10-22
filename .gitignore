@@ -1,0 +1,36 @@
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.tmp
+*.swp
+
+# Logs
+*.log
+npm-debug.log*
+
+# Environment files (keep .env.example)
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.npm/
+dist/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env.venv
+
+# .NET / C#
+bin/
+obj/
+*.user
+
+# Flutter/Dart frontend artifacts are covered by frontend/.gitignore
