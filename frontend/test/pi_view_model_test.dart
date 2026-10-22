@@ -17,6 +17,23 @@ class FakePiService extends PiService {
       _events.add(PiEvent.fromJson({'type': 'pi_event', 'event': inner}));
 }
 
+/// PiService stub whose resume command returns canned saved history.
+class FakeResumeService extends FakePiService {
+  final List<Map<String, dynamic>> history;
+  String? resumedPath;
+
+  FakeResumeService(this.history);
+
+  @override
+  Future<List<PiModel>> getAvailableModels() async => const [];
+
+  @override
+  Future<List<Map<String, dynamic>>> resumeSession(String sessionPath) async {
+    resumedPath = sessionPath;
+    return history;
+  }
+}
+
 void main() {
   test('Pi event stream becomes chat messages', () async {
     final service = FakePiService();
@@ -155,6 +172,61 @@ void main() {
     final text = tester.widget<SelectableText>(find.byType(SelectableText));
     expect(text.style!.color!.computeLuminance(), greaterThan(0.6),
         reason: 'dark theme text must be light');
+  });
+
+  test('resumeSession hydrates saved history from get_messages shape',
+      () async {
+    // Records shaped like Pi's session messages (what get_messages returns).
+    final service = FakeResumeService([
+      {
+        'id': 'u1',
+        'role': 'user',
+        'timestamp': 1792693211356,
+        'content': [
+          {'type': 'text', 'text': 'Build me a scraper'}
+        ],
+      },
+      {
+        'id': 'a1',
+        'role': 'assistant',
+        'timestamp': 1792693220000,
+        'content': [
+          {'type': 'thinking', 'thinking': 'hmm'},
+          {'type': 'text', 'text': 'Here is the scraper.'},
+          {
+            'type': 'toolCall',
+            'id': 'toolu_9',
+            'name': 'write',
+            'arguments': {'path': 'scraper.py'},
+          },
+        ],
+      },
+      {
+        'id': 't1',
+        'role': 'toolResult',
+        'toolCallId': 'toolu_9',
+        'toolName': 'write',
+        'content': [
+          {'type': 'text', 'text': 'wrote 120 lines'}
+        ],
+      },
+    ]);
+    final vm = PiViewModel(piService: service);
+
+    await vm.resumeSession('/sessions/abc.jsonl');
+
+    expect(service.resumedPath, '/sessions/abc.jsonl');
+    expect(vm.error, isNull, reason: 'loadModels failure must not leak here');
+    expect(vm.messages.length, 2);
+    expect(vm.messages[0].role, 'user');
+    expect(vm.messages[0].content, 'Build me a scraper');
+    expect(vm.messages[1].role, 'assistant');
+    expect(vm.messages[1].content, 'Here is the scraper.');
+    expect(vm.messages[1].toolCalls.single.name, 'write');
+    expect(vm.messages[1].toolCalls.single.result, 'wrote 120 lines');
+    expect(vm.isLoading, isFalse);
+
+    vm.dispose();
   });
 
   test('PiState parses the model object', () {

@@ -8,7 +8,9 @@ class PiViewModel extends ChangeNotifier {
   PiState? _state;
   final List<PiMessage> _messages = [];
   List<PiModel> _availableModels = [];
+  List<PiSessionInfo> _sessions = [];
   bool _isLoading = false;
+  bool _loadingSessions = false;
   String? _error;
   String _userInput = '';
 
@@ -23,6 +25,8 @@ class PiViewModel extends ChangeNotifier {
   PiState? get state => _state;
   List<PiMessage> get messages => _messages;
   List<PiModel> get availableModels => _availableModels;
+  List<PiSessionInfo> get sessions => _sessions;
+  bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
   String? get error => _error;
   String get userInput => _userInput;
@@ -263,6 +267,96 @@ class PiViewModel extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
     }
+  }
+
+  Future<List<PiSessionInfo>> loadSessions() async {
+    _loadingSessions = true;
+    _error = null;
+    notifyListeners();
+    try {
+      _sessions = await piService.listSessions();
+      _loadingSessions = false;
+      notifyListeners();
+      return _sessions;
+    } catch (e) {
+      _loadingSessions = false;
+      _error = 'Failed to load sessions: $e';
+      notifyListeners();
+      return [];
+    }
+  }
+
+  /// Resume a previous Pi session (like `/resume` in the TUI): load it into
+  /// the live runtime and restore its conversation in the chat.
+  Future<void> resumeSession(String sessionPath) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final history = await piService.resumeSession(sessionPath);
+      _loadHistory(history);
+      _isLoading = false;
+      notifyListeners();
+    } catch (e) {
+      _isLoading = false;
+      _error = 'Failed to resume session: $e';
+      notifyListeners();
+    }
+  }
+
+  /// Rebuild the chat from messages returned by Pi after a session switch.
+  void _loadHistory(List<Map<String, dynamic>> history) {
+    _messages.clear();
+    _streamingMessage = null;
+
+    for (final raw in history) {
+      final role = raw['role'] as String? ?? '';
+      final timestamp = raw['timestamp'];
+      final when = timestamp is num
+          ? DateTime.fromMillisecondsSinceEpoch(timestamp.toInt())
+          : (timestamp is String
+              ? DateTime.tryParse(timestamp) ?? DateTime.now()
+              : DateTime.now());
+
+      if (role == 'user') {
+        final text = _textOf(raw);
+        if (text.isEmpty) continue;
+        _messages.add(PiMessage(
+          id: raw['id'] as String? ?? 'user-history',
+          role: 'user',
+          content: text,
+          timestamp: when,
+        ));
+      } else if (role == 'assistant') {
+        final message = PiMessage(
+          id: raw['id'] as String? ?? 'assistant-history',
+          role: 'assistant',
+          content: _textOf(raw),
+          timestamp: when,
+        );
+        final blocks = raw['content'];
+        if (blocks is List) {
+          for (final block in blocks.whereType<Map<String, dynamic>>()) {
+            if (block['type'] != 'toolCall') continue;
+            message.toolCalls.add(PiTool(
+              id: block['id'] as String? ?? '',
+              name: block['name'] as String? ?? 'tool',
+              arguments:
+                  (block['arguments'] as Map<String, dynamic>?) ?? const {},
+            ));
+          }
+        }
+        _messages.add(message);
+      } else if (role == 'toolResult') {
+        // Attach saved tool output to the matching tool call.
+        _finishTool(
+          raw['toolCallId'] as String?,
+          _resultText(raw),
+        );
+      }
+    }
+
+    _trimMessages();
   }
 
   Future<void> abortCurrentTask() async {

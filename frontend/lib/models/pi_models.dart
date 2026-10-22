@@ -138,6 +138,39 @@ class PiModel {
   }
 }
 
+class PiSessionInfo {
+  final String path;
+  final String id;
+  final String cwd;
+  final String? name;
+  final String preview;
+  final int messageCount;
+  final DateTime modified;
+
+  PiSessionInfo({
+    required this.path,
+    required this.id,
+    required this.cwd,
+    required this.preview,
+    required this.messageCount,
+    required this.modified,
+    this.name,
+  });
+
+  factory PiSessionInfo.fromJson(Map<String, dynamic> json) {
+    return PiSessionInfo(
+      path: json['path'] as String? ?? '',
+      id: json['id'] as String? ?? '',
+      cwd: json['cwd'] as String? ?? '',
+      name: json['name'] as String?,
+      preview: json['preview'] as String? ?? '',
+      messageCount: json['messageCount'] as int? ?? 0,
+      modified: DateTime.tryParse(json['modified'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
 class PiEvent {
   final String type;
   final Map<String, dynamic> data;

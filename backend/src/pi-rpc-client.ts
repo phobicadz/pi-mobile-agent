@@ -131,6 +131,13 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
+  async switchSession(sessionPath: string): Promise<RpcResponse> {
+    return this.sendCommand({
+      type: "switch_session",
+      sessionPath,
+    });
+  }
+
   close() {
     this.child.stdin.end();
     this.rl.close();

@@ -3,9 +3,11 @@ import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
 import { spawn } from "child_process";
-import { existsSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
+import { listPiSessions } from "./session-store.js";
 
 const app = express();
 const server = createServer(app);
@@ -28,10 +30,10 @@ async function initializePi() {
   // On Windows, "pi" resolves to pi.cmd, which spawn() cannot execute without a shell
   const provider = process.env.PI_PROVIDER || "github-copilot";
   const model = process.env.PI_MODEL || "claude-sonnet-5";
+  // Sessions are persisted (no --no-session) so /resume can reload them later.
   const piProcess = spawn("pi", [
     "--mode",
     "rpc",
-    "--no-session",
     "--provider",
     provider,
     "--model",
@@ -132,6 +134,18 @@ async function handleClientMessage(ws: WebSocket, message: any) {
       case "get_available_models":
         response = await piClient.getAvailableModels();
         break;
+      case "list_sessions":
+        // Pi's own session history, read from its session store on disk.
+        response = {
+          success: true,
+          data: { sessions: listPiSessions({ cwd: params.cwd }) },
+        };
+        break;
+      case "resume_session":
+        // Loads a saved session into the live Pi runtime; the client then
+        // fetches the history with get_messages.
+        response = await piClient.switchSession(params.sessionPath);
+        break;
       default:
         ws.send(
           JSON.stringify({
@@ -177,6 +191,14 @@ app.get("/api/models", async (req, res) => {
     }
     const response = await piClient.getAvailableModels();
     res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message });
+  }
+});
+
+app.get("/api/sessions", (req, res) => {
+  try {
+    res.json({ sessions: listPiSessions() });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

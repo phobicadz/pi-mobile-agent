@@ -203,11 +203,11 @@ Events stream continuously as the Pi agent works:
 - ✅ Auto-reconnection
 - ✅ Error handling and display
 - ✅ Works on iOS, Android, Web
+- ✅ Resume previous sessions (history button, like `/resume` in the Pi TUI)
 
 ### Future Enhancements
-- [ ] Session management (save/load/fork sessions)
+- [ ] Fork sessions
 - [ ] File browser for context
-- [ ] Tool execution visualization
 - [ ] Thinking level selection
 - [ ] Dark mode polish
 - [ ] Offline caching

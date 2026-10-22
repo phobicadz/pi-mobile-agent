@@ -151,6 +151,32 @@ class PiService {
     return models;
   }
 
+  Future<List<PiSessionInfo>> listSessions() async {
+    final response = await _sendCommand('list_sessions');
+    final data = response['data'] as Map<String, dynamic>?;
+    if (data == null) return [];
+    return (data['sessions'] as List<dynamic>? ?? [])
+        .map((e) => PiSessionInfo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Loads a saved session into the live Pi runtime. Returns the restored
+  /// conversation history so the UI can hydrate it.
+  Future<List<Map<String, dynamic>>> resumeSession(String sessionPath) async {
+    final response = await _sendCommand(
+      'resume_session',
+      params: {'sessionPath': sessionPath},
+    );
+    if (!response['success']) {
+      throw Exception('Resume failed: ${response['error']}');
+    }
+    final history = await _sendCommand('get_messages');
+    final data = history['data'] as Map<String, dynamic>?;
+    return (data?['messages'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+  }
+
   Future<void> _fetchState() async {
     try {
       final response = await _sendCommand('get_state');
