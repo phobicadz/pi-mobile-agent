@@ -9,6 +9,8 @@ class PiViewModel extends ChangeNotifier {
   final List<PiMessage> _messages = [];
   List<PiModel> _availableModels = [];
   List<PiSessionInfo> _sessions = [];
+  String? _workingDirectory;
+  bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
   String? _error;
@@ -26,6 +28,8 @@ class PiViewModel extends ChangeNotifier {
   List<PiMessage> get messages => _messages;
   List<PiModel> get availableModels => _availableModels;
   List<PiSessionInfo> get sessions => _sessions;
+  String? get workingDirectory => _workingDirectory;
+  bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -301,6 +305,47 @@ class PiViewModel extends ChangeNotifier {
       _isLoading = false;
       _error = 'Failed to resume session: $e';
       notifyListeners();
+    }
+  }
+
+  /// Browse the filesystem starting at the current working directory.
+  Future<DirListing?> browseDirectory({String? path}) async {
+    _loadingDirectories = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final listing = await piService.listDirectory(path: path);
+      _workingDirectory = listing.current ?? listing.path;
+      _loadingDirectories = false;
+      notifyListeners();
+      return listing;
+    } catch (e) {
+      _loadingDirectories = false;
+      _error = 'Failed to browse directories: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Point Pi at a new working directory. Pi restarts with a fresh session, so
+  /// the current chat is cleared.
+  Future<bool> setWorkingDirectory(String path) async {
+    _loadingDirectories = true;
+    _error = null;
+    notifyListeners();
+    try {
+      final cwd = await piService.setWorkingDirectory(path);
+      _workingDirectory = cwd;
+      _messages.clear();
+      _streamingMessage = null;
+      _loadingDirectories = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _loadingDirectories = false;
+      _error = 'Failed to set working directory: $e';
+      notifyListeners();
+      return false;
     }
   }
 

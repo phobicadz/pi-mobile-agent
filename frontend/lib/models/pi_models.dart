@@ -171,6 +171,55 @@ class PiSessionInfo {
   }
 }
 
+class DirEntry {
+  final String name;
+  final String path;
+
+  DirEntry({required this.name, required this.path});
+
+  factory DirEntry.fromJson(Map<String, dynamic> json) {
+    return DirEntry(
+      name: json['name'] as String? ?? '',
+      path: json['path'] as String? ?? '',
+    );
+  }
+}
+
+class DirListing {
+  final String path;
+  final String? parent;
+  final List<DirEntry> roots;
+  final List<DirEntry> entries;
+  final String? current;
+  final List<String> recent;
+
+  DirListing({
+    required this.path,
+    this.parent,
+    required this.roots,
+    required this.entries,
+    this.current,
+    required this.recent,
+  });
+
+  factory DirListing.fromJson(Map<String, dynamic> json) {
+    return DirListing(
+      path: json['path'] as String? ?? '',
+      parent: json['parent'] as String?,
+      roots: (json['roots'] as List<dynamic>? ?? [])
+          .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      entries: (json['entries'] as List<dynamic>? ?? [])
+          .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      current: json['current'] as String?,
+      recent: (json['recent'] as List<dynamic>? ?? [])
+          .map((e) => e as String)
+          .toList(),
+    );
+  }
+}
+
 class PiEvent {
   final String type;
   final Map<String, dynamic> data;

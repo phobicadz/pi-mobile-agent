@@ -204,10 +204,10 @@ Events stream continuously as the Pi agent works:
 - ✅ Error handling and display
 - ✅ Works on iOS, Android, Web
 - ✅ Resume previous sessions (history button, like `/resume` in the Pi TUI)
+- ✅ Browse and set the working directory (folder button in the app bar): browse drives, folders, and recently used directories; setting a new directory restarts Pi with a fresh session in that directory
 
 ### Future Enhancements
 - [ ] Fork sessions
-- [ ] File browser for context
 - [ ] Thinking level selection
 - [ ] Dark mode polish
 - [ ] Offline caching

@@ -151,6 +151,22 @@ class PiService {
     return models;
   }
 
+  /// Browse a directory on the machine running Pi. Omit [path] to browse the
+  /// current working directory.
+  Future<DirListing> listDirectory({String? path}) async {
+    final data = await _sendCommand('list_dir', params: {
+      if (path != null) 'path': path,
+    });
+    return DirListing.fromJson(data);
+  }
+
+  /// Point Pi at a new working directory. Pi restarts with a fresh session, so
+  /// the current chat history no longer applies.
+  Future<String> setWorkingDirectory(String path) async {
+    final data = await _sendCommand('set_cwd', params: {'path': path});
+    return data['cwd'] as String? ?? path;
+  }
+
   Future<List<PiSessionInfo>> listSessions() async {
     final response = await _sendCommand('list_sessions');
     final data = response['data'] as Map<String, dynamic>?;

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pi_view_model.dart';
 import '../widgets/chat_bubble.dart';
+import '../widgets/directory_browser.dart';
 import '../widgets/model_selector.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -144,6 +145,25 @@ class _HomeScreenState extends State<HomeScreen> {
     return time.toLocal().toString().split(' ').first;
   }
 
+  void _showDirectoryBrowser(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.of(sheetContext).size.height * 0.7,
+        child: const DirectoryBrowser(),
+      ),
+    );
+  }
+
+  String _shortenPath(String path) {
+    final normalized = path.replaceAll('\\', '/');
+    final segments = normalized.split('/').where((s) => s.isNotEmpty).toList();
+    if (segments.isEmpty) return path;
+    if (segments.length <= 2) return path;
+    return '.../${segments.sublist(segments.length - 2).join('/')}';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -152,6 +172,28 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
+          Consumer<PiViewModel>(
+            builder: (context, viewModel, _) {
+              final cwd = viewModel.workingDirectory;
+              return Tooltip(
+                message: 'Browse and set the working directory',
+                child: TextButton.icon(
+                  icon: const Icon(Icons.folder_outlined, size: 18),
+                  label: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 160),
+                    child: Text(
+                      cwd == null || cwd.isEmpty
+                          ? 'Directory'
+                          : _shortenPath(cwd),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  onPressed: () => _showDirectoryBrowser(context),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.history),
             tooltip: 'Resume a previous session',

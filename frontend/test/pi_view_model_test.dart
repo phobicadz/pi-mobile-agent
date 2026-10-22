@@ -17,6 +17,33 @@ class FakePiService extends PiService {
       _events.add(PiEvent.fromJson({'type': 'pi_event', 'event': inner}));
 }
 
+/// PiService stub with canned directory browsing and cwd switching.
+class FakeDirService extends FakePiService {
+  String cwd;
+  final Map<String, DirListing> dirs;
+  String? lastSetPath;
+  Future<String> Function(String path)? setWorkingDirectoryOverride;
+
+  FakeDirService({required this.cwd, required this.dirs});
+
+  @override
+  Future<List<PiModel>> getAvailableModels() async => const [];
+
+  @override
+  Future<DirListing> listDirectory({String? path}) async =>
+      dirs[path] ?? dirs[cwd]!;
+
+  @override
+  Future<String> setWorkingDirectory(String path) async {
+    if (setWorkingDirectoryOverride != null) {
+      return setWorkingDirectoryOverride!(path);
+    }
+    lastSetPath = path;
+    cwd = path;
+    return path;
+  }
+}
+
 /// PiService stub whose resume command returns canned saved history.
 class FakeResumeService extends FakePiService {
   final List<Map<String, dynamic>> history;
@@ -237,5 +264,117 @@ void main() {
     });
     expect(state.currentModel, 'claude-sonnet-5');
     expect(state.messageCount, 11);
+  });
+
+  test('DirListing parses the list_dir payload', () {
+    final listing = DirListing.fromJson({
+      'path': r'C:\Users\Chamb\source',
+      'parent': r'C:\Users\Chamb',
+      'roots': [
+        {'name': 'C:', 'path': r'C:\'},
+      ],
+      'entries': [
+        {'name': 'repos', 'path': r'C:\Users\Chamb\source\repos'},
+      ],
+      'current': r'C:\Users\Chamb\source\repos\pi-mobile-agent',
+      'recent': [r'C:\Users\Chamb\source\repos'],
+    });
+    expect(listing.path, r'C:\Users\Chamb\source');
+    expect(listing.parent, r'C:\Users\Chamb');
+    expect(listing.roots.single.name, 'C:');
+    expect(listing.entries.single.name, 'repos');
+    expect(listing.current, r'C:\Users\Chamb\source\repos\pi-mobile-agent');
+    expect(listing.recent, [r'C:\Users\Chamb\source\repos']);
+  });
+
+  test('browseDirectory exposes listing and current cwd', () async {
+    const home = r'C:\home';
+    final listing = DirListing(
+      path: home,
+      parent: r'C:\\',
+      roots: [DirEntry(name: 'C:', path: r'C:\')],
+      entries: [DirEntry(name: 'src', path: r'C:\home\src')],
+      current: home,
+      recent: const [r'C:\other'],
+    );
+    final service = FakeDirService(cwd: home, dirs: {home: listing});
+    final vm = PiViewModel(piService: service);
+
+    final result = await vm.browseDirectory();
+
+    expect(result, isNotNull);
+    expect(result!.path, home);
+    expect(vm.workingDirectory, home);
+    expect(vm.loadingDirectories, isFalse);
+
+    vm.dispose();
+  });
+
+  test('setWorkingDirectory updates cwd and clears chat', () async {
+    const home = r'C:\home';
+    const target = r'C:\work';
+    final listing = DirListing(
+      path: home,
+      parent: r'C:\\',
+      roots: [DirEntry(name: 'C:', path: r'C:\')],
+      entries: [DirEntry(name: 'work', path: target)],
+      current: home,
+      recent: const [],
+    );
+    final service = FakeDirService(cwd: home, dirs: {home: listing});
+    final vm = PiViewModel(piService: service);
+
+    // Seed a chat message so we can prove it gets cleared.
+    service.emit({
+      'type': 'message_end',
+      'message': {
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': 'hi'}
+        ],
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(vm.messages.length, 1);
+
+    final ok = await vm.setWorkingDirectory(target);
+
+    expect(ok, isTrue);
+    expect(service.lastSetPath, target);
+    expect(vm.workingDirectory, target);
+    expect(vm.messages, isEmpty, reason: 'Pi restarts with a fresh session');
+    expect(vm.isLoading, isFalse);
+
+    vm.dispose();
+  });
+
+  test('setWorkingDirectory reports failure and keeps state', () async {
+    const home = r'C:\home';
+    final listing = DirListing(
+      path: home,
+      parent: r'C:\\',
+      roots: [DirEntry(name: 'C:', path: r'C:\')],
+      entries: const [],
+      current: home,
+      recent: const [],
+    );
+    final service = FakeDirService(cwd: home, dirs: {home: listing});
+    final vm = PiViewModel(piService: service);
+
+    // Seed the known cwd the way the app does: by browsing.
+    await vm.browseDirectory();
+    expect(vm.workingDirectory, home);
+
+    // Simulate a backend rejection (bad path).
+    service.setWorkingDirectoryOverride =
+        (String path) async => throw Exception('Not a directory: $path');
+
+    final ok = await vm.setWorkingDirectory(r'C:\nope');
+
+    expect(ok, isFalse);
+    expect(vm.workingDirectory, home);
+    expect(vm.error, contains('Not a directory'));
+
+    vm.dispose();
   });
 }

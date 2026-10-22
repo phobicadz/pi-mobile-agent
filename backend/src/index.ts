@@ -8,6 +8,7 @@ import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
 import { listPiSessions } from "./session-store.js";
+import { listDirectory, resolveExistingDir } from "./fs-browser.js";
 
 const app = express();
 const server = createServer(app);
@@ -18,52 +19,76 @@ app.use(express.json());
 
 // Global Pi RPC client instance
 let piClient: PiRpcClient | null = null;
+let piProcess: ReturnType<typeof spawn> | null = null;
 const connectedClients: Set<WebSocket> = new Set();
 
+// Pi's cwd is fixed at spawn time (RPC has no runtime cwd command), so changing
+// the working directory means respawning the Pi child process with a new cwd.
+let currentCwd = process.cwd();
+
+// Directories recently used by Pi sessions, most recent first (deduplicated).
+function recentDirectories(): string[] {
+  const seen = new Set<string>();
+  const dirs: string[] = [];
+  for (const session of listPiSessions({ limit: 200 })) {
+    if (session.cwd && !seen.has(session.cwd)) {
+      seen.add(session.cwd);
+      dirs.push(session.cwd);
+    }
+  }
+  return dirs.slice(0, 10);
+}
+
 // Initialize Pi RPC client
-async function initializePi() {
+async function initializePi(cwd: string = currentCwd) {
   if (piClient) return;
 
-  console.log("Starting Pi in RPC mode...");
+  console.log(`Starting Pi in RPC mode (cwd: ${cwd})...`);
 
   // Spawn Pi process in RPC mode
   // On Windows, "pi" resolves to pi.cmd, which spawn() cannot execute without a shell
   const provider = process.env.PI_PROVIDER || "github-copilot";
   const model = process.env.PI_MODEL || "claude-sonnet-5";
   // Sessions are persisted (no --no-session) so /resume can reload them later.
-  const piProcess = spawn("pi", [
+  piProcess = spawn("pi", [
     "--mode",
     "rpc",
     "--provider",
     provider,
     "--model",
     model,
-  ], { shell: process.platform === "win32" });
+  ], { cwd, shell: process.platform === "win32" });
 
-  piClient = new PiRpcClient(piProcess);
+  const client = new PiRpcClient(piProcess);
+  piClient = client;
 
-  piClient.on("error", (err) => {
+  // Only clear module state if this client is still the current one — a killed
+  // child's late exit event must not clobber a client spawned for a new cwd.
+  client.on("error", (err) => {
     console.error("Pi RPC error:", err);
-    piClient = null;
+    if (piClient === client) piClient = null;
   });
 
-  piClient.on("exit", () => {
+  client.on("exit", () => {
     console.log("Pi process exited");
-    piClient = null;
+    if (piClient === client) {
+      piClient = null;
+      piProcess = null;
+    }
   });
 
   // Forward all Pi events to connected WebSocket clients
-  piClient.on("event", (event) => {
-    connectedClients.forEach((client) => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(
+  client.on("event", (event) => {
+    for (const wsClient of connectedClients) {
+      if (wsClient.readyState === WebSocket.OPEN) {
+        wsClient.send(
           JSON.stringify({
             type: "pi_event",
             event,
           })
         );
       }
-    });
+    }
   });
 
   console.log("Pi RPC client initialized");
@@ -100,6 +125,106 @@ wss.on("connection", (ws: WebSocket) => {
 });
 
 async function handleClientMessage(ws: WebSocket, message: any) {
+  const { id, command, ...params } = message;
+
+  // Filesystem browsing does not require a live Pi client.
+  if (command === "list_dir") {
+    try {
+      const requested = params.path
+        ? resolveExistingDir(params.path)
+        : resolveExistingDir(currentCwd) ?? os.homedir();
+      if (!requested) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      const listing = listDirectory(requested);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: { ...listing, current: currentCwd, recent: recentDirectories() },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "set_cwd") {
+    try {
+      const target = resolveExistingDir(params.path);
+      if (!target) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      if (target === currentCwd && piClient) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: true,
+            data: { cwd: currentCwd, unchanged: true },
+          })
+        );
+        return;
+      }
+      // Pi's cwd is fixed at spawn time, so restart the child in the new directory.
+      if (piProcess) {
+        piProcess.kill();
+        piProcess = null;
+        piClient = null;
+      }
+      currentCwd = target;
+      await initializePi(target);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: { cwd: currentCwd },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
   if (!piClient) {
     ws.send(
       JSON.stringify({
@@ -109,8 +234,6 @@ async function handleClientMessage(ws: WebSocket, message: any) {
     );
     return;
   }
-
-  const { id, command, ...params } = message;
 
   try {
     let response;
