@@ -20,6 +20,23 @@ class PiService {
   Stream<PiState> get stateUpdates => _stateController.stream;
   bool get isConnected => _isConnected;
 
+  /// Every backend reply is an envelope:
+  /// `{type, id, command, success, data, error}`. Callers must read the payload
+  /// out of `data` — parsing the envelope itself yields an all-empty result, and
+  /// that is what made the directory browser show no folders at all.
+  static Map<String, dynamic> unwrapData(
+    Map<String, dynamic> response, {
+    required String command,
+  }) {
+    if (response['type'] == 'error' || response['success'] == false) {
+      throw Exception(response['error'] ?? '$command failed');
+    }
+    final data = response['data'];
+    if (data is Map<String, dynamic>) return data;
+    // Commands with no payload (abort, set_model) still answer with an envelope.
+    return const {};
+  }
+
   Future<void> connect() async {
     try {
       _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
@@ -143,10 +160,8 @@ class PiService {
 
   Future<List<PiModel>> getAvailableModels() async {
     final response = await _sendCommand('get_available_models');
-    final data = response['data'] as Map<String, dynamic>?;
-    
-    if (data == null) return [];
-    
+    final data = unwrapData(response, command: 'get_available_models');
+
     final models = (data['models'] as List<dynamic>? ?? [])
         .map((e) => PiModel.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -157,23 +172,23 @@ class PiService {
   /// Browse a directory on the machine running Pi. Omit [path] to browse the
   /// current working directory.
   Future<DirListing> listDirectory({String? path}) async {
-    final data = await _sendCommand('list_dir', params: {
+    final response = await _sendCommand('list_dir', params: {
       if (path != null) 'path': path,
     });
-    return DirListing.fromJson(data);
+    return DirListing.fromJson(unwrapData(response, command: 'list_dir'));
   }
 
   /// Point Pi at a new working directory. Pi restarts with a fresh session, so
   /// the current chat history no longer applies.
   Future<String> setWorkingDirectory(String path) async {
-    final data = await _sendCommand('set_cwd', params: {'path': path});
+    final response = await _sendCommand('set_cwd', params: {'path': path});
+    final data = unwrapData(response, command: 'set_cwd');
     return data['cwd'] as String? ?? path;
   }
 
   Future<List<PiSessionInfo>> listSessions() async {
     final response = await _sendCommand('list_sessions');
-    final data = response['data'] as Map<String, dynamic>?;
-    if (data == null) return [];
+    final data = unwrapData(response, command: 'list_sessions');
     return (data['sessions'] as List<dynamic>? ?? [])
         .map((e) => PiSessionInfo.fromJson(e as Map<String, dynamic>))
         .toList();
@@ -190,23 +205,25 @@ class PiService {
       throw Exception('Resume failed: ${response['error']}');
     }
     final history = await _sendCommand('get_messages');
-    final data = history['data'] as Map<String, dynamic>?;
-    return (data?['messages'] as List<dynamic>? ?? [])
+    final data = unwrapData(history, command: 'get_messages');
+    return (data['messages'] as List<dynamic>? ?? [])
         .map((e) => e as Map<String, dynamic>)
         .toList();
   }
 
   /// Ask the backend for its current state (model, working directory, ...).
-  /// The reply arrives on [stateUpdates].
-  Future<void> refreshState() => _fetchState();
+  /// The reply arrives on [stateUpdates]. Safe to call from tests: it does
+  /// nothing while the socket is down.
+  Future<void> refreshState() async {
+    if (!_isConnected) return;
+    await _fetchState();
+  }
 
   Future<void> _fetchState() async {
     try {
       final response = await _sendCommand('get_state');
-      if (response['success']) {
-        final state = PiState.fromJson(response['data'] as Map<String, dynamic>);
-        _stateController.add(state);
-      }
+      final state = PiState.fromJson(unwrapData(response, command: 'get_state'));
+      _stateController.add(state);
     } catch (e) {
       print('Error fetching state: $e');
     }

@@ -1,5 +1,7 @@
 // Configuration constants for the Flutter app
 
+import 'dart:ui';
+
 class AppConfig {
   // Server configuration
   static const String defaultServerUrl = 'ws://192.168.1.100:3000';
