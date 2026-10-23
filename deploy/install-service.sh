@@ -48,7 +48,10 @@ log "Enabling linger (start at boot without a graphical login) + (re)starting"
 loginctl enable-linger "$(id -un)" 2>/dev/null || \
   echo "warning: could not enable linger; the service starts on login instead"
 systemctl --user daemon-reload
-systemctl --user enable --now "$UNIT_NAME"
+systemctl --user enable "$UNIT_NAME"
+# "enable --now" is a no-op while the unit is already running, which silently
+# leaves the previous build serving. restart starts it if it is stopped.
+systemctl --user restart "$UNIT_NAME"
 sleep 2
 systemctl --user --no-pager status "$UNIT_NAME" || true
 
