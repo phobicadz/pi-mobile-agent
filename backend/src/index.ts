@@ -8,7 +8,7 @@ import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
 import { listPiSessions } from "./session-store.js";
-import { listDirectory, resolveExistingDir } from "./fs-browser.js";
+import { listDirectory, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
 const app = express();
 const server = createServer(app);
@@ -151,7 +151,12 @@ async function handleClientMessage(ws: WebSocket, message: any) {
           id,
           command,
           success: true,
-          data: { ...listing, current: currentCwd, recent: recentDirectories() },
+          data: {
+            ...listing,
+            current: currentCwd,
+            cwdDisplay: shrinkHome(currentCwd),
+            recent: recentDirectories(),
+          },
         })
       );
     } catch (err) {
@@ -189,7 +194,11 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             id,
             command,
             success: true,
-            data: { cwd: currentCwd, unchanged: true },
+            data: {
+              cwd: currentCwd,
+              cwdDisplay: shrinkHome(currentCwd),
+              unchanged: true,
+            },
           })
         );
         return;
@@ -208,7 +217,10 @@ async function handleClientMessage(ws: WebSocket, message: any) {
           id,
           command,
           success: true,
-          data: { cwd: currentCwd },
+          data: {
+            cwd: currentCwd,
+            cwdDisplay: shrinkHome(currentCwd),
+          },
         })
       );
     } catch (err) {
@@ -243,6 +255,15 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         break;
       case "get_state":
         response = await piClient.getState();
+        // Pi's RPC state has no cwd; the app needs it to show the current
+        // directory in the app bar before anything has been browsed.
+        if (response.data) {
+          response.data = {
+            ...response.data,
+            cwd: currentCwd,
+            cwdDisplay: shrinkHome(currentCwd),
+          };
+        }
         break;
       case "get_messages":
         response = await piClient.getMessages();
@@ -303,7 +324,12 @@ async function handleClientMessage(ws: WebSocket, message: any) {
 
 // HTTP endpoints
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", pi_connected: !!piClient });
+  res.json({
+    status: "ok",
+    pi_connected: !!piClient,
+    cwd: currentCwd,
+    cwdDisplay: shrinkHome(currentCwd),
+  });
 });
 
 app.get("/api/models", async (req, res) => {
@@ -332,7 +358,11 @@ app.get("/api/state", async (req, res) => {
       return res.status(503).json({ error: "Pi not initialized" });
     }
     const response = await piClient.getState();
-    res.json(response.data);
+    res.json({
+      ...(response.data ?? {}),
+      cwd: currentCwd,
+      cwdDisplay: shrinkHome(currentCwd),
+    });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
   }

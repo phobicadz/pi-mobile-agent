@@ -174,7 +174,8 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           Consumer<PiViewModel>(
             builder: (context, viewModel, _) {
-              final cwd = viewModel.workingDirectory;
+              final cwd =
+                  viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory;
               return Tooltip(
                 message: 'Browse and set the working directory',
                 child: TextButton.icon(

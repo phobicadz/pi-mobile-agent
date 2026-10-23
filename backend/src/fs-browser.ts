@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from "fs";
+import os from "os";
 import path from "path";
 
 export interface DirEntry {
@@ -51,10 +52,32 @@ export function listRoots(): DirEntry[] {
   return [{ name: "/", path: "/" }];
 }
 
+/**
+ * Expand a shell-style path: "~" and "~/..." become the service user's home
+ * directory, relative paths resolve against it. Without this, "~" was resolved
+ * as a literal directory name and every browse/set request silently failed.
+ */
+export function expandUserPath(input: string): string {
+  const trimmed = input.trim();
+  const home = os.homedir();
+  if (trimmed === "~" || trimmed === "~/" || trimmed === ".") return home;
+  if (trimmed.startsWith("~/")) return path.resolve(home, trimmed.slice(2));
+  if (!path.isAbsolute(trimmed)) return path.resolve(home, trimmed);
+  return path.resolve(trimmed);
+}
+
+/** Shorten a path under the home directory to "~" / "~/..." for display. */
+export function shrinkHome(dirPath: string): string {
+  const home = os.homedir();
+  if (dirPath === home) return "~";
+  if (dirPath.startsWith(home + path.sep)) return "~" + dirPath.slice(home.length);
+  return dirPath;
+}
+
 /** Resolve a user-supplied path to an existing absolute directory, or null. */
 export function resolveExistingDir(input: string): string | null {
   if (!input || typeof input !== "string") return null;
-  const resolved = path.resolve(input.trim());
+  const resolved = expandUserPath(input);
   try {
     const entries = readdirSync(resolved);
     void entries;
@@ -64,9 +87,8 @@ export function resolveExistingDir(input: string): string | null {
   }
 }
 
-/** List subdirectories of a directory, with parent navigation and roots. */
-export function listDirectory(dirPath: string): DirListing {
-  const resolved = path.resolve(dirPath);
+/** List subdirectories of a directory, with parent navigation and roots. */export function listDirectory(dirPath: string): DirListing {
+  const resolved = expandUserPath(dirPath);
   const entries: DirEntry[] = [];
   try {
     for (const entry of readdirSync(resolved, { withFileTypes: true })) {

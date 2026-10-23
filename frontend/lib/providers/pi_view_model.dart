@@ -10,6 +10,7 @@ class PiViewModel extends ChangeNotifier {
   List<PiModel> _availableModels = [];
   List<PiSessionInfo> _sessions = [];
   String? _workingDirectory;
+  String? _workingDirectoryDisplay;
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
@@ -29,6 +30,10 @@ class PiViewModel extends ChangeNotifier {
   List<PiModel> get availableModels => _availableModels;
   List<PiSessionInfo> get sessions => _sessions;
   String? get workingDirectory => _workingDirectory;
+
+  /// Same directory, shortened to "~" / "~/..." for the app bar.
+  String? get workingDirectoryDisplay =>
+      _workingDirectoryDisplay ?? _workingDirectory;
   bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
@@ -42,6 +47,13 @@ class PiViewModel extends ChangeNotifier {
 
     piService.stateUpdates.listen((state) {
       _state = state;
+      // The backend reports Pi's working directory in every state update, so the
+      // app bar shows the real directory from the first connect instead of a
+      // placeholder until something has been browsed.
+      if (state.cwd != null && state.cwd!.isNotEmpty) {
+        _workingDirectory = state.cwd;
+        _workingDirectoryDisplay = state.cwdDisplay ?? state.cwd;
+      }
       notifyListeners();
     });
 
@@ -316,6 +328,7 @@ class PiViewModel extends ChangeNotifier {
     try {
       final listing = await piService.listDirectory(path: path);
       _workingDirectory = listing.current ?? listing.path;
+      _workingDirectoryDisplay = listing.cwdDisplay;
       _loadingDirectories = false;
       notifyListeners();
       return listing;
@@ -336,6 +349,9 @@ class PiViewModel extends ChangeNotifier {
     try {
       final cwd = await piService.setWorkingDirectory(path);
       _workingDirectory = cwd;
+      _workingDirectoryDisplay = null;
+      // Pick up the backend's shortened "~/..." form for the app bar.
+      await piService.refreshState();
       _messages.clear();
       _streamingMessage = null;
       _loadingDirectories = false;

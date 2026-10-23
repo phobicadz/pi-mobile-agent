@@ -193,6 +193,10 @@ class PiService {
         .toList();
   }
 
+  /// Ask the backend for its current state (model, working directory, ...).
+  /// The reply arrives on [stateUpdates].
+  Future<void> refreshState() => _fetchState();
+
   Future<void> _fetchState() async {
     try {
       final response = await _sendCommand('get_state');

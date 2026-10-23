@@ -3,6 +3,13 @@ class PiState {
   final int? messageCount;
   final bool isProcessing;
   final String? systemPrompt;
+
+  /// Directory the backend's Pi process is running in (reported by the backend;
+  /// Pi's own RPC state does not include it).
+  final String? cwd;
+
+  /// Same directory, shortened to "~" / "~/..." for display.
+  final String? cwdDisplay;
   final Map<String, dynamic>? raw;
 
   PiState({
@@ -10,6 +17,8 @@ class PiState {
     this.messageCount,
     this.isProcessing = false,
     this.systemPrompt,
+    this.cwd,
+    this.cwdDisplay,
     this.raw,
   });
 
@@ -25,6 +34,8 @@ class PiState {
       messageCount: json['messageCount'] as int?,
       isProcessing: json['isStreaming'] as bool? ?? json['isProcessing'] as bool? ?? false,
       systemPrompt: json['systemPrompt'] as String?,
+      cwd: json['cwd'] as String?,
+      cwdDisplay: json['cwdDisplay'] as String?,
       raw: json,
     );
   }
@@ -34,12 +45,16 @@ class PiState {
     int? messageCount,
     bool? isProcessing,
     String? systemPrompt,
+    String? cwd,
+    String? cwdDisplay,
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
       messageCount: messageCount ?? this.messageCount,
       isProcessing: isProcessing ?? this.isProcessing,
       systemPrompt: systemPrompt ?? this.systemPrompt,
+      cwd: cwd ?? this.cwd,
+      cwdDisplay: cwdDisplay ?? this.cwdDisplay,
       raw: raw,
     );
   }
@@ -191,6 +206,9 @@ class DirListing {
   final List<DirEntry> roots;
   final List<DirEntry> entries;
   final String? current;
+
+  /// [current] shortened to "~" / "~/..." for display.
+  final String? cwdDisplay;
   final List<String> recent;
 
   DirListing({
@@ -199,6 +217,7 @@ class DirListing {
     required this.roots,
     required this.entries,
     this.current,
+    this.cwdDisplay,
     required this.recent,
   });
 
@@ -213,6 +232,7 @@ class DirListing {
           .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
           .toList(),
       current: json['current'] as String?,
+      cwdDisplay: json['cwdDisplay'] as String?,
       recent: (json['recent'] as List<dynamic>? ?? [])
           .map((e) => e as String)
           .toList(),

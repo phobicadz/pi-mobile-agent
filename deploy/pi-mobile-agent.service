@@ -12,8 +12,9 @@ WorkingDirectory=%h/source/repos/pi-mobile-agent/backend
 Environment=NODE_ENV=production
 Environment=PORT=3000
 
-# Directory Pi starts in. Change it in the app (folder button) or here.
-Environment=PI_CWD=%h/source/repos
+# Directory Pi starts in ("~" = the service user's home directory). Change it in
+# the app (folder button) or here; "~/some/path" works too.
+Environment=PI_CWD=~
 
 # `pi` lives in ~/.local/bin on this machine; keep it reachable.
 Environment=PATH=%h/.local/bin:%h/.pi/agent/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin
