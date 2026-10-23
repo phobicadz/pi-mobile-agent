@@ -78,8 +78,23 @@ Everything lives in `deploy/pi-mobile-agent.service`:
   is preferred on a machine you already log into: it reuses the host's Pi install,
   sessions and extensions, and the web bundle is rebuilt in place.
 
-## Currently deployed
+## Currently deployed: mancave desktop
 
-`pi-mobile-agent` runs on **mancave desktop** (`desktop.mancave`, Ubuntu 26.04,
-user `adam`) at `http://192.168.2.1:3000` — repo in `~/source/repos/pi-mobile-agent`,
-Flutter SDK in `~/flutter`, service unit `~/.config/systemd/user/pi-mobile-agent.service`.
+| | |
+| --- | --- |
+| Host | `desktop.mancave` / `192.168.2.1` (`ubuntu-mancave`), Ubuntu 26.04, user `adam` |
+| App | `http://192.168.2.1:3000` (web app, API and WebSocket on the one port) |
+| Repo | `~/source/repos/pi-mobile-agent` |
+| Service | `~/.config/systemd/user/pi-mobile-agent.service`, `enabled`, `Restart=always` |
+| Boot | `loginctl enable-linger adam` → the user manager (and the service) starts at boot |
+| Runtime | node 22 (`/usr/bin/node`), `pi` 1.3.0 (`~/.local/bin/pi`, in the unit's `PATH`) |
+| Build tooling | Flutter stable in `~/flutter` (`export PATH="$HOME/flutter/bin:$PATH"` added to `~/.bashrc`) |
+| Pi model | no `PI_PROVIDER`/`PI_MODEL` in the unit → Pi uses its own config, which on this box is the `pi-llama-cpp` provider against the local Strata server (`llama-server=http://127.0.0.1:8083`, `qwen 3.8 Strata`) |
+| Pi starts in | `~/source/repos` (`PI_CWD`; switchable at runtime with the folder button) |
+
+```bash
+ssh adam@192.168.2.1 'cd ~/source/repos/pi-mobile-agent && ./deploy/install-service.sh'   # redeploy after changes
+ssh adam@192.168.2.1 'systemctl --user status pi-mobile-agent'
+ssh adam@192.168.2.1 'journalctl --user -u pi-mobile-agent -n 50 --no-pager'
+curl http://192.168.2.1:3000/health   # {"status":"ok","pi_connected":true}
+```
