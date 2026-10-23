@@ -24,8 +24,20 @@ npm install
 npm run build
 
 if [[ $SKIP_WEB -eq 0 ]]; then
+  # Non-interactive shells (ssh, systemd) do not read ~/.bashrc, so a Flutter SDK
+  # installed in a home directory is not on PATH. Look for the usual spots.
+  if ! command -v flutter >/dev/null 2>&1; then
+    for candidate in "$HOME/flutter/bin" /opt/flutter/bin "$HOME/.local/share/flutter/bin" \
+                     "$HOME/sdk/flutter/bin" /snap/bin; do
+      if [[ -x "$candidate/flutter" ]]; then
+        export PATH="$candidate:$PATH"
+        break
+      fi
+    done
+  fi
+
   if command -v flutter >/dev/null 2>&1; then
-    log "Frontend: flutter pub get + flutter build web"
+    log "Frontend: flutter pub get + flutter build web ($(command -v flutter))"
     cd "$ROOT/frontend"
     flutter config --no-analytics >/dev/null 2>&1 || true
     flutter pub get
@@ -33,6 +45,7 @@ if [[ $SKIP_WEB -eq 0 ]]; then
     flutter build web
   else
     echo "flutter not found - skipping the web bundle (API/WebSocket still work)"
+    echo "install it without sudo: https://docs.flutter.dev/get-started/install/linux"
   fi
 fi
 
