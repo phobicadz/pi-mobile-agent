@@ -117,6 +117,19 @@ flutter build apk --split-per-abi
 flutter build ios
 ```
 
+## Deploying as a service (Linux)
+
+`deploy/install-service.sh` builds the backend and the Flutter web bundle and
+installs them as a single systemd user service (`pi-mobile-agent`) that starts at
+boot. The backend serves the web build on the same port as the WebSocket, so a
+phone just opens `http://<host>:3000`. See [DEPLOYMENT.md](DEPLOYMENT.md).
+
+```bash
+cd ~/source/repos/pi-mobile-agent
+npm run install:service        # or: ./deploy/install-service.sh
+systemctl --user status pi-mobile-agent
+```
+
 ## API Reference
 
 ### WebSocket Messages

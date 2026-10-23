@@ -24,7 +24,10 @@ const connectedClients: Set<WebSocket> = new Set();
 
 // Pi's cwd is fixed at spawn time (RPC has no runtime cwd command), so changing
 // the working directory means respawning the Pi child process with a new cwd.
-let currentCwd = process.cwd();
+// PI_CWD overrides the directory Pi starts in (useful when running as a service,
+// where process.cwd() is the unit's WorkingDirectory).
+let currentCwd =
+  (process.env.PI_CWD && resolveExistingDir(process.env.PI_CWD)) || process.cwd();
 
 // Directories recently used by Pi sessions, most recent first (deduplicated).
 function recentDirectories(): string[] {
@@ -47,17 +50,13 @@ async function initializePi(cwd: string = currentCwd) {
 
   // Spawn Pi process in RPC mode
   // On Windows, "pi" resolves to pi.cmd, which spawn() cannot execute without a shell
-  const provider = process.env.PI_PROVIDER || "github-copilot";
-  const model = process.env.PI_MODEL || "claude-sonnet-5";
+  // PI_PROVIDER/PI_MODEL are optional: when unset, Pi starts with its own configured
+  // provider/model (pi /login, settings.json, installed provider extensions).
+  const args = ["--mode", "rpc"];
+  if (process.env.PI_PROVIDER) args.push("--provider", process.env.PI_PROVIDER);
+  if (process.env.PI_MODEL) args.push("--model", process.env.PI_MODEL);
   // Sessions are persisted (no --no-session) so /resume can reload them later.
-  piProcess = spawn("pi", [
-    "--mode",
-    "rpc",
-    "--provider",
-    provider,
-    "--model",
-    model,
-  ], { cwd, shell: process.platform === "win32" });
+  piProcess = spawn("pi", args, { cwd, shell: process.platform === "win32" });
 
   const client = new PiRpcClient(piProcess);
   piClient = client;

@@ -1,0 +1,31 @@
+[Unit]
+Description=Pi Mobile Agent - Flutter web app + Pi RPC backend
+Documentation=https://github.com/phobicadz/pi-mobile-agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/source/repos/pi-mobile-agent/backend
+
+# Web app + WebSocket + HTTP API on one port (open http://<this-machine>:3000).
+Environment=NODE_ENV=production
+Environment=PORT=3000
+
+# Directory Pi starts in. Change it in the app (folder button) or here.
+Environment=PI_CWD=%h/source/repos
+
+# `pi` lives in ~/.local/bin on this machine; keep it reachable.
+Environment=PATH=%h/.local/bin:%h/.pi/agent/bin:/usr/local/bin:/usr/bin:/bin:/snap/bin
+
+# Optional: force a provider/model instead of whatever `pi` is configured with.
+# Environment=PI_PROVIDER=anthropic
+# Environment=PI_MODEL=claude-sonnet-5
+
+ExecStart=/usr/bin/node dist/index.js
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+[Install]
+WantedBy=default.target
