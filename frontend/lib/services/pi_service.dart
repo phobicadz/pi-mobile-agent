@@ -32,6 +32,9 @@ class PiService {
 
       _isConnected = true;
       print('Connected to Pi backend');
+      // Ask for the current state as soon as the socket is up so the UI knows
+      // the model and working directory without waiting for a turn to finish.
+      unawaited(_fetchState());
     } catch (e) {
       print('Failed to connect: $e');
       _scheduleReconnect();

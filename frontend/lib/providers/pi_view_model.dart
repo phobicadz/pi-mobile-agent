@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../services/pi_service.dart';
 import '../models/pi_models.dart';
@@ -53,6 +55,11 @@ class PiViewModel extends ChangeNotifier {
       if (state.cwd != null && state.cwd!.isNotEmpty) {
         _workingDirectory = state.cwd;
         _workingDirectoryDisplay = state.cwdDisplay ?? state.cwd;
+      }
+      // The first state fetch can beat the initial model load (the socket may
+      // not be open yet), so retry once we know the backend is reachable.
+      if (_availableModels.isEmpty) {
+        unawaited(_loadModels());
       }
       notifyListeners();
     });

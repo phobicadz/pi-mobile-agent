@@ -49,8 +49,9 @@ curl http://localhost:3000/health               # {"status":"ok","pi_connected":
 Everything lives in `deploy/pi-mobile-agent.service`:
 
 - `PORT` — single port for the web app, HTTP API and WebSocket.
-- `PI_CWD` — directory Pi starts in (change it at runtime with the folder button
-  in the app; the backend respawns Pi in the new directory).
+- `PI_CWD` — directory Pi starts in, `~` (the service user's home) by default; `~/sub/dir`
+  works too. Change it at runtime with the folder button in the app; the backend
+  respawns Pi in the new directory.
 - `PATH` — must include wherever `pi` is installed (`~/.local/bin` for the
   managed installer, `/usr/local/bin` for `npm install -g`).
 - `PI_PROVIDER` / `PI_MODEL` — **optional**. When unset the backend starts Pi with
@@ -90,7 +91,7 @@ Everything lives in `deploy/pi-mobile-agent.service`:
 | Runtime | node 22 (`/usr/bin/node`), `pi` 1.3.0 (`~/.local/bin/pi`, in the unit's `PATH`) |
 | Build tooling | Flutter stable in `~/flutter` (`export PATH="$HOME/flutter/bin:$PATH"` added to `~/.bashrc`) |
 | Pi model | no `PI_PROVIDER`/`PI_MODEL` in the unit → Pi uses its own config, which on this box is the `pi-llama-cpp` provider against the local Strata server (`llama-server=http://127.0.0.1:8083`, `qwen 3.8 Strata`) |
-| Pi starts in | `~/source/repos` (`PI_CWD`; switchable at runtime with the folder button) |
+| Pi starts in | `~` = `/home/adam` (`PI_CWD=~`; switchable at runtime with the folder button — the app bar shows it as `~` or `~/…`) |
 
 ```bash
 ssh adam@192.168.2.1 'cd ~/source/repos/pi-mobile-agent && ./deploy/install-service.sh'   # redeploy after changes
