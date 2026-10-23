@@ -31,11 +31,11 @@ void main() {
   group('PiService.unwrapData', () {
     test('returns the payload carried by the response envelope', () {
       final data =
-          PiService.unwrapData({...listDirPayload}, command: 'list_dir');
+          PiService.unwrapData(envelope({...listDirPayload}), command: 'list_dir');
       final listing = DirListing.fromJson(data);
 
       expect(listing.path, '/home/adam');
-      expect(listing.entries.map((e) => e.name), ['Documents', 'source']);
+      expect(listing.entries.map((e) => e.name), ['source', 'Documents']);
       expect(listing.current, '/home/adam');
       expect(listing.cwdDisplay, '~');
       expect(listing.roots.single.path, '/');
