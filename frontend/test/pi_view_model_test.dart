@@ -377,4 +377,58 @@ void main() {
 
     vm.dispose();
   });
+
+  test('streaming text is coalesced into a few rebuilds, not one per token',
+      () async {
+    final service = QuietPiService();
+    final viewModel = PiViewModel(piService: service);
+    var rebuilds = 0;
+    viewModel.addListener(() => rebuilds++);
+    final versionBefore = viewModel.messagesVersion;
+
+    service.emit({
+      'type': 'message_start',
+      'message': {'role': 'assistant', 'content': <Object>[]},
+    });
+    for (var i = 0; i < 200; i++) {
+      service.emit({
+        'type': 'message_update',
+        'assistantMessageEvent': {'type': 'text_delta', 'delta': 'x'},
+      });
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+
+    expect(viewModel.messages.single.content, hasLength(200),
+        reason: 'no streamed text may be dropped');
+    expect(viewModel.messagesVersion, greaterThan(versionBefore),
+        reason: 'the chat list rebuilds when messages change');
+    expect(rebuilds, lessThan(20),
+        reason: '200 streamed tokens must not mean 200 widget rebuilds');
+
+    viewModel.dispose();
+  });
+
+  test('typing a prompt does not notify or bump the chat version', () async {
+    final service = QuietPiService();
+    final viewModel = PiViewModel(piService: service);
+    var rebuilds = 0;
+    viewModel.addListener(() => rebuilds++);
+    final versionBefore = viewModel.messagesVersion;
+
+    // Typing used to notify here, which re-rendered the whole chat on every
+    // keystroke. The TextField keeps its own text, so nothing needs to.
+    viewModel.setUserInput('hello');
+
+    expect(viewModel.messagesVersion, versionBefore);
+    expect(rebuilds, 0);
+
+    viewModel.dispose();
+  });
+}
+
+/// FakePiService that never touches the network for the model list.
+class QuietPiService extends FakePiService {
+  @override
+  Future<List<PiModel>> getAvailableModels() async => const [];
 }

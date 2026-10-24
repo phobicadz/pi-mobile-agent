@@ -3,7 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/pi_view_model.dart';
 
 class ModelSelector extends StatefulWidget {
-  const ModelSelector({Key? key}) : super(key: key);
+  const ModelSelector({super.key});
 
   @override
   State<ModelSelector> createState() => _ModelSelectorState();
@@ -14,8 +14,17 @@ class _ModelSelectorState extends State<ModelSelector> {
 
   @override
   Widget build(BuildContext context) {
-    return Consumer<PiViewModel>(
-      builder: (context, viewModel, _) {
+    // The dropdown is rebuilt only when the model list or the selected model
+    // actually changes. A plain Consumer here rebuilt every model row on every
+    // streamed token, while the chat was also re-rendering.
+    return Selector<PiViewModel, String>(
+      selector: (_, viewModel) => [
+        viewModel.state?.currentModel ?? '',
+        for (final model in viewModel.availableModels)
+          '${model.id}:${model.name}:${model.provider}',
+      ].join('|'),
+      builder: (context, _, __) {
+        final viewModel = context.read<PiViewModel>();
         if (viewModel.availableModels.isEmpty) {
           return const Padding(
             padding: EdgeInsets.all(8),

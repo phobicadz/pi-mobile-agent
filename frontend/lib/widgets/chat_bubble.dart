@@ -1,26 +1,28 @@
+import 'dart:collection';
+
 import 'package:flutter/material.dart';
-import 'package:flutter_highlight/flutter_highlight.dart';
-import 'package:flutter_highlight/themes/atom-one-dark.dart';
-import 'package:flutter_highlight/themes/atom-one-light.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:highlight/highlight.dart' show highlight;
 import 'package:markdown/markdown.dart' as md;
 import '../models/pi_models.dart';
+import '../utils/code_highlight.dart';
 
 class ChatBubble extends StatelessWidget {
   final PiMessage message;
 
   const ChatBubble({
-    Key? key,
+    super.key,
     required this.message,
-  }) : super(key: key);
-
+  });
   @override
   Widget build(BuildContext context) {
     final isAssistant = message.role == 'assistant';
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Bubble colors and text colors are chosen together so text always has
+    if (message.content.isEmpty && message.toolCalls.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    // Bubble colours and text colours are chosen together so text always has
     // strong contrast, in both light and dark themes.
     final bubbleColor = isAssistant
         ? (isDark ? const Color(0xFF2A2D34) : Colors.grey.shade200)
@@ -46,16 +48,26 @@ class ChatBubble extends StatelessWidget {
         ? (isDark ? const Color(0xFFD3F1F6) : const Color(0xFF00495A))
         : (isDark ? const Color(0xFFC3DDF7) : const Color(0xFF0B3A66));
 
-    if (message.content.isEmpty && message.toolCalls.isEmpty) {
-      return const SizedBox.shrink();
-    }
+    // Rendering a bubble means parsing Markdown and highlighting every code
+    // block, which is far too expensive to repeat while scrolling. The rendered
+    // children are cached per message content, so re-entering the viewport
+    // hands back the *same widget instances* and Flutter skips rebuilding those
+    // subtrees entirely. Only a message that is still streaming changes.
+    final cacheKey = _signatureOf(message, isDark);
+    final body =
+        _BubbleBodyCache.lookup(cacheKey) ?? _buildBody(context, message, bodyColor,
+                toolColor, toolResultColor, toolCardColor, mutedColor, isDark);
+    _BubbleBodyCache.store(cacheKey, body);
+
+    // MediaQuery.sizeOf only depends on the window size, not on the soft
+    // keyboard, so bubbles do not re-render every time the input field gains
+    // focus on a phone.
+    final maxBubbleWidth = MediaQuery.sizeOf(context).width * 0.8;
 
     return Align(
       alignment: isAssistant ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
-        constraints: BoxConstraints(
-          maxWidth: MediaQuery.of(context).size.width * 0.8,
-        ),
+        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
           color: bubbleColor,
@@ -82,14 +94,7 @@ class ChatBubble extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 6),
-
-            if (message.content.isNotEmpty)
-              _buildContent(context, message.content, bodyColor, isDark),
-
-            for (final tool in message.toolCalls)
-              _buildTool(context, tool, toolColor, toolResultColor,
-                  toolCardColor, mutedColor, isDark),
-
+            ...body,
             if (message.streaming)
               Padding(
                 padding: const EdgeInsets.only(top: 6),
@@ -105,6 +110,44 @@ class ChatBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  List<Widget> _buildBody(BuildContext context, PiMessage message,
+      Color bodyColor, Color toolColor, Color toolResultColor,
+      Color toolCardColor, Color mutedColor, bool isDark) {
+    return [
+      if (message.content.isNotEmpty)
+        _buildContent(context, message.content, bodyColor, isDark),
+      for (final tool in message.toolCalls)
+        _buildTool(context, tool, toolColor, toolResultColor, toolCardColor,
+            mutedColor, isDark),
+    ];
+  }
+
+  /// Hash of everything the cached rendering depends on. Content length is
+  /// folded in alongside the hash so two different messages cannot silently
+  /// share an entry.
+  static int _signatureOf(PiMessage message, bool isDark) {
+    return Object.hash(
+      message.role,
+      isDark,
+      message.content.length,
+      Object.hashAll(message.content.codeUnits),
+      message.toolCalls.length,
+      Object.hashAll([
+        for (final tool in message.toolCalls)
+          Object.hash(
+            tool.id,
+            tool.name,
+            tool.result?.length ?? -1,
+            Object.hashAll((tool.result ?? '').codeUnits),
+            Object.hashAll([
+              for (final entry in tool.arguments.entries)
+                Object.hash(entry.key, '${entry.value}'),
+            ]),
+          ),
+      ]),
     );
   }
 
@@ -210,17 +253,13 @@ class ChatBubble extends StatelessWidget {
   }
 
   /// Tool results are usually code (JSON, source, command output). Highlight
-  /// them when a language can be detected; otherwise keep the plain green
-  /// monospace rendering so prose status messages stay readable.
+  /// them when they look like code; otherwise keep the plain green monospace
+  /// rendering so prose status messages stay readable.
   Widget _buildToolResult(String result, Color fallbackColor, bool isDark) {
     final source =
         result.length > 800 ? '${result.substring(0, 800)}…' : result;
 
-    final detected = _looksLikeCode(source)
-        ? highlight.parse(source, autoDetection: true).language
-        : null;
-
-    if (detected == null || detected == 'plaintext') {
+    if (!_looksLikeCode(source)) {
       return Text(
         source,
         style: TextStyle(
@@ -228,17 +267,14 @@ class ChatBubble extends StatelessWidget {
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF2A2D34) : const Color(0xFFFFFDF5),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: HighlightView(
-        source,
-        language: detected,
-        theme: isDark ? atomOneDarkTheme : atomOneLightTheme,
-        padding: const EdgeInsets.all(6),
-        textStyle: const TextStyle(fontFamily: 'JetBrainsMono', fontSize: 11),
+    return HighlightedCode(
+      source,
+      isDark: isDark,
+      background: isDark ? const Color(0xFF2A2D34) : const Color(0xFFFFFDF5),
+      textStyle: TextStyle(
+        fontFamily: 'JetBrainsMono',
+        fontSize: 11,
+        color: fallbackColor,
       ),
     );
   }
@@ -246,6 +282,28 @@ class ChatBubble extends StatelessWidget {
   static bool _looksLikeCode(String source) {
     if (source.contains('\n')) return true;
     return RegExp(r'[{}<>;]|\[\w|\w\(').hasMatch(source);
+  }
+}
+
+/// Cache of rendered bubble bodies, keyed by a signature of the message content
+/// and theme. Bounded so a long chat cannot grow memory without limit.
+class _BubbleBodyCache {
+  static final LinkedHashMap<int, List<Widget>> _entries =
+      LinkedHashMap<int, List<Widget>>();
+  static const int _maxEntries = 120;
+
+  static List<Widget>? lookup(int key) {
+    final value = _entries.remove(key);
+    if (value != null) _entries[key] = value; // keep as most recently used
+    return value;
+  }
+
+  static void store(int key, List<Widget> value) {
+    if (_entries[key] == value) return;
+    _entries[key] = value;
+    while (_entries.length > _maxEntries) {
+      _entries.remove(_entries.keys.first);
+    }
   }
 }
 
@@ -277,25 +335,14 @@ class _HighlightCodeBuilder extends MarkdownElementBuilder {
     }
   }
 
-  /// `highlight.parse` throws when `language` is null, so fences without an
-  /// info string (bare ```) must resolve to a concrete language. Auto-detection
-  /// keeps such blocks highlighted; unknown content falls back to plaintext.
-  String _resolveLanguage(String source) {
-    if (_language != null) return _language!;
-    return highlight.parse(source, autoDetection: true).language ?? 'plaintext';
-  }
-
   @override
   Widget visitText(md.Text text, TextStyle? preferredStyle) {
-    return HighlightView(
+    // Fences without an info string (```) get auto-detected by the
+    // highlighter; unknown content falls back to plain monospace text.
+    return HighlightedCode(
       text.text,
-      language: _resolveLanguage(text.text),
-      theme: isDark ? atomOneDarkTheme : atomOneLightTheme,
-      padding: const EdgeInsets.all(8),
-      textStyle: const TextStyle(
-        fontFamily: 'JetBrainsMono',
-        fontSize: 13,
-      ),
+      language: _language,
+      isDark: isDark,
     );
   }
 }

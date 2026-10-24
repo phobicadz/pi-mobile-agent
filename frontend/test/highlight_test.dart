@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_highlight/flutter_highlight.dart';
+import 'package:flutter_markdown/flutter_markdown.dart';
+import 'package:pi_mobile_agent/utils/code_highlight.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/widgets/chat_bubble.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
@@ -34,8 +35,8 @@ def hello():
       ),
     ));
 
-    // The HighlightView widget should be present in the tree.
-    expect(find.byType(HighlightView), findsOneWidget);
+    // The HighlightedCode widget should be present in the tree.
+    expect(find.byType(HighlightedCode), findsOneWidget);
 
     // The highlighted code should be rendered as RichText spans, not plain text.
     final richTexts = find.byType(RichText);
@@ -44,8 +45,8 @@ def hello():
 
   testWidgets('code fence without a language tag still renders safely',
       (WidgetTester tester) async {
-    // highlight.parse throws when language is null, so bare fences must be
-    // resolved to a concrete language instead of crashing the bubble.
+    // Bare fences carry no language info string; the highlighter auto-detects
+    // instead of crashing the bubble.
     const markdown = '''
 ```
 def hello():
@@ -72,10 +73,10 @@ def hello():
     ));
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HighlightView), findsOneWidget);
+    expect(find.byType(HighlightedCode), findsOneWidget);
   });
 
-  testWidgets('plain text without fences does not use HighlightView',
+  testWidgets('plain text without fences does not highlight code',
       (WidgetTester tester) async {
     await tester.pumpWidget(MaterialApp(
       theme: ThemeData(brightness: Brightness.dark),
@@ -95,7 +96,7 @@ def hello():
       ),
     ));
 
-    expect(find.byType(HighlightView), findsNothing);
+    expect(find.byType(HighlightedCode), findsNothing);
   });
 
   testWidgets('code-like tool result is syntax highlighted',
@@ -126,7 +127,7 @@ def hello():
     ));
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HighlightView), findsOneWidget);
+    expect(find.byType(HighlightedCode), findsOneWidget);
   });
 
   testWidgets('prose tool result stays plain text', (WidgetTester tester) async {
@@ -156,7 +157,48 @@ def hello():
     ));
 
     expect(tester.takeException(), isNull);
-    expect(find.byType(HighlightView), findsNothing);
+    expect(find.byType(HighlightedCode), findsNothing);
     expect(find.text('Done.'), findsOneWidget);
+  });
+
+  test('identical code blocks reuse the same highlight result', () {
+    const code = 'const x = 1;\nfunction f() {\n  return x;\n}';
+
+    final first = highlightedSpans(code, isDark: true);
+    final again = highlightedSpans(code, isDark: true);
+    expect(identical(first, again), isTrue,
+        reason: 'scrolling a chat must not re-parse the same code block');
+
+    expect(identical(first, highlightedSpans('$code\n// edited', isDark: true)),
+        isFalse,
+        reason: 'changed source must not hit the cache');
+    expect(identical(first, highlightedSpans(code, isDark: false)), isFalse,
+        reason: 'the other theme has different colours');
+  });
+
+  testWidgets('an unchanged bubble reuses its cached rendering',
+      (WidgetTester tester) async {
+    final message = PiMessage(
+      id: '1',
+      role: 'assistant',
+      content: 'Some **markdown**:\n\n```python\nprint("hi")\n```\n',
+      timestamp: DateTime.now(),
+    );
+
+    Widget app() => MaterialApp(
+          theme: ThemeData(brightness: Brightness.dark),
+          home: Scaffold(body: ChatBubble(message: message)),
+        );
+
+    await tester.pumpWidget(app());
+    final first = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+
+    // A rebuild of the same message must not parse the Markdown again: the
+    // cached children are handed back as the same widget instances, which is
+    // what makes scrolling cheap.
+    await tester.pumpWidget(app());
+    final second = tester.widget<MarkdownBody>(find.byType(MarkdownBody));
+
+    expect(identical(first, second), isTrue);
   });
 }

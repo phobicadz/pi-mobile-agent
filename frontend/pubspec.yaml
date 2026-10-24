@@ -22,6 +22,10 @@ dependencies:
   google_fonts: ^6.1.0
   flutter_markdown: ^0.6.0
   syntax_highlight: ^0.1.0
+  # `highlight` is a direct import (curated language set in
+  # lib/utils/code_highlight.dart), so it is declared rather than relied on
+  # transitively through flutter_highlight.
+  highlight: ^0.7.0
   
   # Utilities
   intl: ^0.19.0

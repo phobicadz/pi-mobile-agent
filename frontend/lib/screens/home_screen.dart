@@ -1,43 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/pi_view_model.dart';
-import '../widgets/chat_bubble.dart';
+import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
 import '../widgets/model_selector.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({Key? key}) : super(key: key);
+  const HomeScreen({super.key});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _scrollController = ScrollController();
+  final _chatKey = GlobalKey<ChatListState>();
   final _inputController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
-    // Scroll to bottom when new events arrive
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _scrollToBottom();
-    });
-  }
-
-  void _scrollToBottom() {
-    if (_scrollController.hasClients) {
-      _scrollController.animateTo(
-        _scrollController.position.maxScrollExtent,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeOut,
-      );
-    }
-  }
-
-  @override
   void dispose() {
-    _scrollController.dispose();
     _inputController.dispose();
     super.dispose();
   }
@@ -172,10 +152,12 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
-          Consumer<PiViewModel>(
-            builder: (context, viewModel, _) {
-              final cwd =
-                  viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory;
+          Selector<PiViewModel, String?>(
+            // Only the directory text needs to rebuild when the working
+            // directory changes, not the whole app bar on every update.
+            selector: (_, viewModel) =>
+                viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory,
+            builder: (context, cwd, _) {
               return Tooltip(
                 message: 'Browse and set the working directory',
                 child: TextButton.icon(
@@ -203,16 +185,17 @@ class _HomeScreenState extends State<HomeScreen> {
           Padding(
             padding: const EdgeInsets.all(16),
             child: Center(
-              child: Consumer<PiViewModel>(
-                builder: (context, viewModel, _) {
+              child: Selector<PiViewModel, bool>(
+                selector: (_, viewModel) => viewModel.isConnected,
+                builder: (context, isConnected, _) {
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: viewModel.isConnected ? Colors.green : Colors.red,
+                      color: isConnected ? Colors.green : Colors.red,
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: Text(
-                      viewModel.isConnected ? 'Connected' : 'Disconnected',
+                      isConnected ? 'Connected' : 'Disconnected',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 12,
@@ -268,20 +251,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
 
               // Messages list
-              Expanded(
-                child: ListView.builder(
-                  controller: _scrollController,
-                  padding: const EdgeInsets.all(16),
-                  itemCount: viewModel.messages.length,
-                  itemBuilder: (context, index) {
-                    final message = viewModel.messages[index];
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: ChatBubble(message: message),
-                    );
-                  },
-                ),
-              ),
+              Expanded(child: ChatList(key: _chatKey)),
 
               // Input area
               Container(
@@ -331,9 +301,11 @@ class _HomeScreenState extends State<HomeScreen> {
                                 onPressed: viewModel.isLoading
                                     ? null
                                     : () {
-                                        viewModel.submitPrompt();
+                                        viewModel.submitPrompt(
+                                            _inputController.text);
                                         _inputController.clear();
-                                        _scrollToBottom();
+                                        _chatKey.currentState
+                                            ?.stickToBottom();
                                       },
                                 child: const Icon(Icons.send),
                               ),

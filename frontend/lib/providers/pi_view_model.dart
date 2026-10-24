@@ -22,6 +22,20 @@ class PiViewModel extends ChangeNotifier {
   /// The assistant reply currently being streamed, if any.
   PiMessage? _streamingMessage;
 
+  /// Bumped whenever the rendered message list changes. The chat list listens
+  /// to this instead of the whole view model, so unrelated updates (state
+  /// polling, session browsing) cannot make it rebuild.
+  int _messagesVersion = 0;
+
+  bool _disposed = false;
+  bool _notifyScheduled = false;
+  DateTime _lastNotifyAt = DateTime.fromMillisecondsSinceEpoch(0);
+
+  /// Pi streams text token by token. Re-rendering the chat for every token is
+  /// what makes streaming look janky, so updates are coalesced to this
+  /// interval; the visible result is the same, at a fraction of the work.
+  static const Duration _streamNotifyInterval = Duration(milliseconds: 60);
+
   PiViewModel({required this.piService}) {
     _initialize();
   }
@@ -41,6 +55,7 @@ class PiViewModel extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
   String get userInput => _userInput;
+  int get messagesVersion => _messagesVersion;
   bool get isConnected => piService.isConnected;
 
   void _initialize() {
@@ -61,25 +76,49 @@ class PiViewModel extends ChangeNotifier {
       if (_availableModels.isEmpty) {
         unawaited(_loadModels());
       }
-      notifyListeners();
+      _notifyNow();
     });
 
     // Load initial data
     _loadModels();
   }
 
+  /// Keeps the prompt in the model so it can be submitted from anywhere. The
+  /// text itself is rendered by the app's own TextField, so this deliberately
+  /// does not notify: notifying here rebuilt the whole chat on every keystroke.
   void setUserInput(String input) {
     _userInput = input;
+  }
+
+  void _notifyNow() {
+    if (_disposed) return;
+    _lastNotifyAt = DateTime.now();
     notifyListeners();
   }
+
+  /// Coalesces Pi's high-frequency events into one rebuild per interval.
+  void _scheduleNotify() {
+    if (_notifyScheduled || _disposed) return;
+    _notifyScheduled = true;
+    final wait =
+        _streamNotifyInterval - DateTime.now().difference(_lastNotifyAt);
+    Future<void>.delayed(wait < Duration.zero ? Duration.zero : wait, () {
+      _notifyScheduled = false;
+      if (_disposed) return;
+      _lastNotifyAt = DateTime.now();
+      notifyListeners();
+    });
+  }
+
+  void _bumpMessages() => _messagesVersion++;
 
   Future<void> _loadModels() async {
     try {
       _availableModels = await piService.getAvailableModels();
-      notifyListeners();
+      _notifyNow();
     } catch (e) {
       _error = 'Failed to load models: $e';
-      notifyListeners();
+      _notifyNow();
     }
   }
 
@@ -142,7 +181,7 @@ class PiViewModel extends ChangeNotifier {
         return;
     }
 
-    notifyListeners();
+    _scheduleNotify();
   }
 
   void _handleMessageUpdate(Map<String, dynamic> data) {
@@ -154,6 +193,7 @@ class PiViewModel extends ChangeNotifier {
         final delta = inner['delta'] as String? ?? '';
         if (delta.isEmpty) return;
         _ensureStreamingMessage().content += delta;
+        _bumpMessages();
         break;
 
       case 'toolcall_end':
@@ -180,6 +220,7 @@ class PiViewModel extends ChangeNotifier {
     );
     _messages.add(message);
     _streamingMessage = message;
+    _bumpMessages();
     return message;
   }
 
@@ -198,6 +239,7 @@ class PiViewModel extends ChangeNotifier {
       }
       _messages.add(message);
     }
+    _bumpMessages();
     _trimMessages();
   }
 
@@ -216,6 +258,7 @@ class PiViewModel extends ChangeNotifier {
           orElse: () => _ensureStreamingMessage(),
         );
     target.toolCalls.add(tool);
+    _bumpMessages();
   }
 
   void _finishTool(String? toolCallId, String result) {
@@ -223,6 +266,7 @@ class PiViewModel extends ChangeNotifier {
       for (final tool in message.toolCalls.reversed) {
         if (toolCallId != null && tool.id == toolCallId) {
           tool.result = result;
+          _bumpMessages();
           return;
         }
       }
@@ -232,6 +276,7 @@ class PiViewModel extends ChangeNotifier {
       for (final tool in message.toolCalls.reversed) {
         if (tool.result == null) {
           tool.result = result;
+          _bumpMessages();
           return;
         }
       }
@@ -267,10 +312,10 @@ class PiViewModel extends ChangeNotifier {
     return result?.toString() ?? '';
   }
 
-  Future<void> submitPrompt() async {
-    if (_userInput.isEmpty) return;
+  Future<void> submitPrompt([String? input]) async {
+    final prompt = (input ?? _userInput).trim();
+    if (prompt.isEmpty) return;
 
-    final prompt = _userInput;
     _userInput = '';
     _isLoading = true;
     _error = null;
@@ -280,31 +325,32 @@ class PiViewModel extends ChangeNotifier {
       content: prompt,
       timestamp: DateTime.now(),
     ));
+    _bumpMessages();
     _trimMessages();
-    notifyListeners();
+    _notifyNow();
 
     try {
       await piService.sendPrompt(prompt);
     } catch (e) {
       _error = 'Error: $e';
       _isLoading = false;
-      notifyListeners();
+      _notifyNow();
     }
   }
 
   Future<List<PiSessionInfo>> loadSessions() async {
     _loadingSessions = true;
     _error = null;
-    notifyListeners();
+    _notifyNow();
     try {
       _sessions = await piService.listSessions();
       _loadingSessions = false;
-      notifyListeners();
+      _notifyNow();
       return _sessions;
     } catch (e) {
       _loadingSessions = false;
       _error = 'Failed to load sessions: $e';
-      notifyListeners();
+      _notifyNow();
       return [];
     }
   }
@@ -314,16 +360,16 @@ class PiViewModel extends ChangeNotifier {
   Future<void> resumeSession(String sessionPath) async {
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _notifyNow();
     try {
       final history = await piService.resumeSession(sessionPath);
       _loadHistory(history);
       _isLoading = false;
-      notifyListeners();
+      _notifyNow();
     } catch (e) {
       _isLoading = false;
       _error = 'Failed to resume session: $e';
-      notifyListeners();
+      _notifyNow();
     }
   }
 
@@ -331,18 +377,18 @@ class PiViewModel extends ChangeNotifier {
   Future<DirListing?> browseDirectory({String? path}) async {
     _loadingDirectories = true;
     _error = null;
-    notifyListeners();
+    _notifyNow();
     try {
       final listing = await piService.listDirectory(path: path);
       _workingDirectory = listing.current ?? listing.path;
       _workingDirectoryDisplay = listing.cwdDisplay;
       _loadingDirectories = false;
-      notifyListeners();
+      _notifyNow();
       return listing;
     } catch (e) {
       _loadingDirectories = false;
       _error = 'Failed to browse directories: $e';
-      notifyListeners();
+      _notifyNow();
       return null;
     }
   }
@@ -352,7 +398,7 @@ class PiViewModel extends ChangeNotifier {
   Future<bool> setWorkingDirectory(String path) async {
     _loadingDirectories = true;
     _error = null;
-    notifyListeners();
+    _notifyNow();
     try {
       final cwd = await piService.setWorkingDirectory(path);
       _workingDirectory = cwd;
@@ -361,13 +407,14 @@ class PiViewModel extends ChangeNotifier {
       await piService.refreshState();
       _messages.clear();
       _streamingMessage = null;
+      _bumpMessages();
       _loadingDirectories = false;
-      notifyListeners();
+      _notifyNow();
       return true;
     } catch (e) {
       _loadingDirectories = false;
       _error = 'Failed to set working directory: $e';
-      notifyListeners();
+      _notifyNow();
       return false;
     }
   }
@@ -376,6 +423,7 @@ class PiViewModel extends ChangeNotifier {
   void _loadHistory(List<Map<String, dynamic>> history) {
     _messages.clear();
     _streamingMessage = null;
+    _bumpMessages();
 
     for (final raw in history) {
       final role = raw['role'] as String? ?? '';
@@ -432,33 +480,34 @@ class PiViewModel extends ChangeNotifier {
       await piService.abort();
     } catch (e) {
       _error = 'Failed to abort: $e';
-      notifyListeners();
+      _notifyNow();
     }
   }
 
   Future<void> selectModel(String modelId) async {
     try {
       _isLoading = true;
-      notifyListeners();
+      _notifyNow();
 
       await piService.setModel(modelId);
 
       _isLoading = false;
-      notifyListeners();
+      _notifyNow();
     } catch (e) {
       _error = 'Failed to set model: $e';
       _isLoading = false;
-      notifyListeners();
+      _notifyNow();
     }
   }
 
   void clearError() {
     _error = null;
-    notifyListeners();
+    _notifyNow();
   }
 
   @override
   void dispose() {
+    _disposed = true;
     super.dispose();
     piService.dispose();
   }
