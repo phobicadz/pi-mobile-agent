@@ -152,21 +152,26 @@ class _DirectoryBrowserState extends State<DirectoryBrowser> {
               child: Text('Recent',
                   style: Theme.of(context).textTheme.labelLarge),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (final recent in listing.recent)
-                    ActionChip(
-                      avatar: const Icon(Icons.history, size: 16),
-                      label: Text(_dirName(recent)),
-                      onPressed: listing.path == recent
-                          ? null
-                          : () => _browse(recent),
-                    ),
-                ],
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 90),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final recent in listing.recent)
+                        ActionChip(
+                          avatar: const Icon(Icons.history, size: 16),
+                          label: Text(_dirName(recent)),
+                          onPressed: listing.path == recent
+                              ? null
+                              : () => _browse(recent),
+                        ),
+                    ],
+                  ),
+                ),
               ),
             ),
           ],
