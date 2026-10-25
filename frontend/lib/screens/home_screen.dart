@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/pi_view_model.dart';
 import '../widgets/chat_list.dart';
@@ -15,6 +16,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _chatKey = GlobalKey<ChatListState>();
   final _inputController = TextEditingController();
+
+  void _sendPrompt(PiViewModel viewModel) {
+    if (viewModel.isLoading || _inputController.text.trim().isEmpty) return;
+    viewModel.submitPrompt(_inputController.text);
+    _inputController.clear();
+    viewModel.setUserInput('');
+    _chatKey.currentState?.stickToBottom();
+  }
 
   @override
   void dispose() {
@@ -276,19 +285,38 @@ class _HomeScreenState extends State<HomeScreen> {
                       Row(
                         children: [
                           Expanded(
-                            child: TextField(
-                              controller: _inputController,
-                              onChanged: viewModel.setUserInput,
-                              enabled: !viewModel.isLoading,
-                              maxLines: null,
-                              decoration: InputDecoration(
-                                hintText: 'Enter a prompt or command...',
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 16,
-                                  vertical: 12,
+                            child: Focus(
+                              onKeyEvent: (node, event) {
+                                // Enter submits, Ctrl+Enter inserts a newline.
+                                if (event is KeyDownEvent &&
+                                    (event.logicalKey ==
+                                            LogicalKeyboardKey.enter ||
+                                        event.logicalKey ==
+                                            LogicalKeyboardKey.numpadEnter)) {
+                                  if (HardwareKeyboard.instance
+                                      .isControlPressed) {
+                                    return KeyEventResult.ignored;
+                                  }
+                                  _sendPrompt(
+                                      context.read<PiViewModel>());
+                                  return KeyEventResult.handled;
+                                }
+                                return KeyEventResult.ignored;
+                              },
+                              child: TextField(
+                                controller: _inputController,
+                                onChanged: viewModel.setUserInput,
+                                enabled: !viewModel.isLoading,
+                                maxLines: null,
+                                decoration: InputDecoration(
+                                  hintText: 'Enter a prompt or command...',
+                                  border: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 12,
+                                  ),
                                 ),
                               ),
                             ),
@@ -300,13 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                 mini: true,
                                 onPressed: viewModel.isLoading
                                     ? null
-                                    : () {
-                                        viewModel.submitPrompt(
-                                            _inputController.text);
-                                        _inputController.clear();
-                                        _chatKey.currentState
-                                            ?.stickToBottom();
-                                      },
+                                    : () => _sendPrompt(viewModel),
                                 child: const Icon(Icons.send),
                               ),
                               if (viewModel.isLoading)
