@@ -182,6 +182,7 @@ class PiViewModel extends ChangeNotifier {
         break;
 
       case 'agent_end':
+        _streamingMessage?.streaming = false; // never leave a spinner spinning
         _streamingMessage = null;
         _awaitingModel = false;
         _isLoading = false;
@@ -240,6 +241,10 @@ class PiViewModel extends ChangeNotifier {
   void _addMessage(PiMessage message, {bool streaming = false}) {
     if (message.role == 'assistant') {
       if (streaming) {
+        // fromJson leaves this false, and ChatBubble only draws the typing
+        // indicator for a streaming message - without this, an assistant reply
+        // that has started but has no text yet shows nothing at all.
+        message.streaming = true;
         _streamingMessage = message;
       }
       _messages.add(message);

@@ -109,6 +109,19 @@ void main() {
     expect(find.byType(ChatBubble), findsNWidgets(2),
         reason: 'no second indicator next to the real empty reply');
 
+    // This is the phase that matters in practice: Pi opens the assistant reply
+    // ~17ms after the prompt, then the model thinks for seconds before emitting
+    // thinking_delta / text_delta. The reply bubble must show an indicator
+    // throughout, and thinking deltas must not clear it.
+    expect(find.byType(CircularProgressIndicator), findsWidgets,
+        reason: 'the empty reply bubble is what the user stares at while thinking');
+    service.emit({
+      'type': 'message_update',
+      'assistantMessageEvent': {'type': 'thinking_delta', 'delta': 'hmm'},
+    });
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(find.byType(CircularProgressIndicator), findsWidgets);
+
     service.emit({
       'type': 'message_update',
       'assistantMessageEvent': {'type': 'text_delta', 'delta': 'working on it'},
