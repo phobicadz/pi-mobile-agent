@@ -186,6 +186,16 @@ class PiService {
     return data['cwd'] as String? ?? path;
   }
 
+  /// Token/cost totals for the whole session, including the current context
+  /// window usage. Fetched when a turn settles so the progress bar can show
+  /// real numbers instead of only what the current response reported.
+  Future<PiSessionStats> getSessionStats() async {
+    final response = await _sendCommand('get_session_stats');
+    return PiSessionStats.fromJson(
+      unwrapData(response, command: 'get_session_stats'),
+    );
+  }
+
   Future<List<PiSessionInfo>> listSessions() async {
     final response = await _sendCommand('list_sessions');
     final data = unwrapData(response, command: 'list_sessions');

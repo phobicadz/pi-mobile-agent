@@ -5,6 +5,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import '../models/pi_models.dart';
 import '../utils/code_highlight.dart';
+import '../utils/format.dart';
 
 class ChatBubble extends StatelessWidget {
   final PiMessage message;
@@ -96,6 +97,21 @@ class ChatBubble extends StatelessWidget {
                       .labelSmall
                       ?.copyWith(color: accentColor, fontWeight: FontWeight.bold),
                 ),
+                // Finished assistant replies carry the usage Pi reported for
+                // them, so each reply shows what it cost.
+                if (isAssistant &&
+                    message.usage != null &&
+                    !message.usage!.isEmpty) ...[
+                  const SizedBox(width: 8),
+                  Text(
+                    '${formatTokens(message.usage!.produced)} tok'
+                    '${message.usage!.reasoning > 0 ? ' (thinking)' : ''}',
+                    style: Theme.of(context)
+                        .textTheme
+                        .labelSmall
+                        ?.copyWith(color: mutedColor),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 6),

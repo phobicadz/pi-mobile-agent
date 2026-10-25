@@ -277,6 +277,11 @@ async function handleClientMessage(ws: WebSocket, message: any) {
       case "get_available_models":
         response = await piClient.getAvailableModels();
         break;
+      case "get_session_stats":
+        // Token/cost totals plus context-window usage, used by the app's
+        // progress line after a run settles.
+        response = await piClient.getSessionStats();
+        break;
       case "list_sessions":
         // Pi's own session history, read from its session store on disk.
         response = {

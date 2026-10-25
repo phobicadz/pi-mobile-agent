@@ -245,6 +245,79 @@ Get list of available AI models.
 
 ---
 
+### get_session_stats
+
+Get token totals, cost and current context-window usage for the backend's Pi
+session. The app calls it after a run settles (`agent_settled`) so the progress
+line can show real context usage.
+
+**Request:**
+```json
+{
+  "id": "req-7",
+  "command": "get_session_stats"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-7",
+  "type": "response",
+  "command": "get_session_stats",
+  "success": true,
+  "data": {
+    "sessionFile": "/path/to/session.jsonl",
+    "sessionId": "abc123",
+    "userMessages": 5,
+    "assistantMessages": 5,
+    "toolCalls": 12,
+    "tokens": {
+      "input": 50000,
+      "output": 10000,
+      "cacheRead": 40000,
+      "cacheWrite": 5000,
+      "total": 105000
+    },
+    "cost": 0.45,
+    "contextUsage": {
+      "tokens": 60000,
+      "contextWindow": 200000,
+      "percent": 30
+    }
+  }
+}
+```
+
+`contextUsage` is omitted when no model is available, and its `tokens` /
+`percent` are `null` immediately after compaction until the next assistant
+response.
+
+---
+
+## Streaming events
+
+The backend forwards every Pi record to all connected clients as
+`{ "type": "pi_event", "event": { ... } }`. Two of them carry the numbers the
+progress line shows:
+
+```json
+{"type":"message_update","usage":{"input":10,"output":224,"cacheRead":0,"cacheWrite":5870,"totalTokens":6104,"cost":{"total":0.0085},"reasoning":168},"assistantMessageEvent":{"type":"thinking_delta","contentIndex":0,"delta":"..."}}
+```
+
+`usage` is cumulative **for the assistant response currently streaming** — the
+next tool round starts a fresh count — and some providers report zeros until the
+response completes. `message_end` repeats the final usage on
+`message.usage`, which is what the app sums up for the whole run and shows on
+the finished bubble.
+
+`tool_execution_update` carries `partialResult`, the tool's latest partial
+result; the app counts its growth as "chars" so a long file read visibly
+progresses. A tool may replace it rather than extend it, so only the increase is
+counted.
+
+---
+
 ## HTTP API Endpoints
 
 Additionally, the backend exposes HTTP endpoints for simpler use cases:

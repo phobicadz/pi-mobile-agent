@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Three.js Demo</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        #container {
+            width: 100%;
+            max-width: 1000px;
+            background: rgba(0, 0, 0, 0.3);
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(4px);
+        }
+        
+        #canvas {
+            display: block;
+            width: 100%;
+            height: 600px;
+        }
+        
+        .info {
+            background: rgba(0, 0, 0, 0.5);
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .info h1 {
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .info p {
+            font-size: 14px;
+            color: #aaa;
+            margin: 5px 0;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        
+        button {
+            padding: 8px 16px;
+            border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <canvas id="canvas"></canvas>
+        <div class="info">
+            <h1>🎨 Three.js 3D Demo</h1>
+            <p>Rotating cube, sphere, and torus with dynamic lighting</p>
+            <div class="controls">
+                <button onclick="toggleRotation()">Toggle Rotation</button>
+                <button onclick="changeColor()">Random Colors</button>
+                <button onclick="resetView()">Reset View</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const canvas = document.getElementById('canvas');
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, canvas.clientWidth / canvas.clientHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+        
+        renderer.setSize(canvas.clientWidth, canvas.clientHeight);
+        renderer.setClearColor(0x0a0e27, 0.8);
+        
+        camera.position.z = 5;
+
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+        
+        const pointLight = new THREE.PointLight(0xff00ff, 1, 100);
+        pointLight.position.set(5, 5, 5);
+        scene.add(pointLight);
+        
+        const pointLight2 = new THREE.PointLight(0x00ffff, 0.8, 100);
+        pointLight2.position.set(-5, -5, 5);
+        scene.add(pointLight2);
+
+        // Create geometries
+        const cubeGeometry = new THREE.BoxGeometry(1.5, 1.5, 1.5);
+        const sphereGeometry = new THREE.SphereGeometry(1, 32, 32);
+        const torusGeometry = new THREE.TorusGeometry(1.5, 0.4, 8, 100);
+
+        // Materials with emissive glow
+        const cubeMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0xff6b9d,
+            metalness: 0.5,
+            roughness: 0.4,
+            emissive: 0xff69b4,
+            emissiveIntensity: 0.2
+        });
+        const sphereMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x00d4ff,
+            metalness: 0.3,
+            roughness: 0.5,
+            emissive: 0x00aaff,
+            emissiveIntensity: 0.2
+        });
+        const torusMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x64ff00,
+            metalness: 0.6,
+            roughness: 0.3,
+            emissive: 0x32ff00,
+            emissiveIntensity: 0.2
+        });
+
+        // Create meshes
+        const cube = new THREE.Mesh(cubeGeometry, cubeMaterial);
+        cube.position.x = -2;
+        scene.add(cube);
+
+        const sphere = new THREE.Mesh(sphereGeometry, sphereMaterial);
+        sphere.position.x = 0;
+        scene.add(sphere);
+
+        const torus = new THREE.Mesh(torusGeometry, torusMaterial);
+        torus.position.x = 2;
+        scene.add(torus);
+
+        // Store objects for animation
+        const objects = [cube, sphere, torus];
+        let isRotating = true;
+
+        // Animation loop
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (isRotating) {
+                cube.rotation.x += 0.007;
+                cube.rotation.y += 0.01;
+
+                sphere.rotation.y += 0.005;
+
+                torus.rotation.x += 0.008;
+                torus.rotation.z += 0.006;
+            }
+
+            // Animate lights
+            pointLight.position.x = Math.sin(Date.now() * 0.001) * 7;
+            pointLight2.position.y = Math.cos(Date.now() * 0.001) * 7;
+
+            renderer.render(scene, camera);
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            const width = canvas.clientWidth;
+            const height = canvas.clientHeight;
+            camera.aspect = width / height;
+            camera.updateProjectionMatrix();
+            renderer.setSize(width, height);
+        });
+
+        // Control functions
+        function toggleRotation() {
+            isRotating = !isRotating;
+        }
+
+        function changeColor() {
+            const randomColor = () => new THREE.Color(Math.random() * 0xffffff);
+            
+            cubeMaterial.color.copy(randomColor());
+            cubeMaterial.emissive.copy(randomColor());
+            
+            sphereMaterial.color.copy(randomColor());
+            sphereMaterial.emissive.copy(randomColor());
+            
+            torusMaterial.color.copy(randomColor());
+            torusMaterial.emissive.copy(randomColor());
+        }
+
+        function resetView() {
+            cube.rotation.set(0, 0, 0);
+            sphere.rotation.set(0, 0, 0);
+            torus.rotation.set(0, 0, 0);
+            
+            cubeMaterial.color.set(0xff6b9d);
+            sphereMaterial.color.set(0x00d4ff);
+            torusMaterial.color.set(0x64ff00);
+        }
+
+        // Start animation
+        animate();
+    </script>
+</body>
+</html>

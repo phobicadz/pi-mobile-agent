@@ -1,0 +1,72 @@
+[
+  {
+    "name": "Raspberry Pi 4 Model B",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-4?_pos=1&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/products/raspberry-pi-4-1_2746b87e-3a72-4282-8be0-f1a788f1fae2.jpg?v=1738658804",
+    "price": "28.00",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi 400",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-400?_pos=2&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/products/RPI400BACK2WHITE_b6e1cf95-a388-4e60-98b0-c4ddba5c2b26.jpg?v=1604306144",
+    "price": "47.50",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi 3 A+",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-3-a-plus?_pos=3&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/products/raspberry-pi-3a-plus-3.jpg?v=1542216539",
+    "price": "20.00",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi Pico 2 W",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-pico-2-w?_pos=4&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/files/PICO_2_W.png?v=1732295828",
+    "price": "5.50",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi 500 (UK layout)",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-500?_pos=5&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/files/RaspberryPi500front-square.png?v=1733402367",
+    "price": "144.00",
+    "description": null
+  },
+  {
+    "name": "NVMe Base for Raspberry Pi 5",
+    "url": "https://shop.pimoroni.com/products/nvme-base?_pos=6&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/files/nvme-base-final-7.jpg?v=1706109087",
+    "price": "9.00",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi Pico 2",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-pico-2?_pos=7&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/files/pico-2-1.png?v=1723032077",
+    "price": "4.00",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi Monitor",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-monitor?_pos=8&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/files/MONITORUPDATEDlores-square.png?v=1733415559",
+    "price": "78.00",
+    "description": null
+  },
+  {
+    "name": "Raspberry Pi Pico",
+    "url": "https://shop.pimoroni.com/products/raspberry-pi-pico?_pos=9&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/products/PICOBOARDWHITEANGLE2.jpg?v=1616398924",
+    "price": "3.17",
+    "description": null
+  },
+  {
+    "name": "Enviro for Raspberry Pi",
+    "url": "https://shop.pimoroni.com/products/enviro?_pos=10&_psq=Raspberry+Pi&_psid=0f78129a4&_ss=e",
+    "image": "https://cdn.shopify.com/s/files/1/0174/1800/products/enviro-plus-shop-1.jpg?v=1565439541",
+    "price": "20.00",
+    "description": null
+  }
+]

@@ -131,6 +131,13 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
+  /** Session token totals, cost and current context-window usage. */
+  async getSessionStats(): Promise<RpcResponse> {
+    return this.sendCommand({
+      type: "get_session_stats",
+    });
+  }
+
   async switchSession(sessionPath: string): Promise<RpcResponse> {
     return this.sendCommand({
       type: "switch_session",

@@ -60,12 +60,134 @@ class PiState {
   }
 }
 
+/// Token usage of one assistant response, exactly as Pi reports it.
+///
+/// Pi sends this on every `message_update` (`usage`) and on the finished
+/// assistant message (`message.usage`). It is cumulative **for the current
+/// assistant response only** — the next tool round starts a fresh count — so
+/// turn totals are accumulated from the completed responses, not from the
+/// streaming frames. Some providers report zeros until the response completes;
+/// callers should fall back to a streamed-character estimate then.
+class PiUsage {
+  final int input;
+  final int output;
+  final int cacheRead;
+  final int cacheWrite;
+  final int totalTokens;
+
+  /// Tokens spent on extended thinking, when the provider reports them.
+  final int reasoning;
+  final double cost;
+
+  const PiUsage({
+    this.input = 0,
+    this.output = 0,
+    this.cacheRead = 0,
+    this.cacheWrite = 0,
+    this.totalTokens = 0,
+    this.reasoning = 0,
+    this.cost = 0,
+  });
+
+  static const PiUsage zero = PiUsage();
+
+  factory PiUsage.fromJson(dynamic json) {
+    if (json is! Map) return zero;
+    final cost = json['cost'];
+    return PiUsage(
+      input: _asInt(json['input']),
+      output: _asInt(json['output']),
+      cacheRead: _asInt(json['cacheRead']),
+      cacheWrite: _asInt(json['cacheWrite']),
+      totalTokens: _asInt(json['totalTokens'] ?? json['total']),
+      reasoning: _asInt(json['reasoning']),
+      cost: cost is Map ? _asDouble(cost['total']) : 0,
+    );
+  }
+
+  bool get isEmpty =>
+      input == 0 &&
+      output == 0 &&
+      cacheRead == 0 &&
+      cacheWrite == 0 &&
+      totalTokens == 0;
+
+  /// Anything the model produced for this response, thinking included.
+  int get produced => output;
+
+  PiUsage operator +(PiUsage other) => PiUsage(
+        input: input + other.input,
+        output: output + other.output,
+        cacheRead: cacheRead + other.cacheRead,
+        cacheWrite: cacheWrite + other.cacheWrite,
+        totalTokens: totalTokens + other.totalTokens,
+        reasoning: reasoning + other.reasoning,
+        cost: cost + other.cost,
+      );
+
+  @override
+  bool operator ==(Object other) =>
+      other is PiUsage &&
+      other.input == input &&
+      other.output == output &&
+      other.cacheRead == cacheRead &&
+      other.cacheWrite == cacheWrite &&
+      other.totalTokens == totalTokens &&
+      other.reasoning == reasoning &&
+      other.cost == cost;
+
+  @override
+  int get hashCode =>
+      Object.hash(input, output, cacheRead, cacheWrite, totalTokens, reasoning, cost);
+
+  static int _asInt(dynamic value) =>
+      value is int ? value : int.tryParse(value?.toString() ?? '') ?? 0;
+  static double _asDouble(dynamic value) =>
+      value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '') ?? 0;
+}
+
+/// Session-wide totals from the backend's `get_session_stats` command.
+class PiSessionStats {
+  final PiUsage tokens;
+  final double cost;
+
+  /// Current context-window usage, which Pi omits right after compaction.
+  final int? contextTokens;
+  final int? contextWindow;
+  final double? contextPercent;
+
+  const PiSessionStats({
+    required this.tokens,
+    this.cost = 0,
+    this.contextTokens,
+    this.contextWindow,
+    this.contextPercent,
+  });
+
+  factory PiSessionStats.fromJson(Map<String, dynamic> json) {
+    final context = json['contextUsage'];
+    return PiSessionStats(
+      tokens: PiUsage.fromJson(json['tokens']),
+      cost: json['cost'] is num ? (json['cost'] as num).toDouble() : 0,
+      contextTokens: context is Map ? PiUsage._asInt(context['tokens']) : null,
+      contextWindow:
+          context is Map ? PiUsage._asInt(context['contextWindow']) : null,
+      contextPercent:
+          context is Map ? PiUsage._asDouble(context['percent']) : null,
+    );
+  }
+}
+
 class PiMessage {
   final String id;
   final String role; // 'user' or 'assistant'
   String content;
   final DateTime timestamp;
   final List<PiTool> toolCalls;
+
+  /// Provider-reported usage of a finished assistant response. Null while
+  /// streaming, and for tool results (Pi reports none there).
+  PiUsage? usage;
 
   /// True while Pi is still streaming this reply.
   bool streaming;
@@ -76,6 +198,7 @@ class PiMessage {
     required this.content,
     required this.timestamp,
     List<PiTool>? toolCalls,
+    this.usage,
     this.streaming = false,
   }) : toolCalls = toolCalls ?? [];
 
@@ -103,6 +226,7 @@ class PiMessage {
       toolCalls: (json['toolCalls'] as List<dynamic>?)
           ?.map((e) => PiTool.fromJson(e as Map<String, dynamic>))
           .toList(),
+      usage: json['usage'] == null ? null : PiUsage.fromJson(json['usage']),
     );
   }
 }

@@ -425,7 +425,186 @@ void main() {
 
     viewModel.dispose();
   });
+
+  test('progress reports Pi usage and the tool it is running', () async {
+    final service = QuietPiService();
+    final viewModel = PiViewModel(piService: service);
+
+    service.emit({'type': 'agent_start'});
+    service.emit({
+      'type': 'message_start',
+      'message': {'role': 'assistant', 'content': <Object>[]},
+    });
+    service.emit({
+      'type': 'message_update',
+      'usage': _usage(10, 4, 5870),
+      'assistantMessageEvent': {'type': 'thinking_start', 'contentIndex': 0},
+    });
+    service.emit({
+      'type': 'message_update',
+      'usage': _usage(10, 4, 5870),
+      'assistantMessageEvent': {
+        'type': 'thinking_delta',
+        'delta': 'I should read the file. ',
+      },
+    });
+
+    // The fake service replays frames through a stream, so the view model has
+    // to be given a turn to consume them.
+    await Future<void>.delayed(Duration.zero);
+
+    expect(viewModel.progress.active, isTrue);
+    expect(viewModel.progress.activity, 'thinking',
+        reason: 'reasoning must look like progress, not a frozen chat');
+    expect(viewModel.progress.live.output, 4);
+
+    service.emit({
+      'type': 'tool_execution_start',
+      'toolCallId': 'call_1',
+      'toolName': 'read',
+      'args': {'path': r'C:\Users\chamb\app\src\index.ts'},
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(viewModel.progress.activity, 'read index.ts');
+
+    service.emit({
+      'type': 'tool_execution_update',
+      'toolCallId': 'call_1',
+      'toolName': 'read',
+      'args': const {},
+      'partialResult': {
+        'content': [
+          {'type': 'text', 'text': 'a' * 1200}
+        ]
+      },
+    });
+    service.emit({
+      'type': 'tool_execution_update',
+      'toolCallId': 'call_1',
+      'toolName': 'read',
+      'args': const {},
+      // A tool may replace its partial result instead of extending it: only the
+      // growth counts, so a replaced result is not double-counted.
+      'partialResult': {
+        'content': [
+          {'type': 'text', 'text': 'a' * 1000}
+        ]
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(viewModel.progress.toolOutputChars, 1200,
+        reason: 'a shorter replacement partial result must not shrink the count');
+
+    service.emit({
+      'type': 'message_end',
+      'message': {
+        'role': 'assistant',
+        'content': [
+          {'type': 'text', 'text': 'done'}
+        ],
+        'usage': _usage(10, 224, 5870, reasoning: 168, cost: 0.0085),
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+    expect(viewModel.progress.completed.output, 224);
+
+    service.emit({
+      'type': 'message_end',
+      'message': {
+        'role': 'assistant',
+        'content': [
+          {'type': 'text', 'text': 'index.ts'}
+        ],
+        'usage': _usage(13, 45, 6394, cost: 0.0015),
+      },
+    });
+    await Future<void>.delayed(Duration.zero);
+
+    // Both responses of the run add up: Pi answers once per tool round.
+    expect(viewModel.progress.completed.output, 269);
+    expect(viewModel.progress.producedTokens, 269);
+    expect(viewModel.progress.live, PiUsage.zero);
+
+    service.emit({'type': 'agent_end'});
+    await Future<void>.delayed(Duration.zero);
+    expect(viewModel.progress.active, isFalse,
+        reason: 'the progress line is gone once the run finishes');
+    expect(viewModel.messages.last.usage?.output, 45,
+        reason: 'a finished reply shows what it cost');
+
+    viewModel.dispose();
+  });
+
+  test('progress estimates tokens when the provider reports none while streaming',
+      () async {
+    final service = QuietPiService();
+    final viewModel = PiViewModel(piService: service);
+
+    service.emit({'type': 'agent_start'});
+    service.emit({
+      'type': 'message_start',
+      'message': {'role': 'assistant', 'content': <Object>[]},
+    });
+    // Providers that only report usage at completion send zeros throughout.
+    for (var i = 0; i < 20; i++) {
+      service.emit({
+        'type': 'message_update',
+        'usage': _usage(0, 0, 0),
+        'assistantMessageEvent': {'type': 'thinking_delta', 'delta': 'x' * 20},
+      });
+    }
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(viewModel.progress.live.isEmpty, isTrue);
+    expect(viewModel.progress.estimated, isTrue);
+    expect(viewModel.progress.estimatedTokens, 100,
+        reason: '20 thinking deltas of 20 characters, at ~4 characters per token');
+    expect(viewModel.progress.producedTokens, 100,
+        reason: 'the estimate is what makes the counter move at all');
+
+    service.emit({'type': 'agent_end'});
+    viewModel.dispose();
+  });
+
+  test('PiSessionStats parses the get_session_stats payload', () {
+    final stats = PiSessionStats.fromJson({
+      'tokens': {
+        'input': 50000,
+        'output': 10000,
+        'cacheRead': 40000,
+        'cacheWrite': 5000,
+        'total': 105000,
+      },
+      'cost': 0.45,
+      'contextUsage': {'tokens': 60000, 'contextWindow': 200000, 'percent': 30},
+    });
+
+    expect(stats.tokens.output, 10000);
+    expect(stats.tokens.totalTokens, 105000,
+        reason: 'session totals use "total" where a response usage uses "totalTokens"');
+    expect(stats.cost, closeTo(0.45, 0.0001));
+    expect(stats.contextTokens, 60000);
+    expect(stats.contextPercent, 30);
+
+    // Right after compaction Pi omits the context usage.
+    final withoutContext =
+        PiSessionStats.fromJson({'tokens': {'output': 1}, 'cost': 0});
+    expect(withoutContext.contextTokens, isNull);
+  });
 }
+
+Map<String, dynamic> _usage(int input, int output, int cacheRead,
+        {int reasoning = 0, double cost = 0}) =>
+    {
+      'input': input,
+      'output': output,
+      'cacheRead': cacheRead,
+      'cacheWrite': 0,
+      'totalTokens': input + output + cacheRead,
+      'reasoning': reasoning,
+      'cost': {'total': cost},
+    };
 
 /// FakePiService that never touches the network for the model list.
 class QuietPiService extends FakePiService {

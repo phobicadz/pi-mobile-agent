@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../services/pi_service.dart';
 import '../models/pi_models.dart';
+import '../models/turn_progress.dart';
 
 class PiViewModel extends ChangeNotifier {
   final PiService piService;
@@ -26,6 +27,38 @@ class PiViewModel extends ChangeNotifier {
   /// message has started). The chat shows a "thinking" bubble for exactly this
   /// window, which is otherwise an unresponsive-looking chat.
   bool _awaitingModel = false;
+
+  // --- live progress for the current run ---------------------------------
+  //
+  // Pi reports token usage in two places: on every `message_update` frame
+  // (`usage`, cumulative for the response being streamed) and on the finished
+  // assistant message (`message.usage`). A run answers once per tool round, so
+  // the per-response numbers are summed for the run total.
+
+  /// Usage of the assistant response currently streaming.
+  PiUsage _liveUsage = PiUsage.zero;
+
+  /// Usage of the responses already completed in this run.
+  PiUsage _runUsage = PiUsage.zero;
+
+  /// Characters streamed for the response in flight. Providers that report
+  /// usage only at completion would otherwise show nothing while working.
+  int _responseChars = 0;
+
+  /// Characters of tool output produced in this run - how far a file read or a
+  /// long command has got - which is the progress the user asked to see when Pi
+  /// is reading or writing a file.
+  int _toolOutputChars = 0;
+  final Map<String, int> _toolOutputByCall = {};
+
+  /// Status-line label per tool call, so a `tool_execution_update` that omits
+  /// the arguments does not downgrade `read index.ts` to `read`.
+  final Map<String, String> _toolLabels = {};
+
+  /// Short description of what Pi is doing, shown in the progress line.
+  String _activity = '';
+
+  PiSessionStats? _sessionStats;
 
   /// Bumped whenever the rendered message list changes. The chat list listens
   /// to this instead of the whole view model, so unrelated updates (state
@@ -62,6 +95,25 @@ class PiViewModel extends ChangeNotifier {
   String get userInput => _userInput;
   int get messagesVersion => _messagesVersion;
   bool get awaitingModel => _awaitingModel;
+
+  /// Live view of the run in flight, for the progress line in the input area.
+  TurnProgress get progress {
+    return TurnProgress(
+      active: _isLoading,
+      activity: _activity.isNotEmpty
+          ? _activity
+          : (_awaitingModel ? 'waiting for model' : ''),
+      completed: _runUsage,
+      live: _liveUsage,
+      estimatedTokens: _responseChars ~/ 4,
+      toolOutputChars: _toolOutputChars,
+      contextTokens: _sessionStats?.contextTokens,
+      contextWindow: _sessionStats?.contextWindow,
+      contextPercent: _sessionStats?.contextPercent,
+    );
+  }
+
+  PiSessionStats? get sessionStats => _sessionStats;
   bool get isConnected => piService.isConnected;
 
   void _initialize() {
@@ -132,14 +184,27 @@ class PiViewModel extends ChangeNotifier {
     final data = event.data;
 
     switch (event.type) {
+      case 'agent_start':
+        _resetRunCounters();
+        _isLoading = true;
+        break;
+
       case 'turn_start':
         _awaitingModel = true;
+        _activity = 'waiting for model';
         break;
 
       case 'message_start':
         final message = data['message'];
         if (message is Map<String, dynamic>) {
-          if (message['role'] == 'assistant') _awaitingModel = false;
+          if (message['role'] == 'assistant') {
+            _awaitingModel = false;
+            // Each assistant response starts a fresh usage count; the run total
+            // is kept separately in [_runUsage].
+            _liveUsage = PiUsage.zero;
+            _responseChars = 0;
+            _activity = 'thinking';
+          }
           _addMessage(PiMessage.fromJson(message),
               streaming: message['role'] == 'assistant');
         }
@@ -152,6 +217,14 @@ class PiViewModel extends ChangeNotifier {
       case 'message_end':
         final message = data['message'];
         if (message is Map<String, dynamic>) {
+          // The completed message is the authoritative source of its usage; the
+          // streaming frames only carry counts as far as the provider reported.
+          final usage = PiUsage.fromJson(message['usage']);
+          if (!usage.isEmpty) {
+            _runUsage = _runUsage + usage;
+            _liveUsage = PiUsage.zero;
+            _responseChars = 0;
+          }
           final text = _textOf(message);
           if (_streamingMessage != null) {
             if (text.isNotEmpty) _streamingMessage!.content = text;
@@ -167,14 +240,37 @@ class PiViewModel extends ChangeNotifier {
         break;
 
       case 'tool_execution_start':
+        final args = _argsOf(data['args']);
+        final toolId = data['toolCallId'] as String? ?? '';
+        final label = _describeTool(
+          data['toolName'] as String? ?? 'tool',
+          args,
+        );
+        _toolLabels[toolId] = label;
+        _activity = label;
         _appendTool(PiTool(
-          id: data['toolCallId'] as String? ?? '',
+          id: toolId,
           name: data['toolName'] as String? ?? 'tool',
-          arguments: (data['args'] as Map<String, dynamic>?) ?? const {},
+          arguments: args,
         ));
         break;
 
+      case 'tool_execution_update':
+        _trackToolOutput(
+          data['toolCallId'] as String?,
+          data['partialResult'],
+          data['toolName'] as String?,
+          _argsOf(data['args']),
+        );
+        break;
+
       case 'tool_execution_end':
+        _trackToolOutput(
+          data['toolCallId'] as String?,
+          data['result'],
+          null,
+          const {},
+        );
         _finishTool(
           data['toolCallId'] as String?,
           _resultText(data['result']),
@@ -186,11 +282,22 @@ class PiViewModel extends ChangeNotifier {
         _streamingMessage = null;
         _awaitingModel = false;
         _isLoading = false;
+        _liveUsage = PiUsage.zero; // already counted into [_runUsage]
+        _activity = '';
+        break;
+
+      case 'agent_settled':
+        // Pi has no more automatic work: pull the session totals so the next
+        // run can show real context usage instead of only this run's numbers.
+        _awaitingModel = false;
+        _isLoading = false;
+        _activity = '';
+        unawaited(_refreshSessionStats());
         break;
 
       default:
-        // Other lifecycle events (turn_start/turn_end/agent_start/...) are not
-        // rendered as chat bubbles.
+        // Other lifecycle events (turn_end/...) are not rendered as chat
+        // bubbles.
         return;
     }
 
@@ -198,15 +305,48 @@ class PiViewModel extends ChangeNotifier {
   }
 
   void _handleMessageUpdate(Map<String, dynamic> data) {
+    // Pi attaches the latest cumulative usage of the response being streamed to
+    // every frame. It can stay zero until completion, so the character count is
+    // kept as a fallback estimate.
+    final usage = PiUsage.fromJson(data['usage']);
+    if (!usage.isEmpty) _liveUsage = usage;
+
     final inner = data['assistantMessageEvent'];
     if (inner is! Map<String, dynamic>) return;
 
     switch (inner['type']) {
+      case 'thinking_start':
+        _activity = 'thinking';
+        break;
+
+      case 'thinking_delta':
+        final delta = inner['delta'] as String? ?? '';
+        if (delta.isEmpty) return;
+        // Thinking is not rendered as a bubble, but counting it is what makes
+        // "Pi is working" visible while it reasons.
+        _responseChars += delta.length;
+        _activity = 'thinking';
+        break;
+
+      case 'text_start':
+        _activity = 'writing';
+        break;
+
       case 'text_delta':
         final delta = inner['delta'] as String? ?? '';
         if (delta.isEmpty) return;
+        _responseChars += delta.length;
+        _activity = 'writing';
         _ensureStreamingMessage().content += delta;
         _bumpMessages();
+        break;
+
+      case 'toolcall_start':
+        _activity = 'calling ${inner['toolName'] as String? ?? 'tool'}';
+        break;
+
+      case 'toolcall_delta':
+        _responseChars += (inner['delta'] as String? ?? '').length;
         break;
 
       case 'toolcall_end':
@@ -215,10 +355,94 @@ class PiViewModel extends ChangeNotifier {
           _appendTool(PiTool(
             id: call['id'] as String? ?? '',
             name: call['name'] as String? ?? 'tool',
-            arguments: (call['arguments'] as Map<String, dynamic>?) ?? const {},
+            arguments: _argsOf(call['arguments']),
           ));
         }
         break;
+    }
+  }
+
+  /// Tool arguments, tolerant of any map the frame carries (`const {}`, a
+  /// decoded JSON object, or none at all) instead of assuming one exact type.
+  static Map<String, dynamic> _argsOf(dynamic value) {
+    if (value is Map<String, dynamic>) return value;
+    if (value is Map) return value.cast<String, dynamic>();
+    return const {};
+  }
+
+  void _resetRunCounters() {
+    _liveUsage = PiUsage.zero;
+    _runUsage = PiUsage.zero;
+    _responseChars = 0;
+    _toolOutputChars = 0;
+    _toolOutputByCall.clear();
+    _toolLabels.clear();
+    _activity = '';
+  }
+
+  /// Counts tool output growth per call: `partialResult` is the *latest*
+  /// partial result and a tool may replace it rather than extend it, so only
+  /// the increase is added.
+  void _trackToolOutput(
+    String? toolCallId,
+    dynamic result,
+    String? toolName,
+    Map<String, dynamic> args,
+  ) {
+    final id = toolCallId ?? '';
+    final length = _resultText(result).length;
+    final previous = _toolOutputByCall[id] ?? 0;
+    if (length > previous) {
+      _toolOutputByCall[id] = length;
+      _toolOutputChars += length - previous;
+    }
+    if (toolName == null) return;
+    final label = _describeTool(toolName, args);
+    if (label == toolName && _toolLabels[id] != null) {
+      // The update repeated no arguments: keep what the start frame reported.
+      _activity = _toolLabels[id]!;
+    } else {
+      _toolLabels[id] = label;
+      _activity = label;
+    }
+  }
+
+  /// `read package.json`, `bash npm test`, `grep formatTokens`.
+  ///
+  /// Paths are shortened to the file name: the app bar already shows the
+  /// working directory, and an absolute path would push the token counters off
+  /// a phone-width status line.
+  static String _describeTool(String name, Map<String, dynamic> args) {
+    const pathKeys = ['path', 'filePath', 'file', 'notebook_path'];
+    const textKeys = ['command', 'pattern', 'query'];
+    String? target;
+    for (final key in pathKeys) {
+      final value = args[key];
+      if (value is String && value.isNotEmpty) {
+        target = value.replaceAll(r'\', '/').split('/').last;
+        break;
+      }
+    }
+    if (target == null) {
+      for (final key in textKeys) {
+        final value = args[key];
+        if (value is String && value.isNotEmpty) {
+          target = value;
+          break;
+        }
+      }
+    }
+    var text = target ?? '';
+    if (text.length > 48) text = '${text.substring(0, 45)}…';
+    return text.isEmpty ? name : '$name $text';
+  }
+
+  Future<void> _refreshSessionStats() async {
+    try {
+      _sessionStats = await piService.getSessionStats();
+    } catch (_) {
+      // A backend without get_session_stats simply means the progress line
+      // shows this run's numbers only.
     }
   }
 
@@ -338,6 +562,7 @@ class PiViewModel extends ChangeNotifier {
     _isLoading = true;
     _awaitingModel = true;
     _error = null;
+    _resetRunCounters();
     _messages.add(PiMessage(
       id: 'user-${DateTime.now().microsecondsSinceEpoch}',
       role: 'user',

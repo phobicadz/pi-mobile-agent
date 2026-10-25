@@ -5,6 +5,7 @@ import '../providers/pi_view_model.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
 import '../widgets/model_selector.dart';
+import '../widgets/turn_progress.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -277,6 +278,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: SafeArea(
                   child: Column(
                     children: [
+                      // What Pi is doing right now and how many tokens it has
+                      // used - gone as soon as the run finishes.
+                      const TurnProgressBar(),
+
                       // Model selector
                       const ModelSelector(),
                       const SizedBox(height: 12),
