@@ -22,6 +22,11 @@ class PiViewModel extends ChangeNotifier {
   /// The assistant reply currently being streamed, if any.
   PiMessage? _streamingMessage;
 
+  /// A turn is running but Pi has put nothing on screen yet (no assistant
+  /// message has started). The chat shows a "thinking" bubble for exactly this
+  /// window, which is otherwise an unresponsive-looking chat.
+  bool _awaitingModel = false;
+
   /// Bumped whenever the rendered message list changes. The chat list listens
   /// to this instead of the whole view model, so unrelated updates (state
   /// polling, session browsing) cannot make it rebuild.
@@ -56,6 +61,7 @@ class PiViewModel extends ChangeNotifier {
   String? get error => _error;
   String get userInput => _userInput;
   int get messagesVersion => _messagesVersion;
+  bool get awaitingModel => _awaitingModel;
   bool get isConnected => piService.isConnected;
 
   void _initialize() {
@@ -126,9 +132,14 @@ class PiViewModel extends ChangeNotifier {
     final data = event.data;
 
     switch (event.type) {
+      case 'turn_start':
+        _awaitingModel = true;
+        break;
+
       case 'message_start':
         final message = data['message'];
         if (message is Map<String, dynamic>) {
+          if (message['role'] == 'assistant') _awaitingModel = false;
           _addMessage(PiMessage.fromJson(message),
               streaming: message['role'] == 'assistant');
         }
@@ -172,6 +183,7 @@ class PiViewModel extends ChangeNotifier {
 
       case 'agent_end':
         _streamingMessage = null;
+        _awaitingModel = false;
         _isLoading = false;
         break;
 
@@ -211,6 +223,7 @@ class PiViewModel extends ChangeNotifier {
 
   PiMessage _ensureStreamingMessage() {
     if (_streamingMessage != null) return _streamingMessage!;
+    _awaitingModel = false; // real content exists now; the bubble shows it
     final message = PiMessage(
       id: 'assistant-${DateTime.now().microsecondsSinceEpoch}',
       role: 'assistant',
@@ -318,6 +331,7 @@ class PiViewModel extends ChangeNotifier {
 
     _userInput = '';
     _isLoading = true;
+    _awaitingModel = true;
     _error = null;
     _messages.add(PiMessage(
       id: 'user-${DateTime.now().microsecondsSinceEpoch}',
@@ -334,6 +348,7 @@ class PiViewModel extends ChangeNotifier {
     } catch (e) {
       _error = 'Error: $e';
       _isLoading = false;
+      _awaitingModel = false;
       _notifyNow();
     }
   }
@@ -476,6 +491,7 @@ class PiViewModel extends ChangeNotifier {
   }
 
   Future<void> abortCurrentTask() async {
+    _awaitingModel = false; // Pi also ends the run, but never leave it stuck
     try {
       await piService.abort();
     } catch (e) {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart' show ScrollCacheExtent;
 import 'package:flutter/scheduler.dart' show SchedulerBinding, SchedulerPhase;
 import 'package:provider/provider.dart';
+import '../models/pi_models.dart';
 import '../providers/pi_view_model.dart';
 import 'chat_bubble.dart';
 
@@ -30,6 +31,7 @@ class ChatListState extends State<ChatList> {
   bool _followLatest = true;
   bool _scrollScheduled = false;
   int _lastVersion = -1;
+  bool _lastThinking = false;
   int _stickAttempts = 0;
 
   /// Bubbles have no fixed height, so maxScrollExtent is only an estimate for
@@ -106,13 +108,17 @@ class ChatListState extends State<ChatList> {
 
   @override
   Widget build(BuildContext context) {
-    return Selector<PiViewModel, int>(
-      selector: (_, viewModel) => viewModel.messagesVersion,
-      builder: (context, version, _) {
-        // Runs only when the message list changes; the bubbles themselves are
-        // cached by ChatBubble, so unchanged ones are not re-rendered.
-        if (version != _lastVersion) {
+    return Selector<PiViewModel, (int, bool)>(
+      selector: (_, viewModel) =>
+          (viewModel.messagesVersion, viewModel.awaitingModel),
+      builder: (context, state, _) {
+        final (version, thinking) = state;
+        // Runs only when the message list changes or the thinking indicator
+        // flips; the bubbles themselves are cached by ChatBubble, so unchanged
+        // ones are not re-rendered.
+        if (version != _lastVersion || thinking != _lastThinking) {
           _lastVersion = version;
+          _lastThinking = thinking;
           _scheduleStick();
         }
 
@@ -124,12 +130,25 @@ class ChatListState extends State<ChatList> {
               controller: _scrollController,
               scrollCacheExtent: _cacheExtent,
               padding: const EdgeInsets.all(16),
-              itemCount: messages.length,
+              itemCount: messages.length + (thinking ? 1 : 0),
               itemBuilder: (context, index) {
-                final message = messages[index];
+                final bubble = index == messages.length
+                    // Not a stored message: exactly the bubble an empty
+                    // streaming reply renders, so the indicator matches Pi's
+                    // own replies instead of inventing its own design.
+                    ? ChatBubble(
+                        message: PiMessage(
+                          id: 'thinking',
+                          role: 'assistant',
+                          content: '',
+                          timestamp: DateTime.now(),
+                          streaming: true,
+                        ),
+                      )
+                    : ChatBubble(message: messages[index]);
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
-                  child: ChatBubble(message: message),
+                  child: bubble,
                 );
               },
             ),
