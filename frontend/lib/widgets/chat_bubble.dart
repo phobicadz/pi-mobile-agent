@@ -18,7 +18,12 @@ class ChatBubble extends StatelessWidget {
     final isAssistant = message.role == 'assistant';
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (message.content.isEmpty && message.toolCalls.isEmpty) {
+    // An assistant reply that has started but has no text yet is Pi thinking.
+    // Keeping it renders the bubble header plus its streaming spinner, which is
+    // the typing indicator; empty finished messages stay hidden.
+    if (message.content.isEmpty &&
+        message.toolCalls.isEmpty &&
+        !message.streaming) {
       return const SizedBox.shrink();
     }
 

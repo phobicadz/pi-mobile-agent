@@ -20,7 +20,9 @@ log() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 log "Backend: install deps + compile TypeScript"
 cd "$ROOT/backend"
-npm install
+# tsc is a devDependency, and NODE_ENV=production (set by the service unit and by
+# this shell) makes npm leave devDependencies out. The build needs it; runtime does not.
+npm install --include=dev
 npm run build
 
 if [[ $SKIP_WEB -eq 0 ]]; then
