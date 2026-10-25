@@ -1,0 +1,57 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "backend: dev server",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": ".",
+          "endsPattern": "Server listening on port"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated" },
+      "detail": "Starts the Node backend with tsx (ws://localhost:3000)"
+    },
+    {
+      "label": "backend: build",
+      "type": "shell",
+      "command": "npm run build",
+      "options": { "cwd": "${workspaceFolder}/backend" },
+      "group": "build"
+    },
+    {
+      "label": "frontend: pub get",
+      "type": "shell",
+      "command": "flutter pub get",
+      "options": { "cwd": "${workspaceFolder}/frontend" }
+    },
+    {
+      "label": "frontend: build web",
+      "type": "shell",
+      "command": "flutter build web",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "group": "build"
+    },
+    {
+      "label": "frontend: analyze",
+      "type": "shell",
+      "command": "flutter analyze",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "group": "none",
+      "problemMatcher": []
+    },
+    {
+      "label": "frontend: test",
+      "type": "shell",
+      "command": "flutter test",
+      "options": { "cwd": "${workspaceFolder}/frontend" },
+      "group": "test"
+    }
+  ]
+}

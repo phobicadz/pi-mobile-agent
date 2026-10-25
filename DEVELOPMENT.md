@@ -123,6 +123,21 @@ flutter run
 flutter run -d web-server
 ```
 
+### VS Code / VS Code Insiders
+
+`.vscode/launch.json` (and a copy in `frontend/.vscode/` for when the frontend
+folder is opened on its own) provides debug configurations:
+
+- **Flutter: Chrome / Edge (hot reload)** — press `r` for hot reload, `R` for hot restart
+- **Flutter: web-server** — hot *restart* only (`web-server` has no hot reload), binds `0.0.0.0:8080` so a phone on the LAN can open the debug build
+- **Flutter: Windows desktop / iOS** — hot reload, with a `SERVER_URL` picker (`--dart-define` is compile-time, so changing it needs a re-launch, not a reload)
+- **Flutter: attach to running app** — attach to an already-running `flutter run`
+- **Flutter: profile mode** — no hot reload, for performance testing
+
+`.vscode/tasks.json` has `backend: dev server` (tsx, `ws://localhost:3000`),
+`backend: build`, `frontend: pub get`, `frontend: build web`, `frontend: analyze`
+and `frontend: test` (Terminal ▸ Run Task).
+
 ### File Organization
 
 - **Models** - Data classes and types

@@ -1,0 +1,91 @@
+{
+  // Debug configurations for the Flutter frontend (frontend/).
+  // Hot reload: press r in the debug console / Dart-Code command palette.
+  // Hot restart: press R.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter: Chrome (hot reload)",
+      "type": "dart",
+      "request": "launch",
+      "program": "frontend/lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "-d",
+        "chrome"
+      ]
+    },
+    {
+      "name": "Flutter: Edge (hot reload)",
+      "type": "dart",
+      "request": "launch",
+      "program": "frontend/lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "-d",
+        "edge"
+      ]
+    },
+    {
+      "name": "Flutter: web-server (hot restart, reachable from LAN)",
+      "type": "dart",
+      "request": "launch",
+      "program": "frontend/lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "-d",
+        "web-server",
+        "--web-hostname",
+        "0.0.0.0",
+        "--web-port",
+        "8080"
+      ]
+    },
+    {
+      "name": "Flutter: Windows desktop (hot reload)",
+      "type": "dart",
+      "request": "launch",
+      "program": "frontend/lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "-d",
+        "windows",
+        "--dart-define=SERVER_URL=${input:serverUrl}"
+      ]
+    },
+    {
+      "name": "Flutter: iOS device / simulator (hot reload)",
+      "type": "dart",
+      "request": "launch",
+      "program": "frontend/lib/main.dart",
+      "flutterMode": "debug",
+      "args": [
+        "--dart-define=SERVER_URL=${input:serverUrl}"
+      ]
+    },
+    {
+      "name": "Flutter: attach to running app (hot reload)",
+      "type": "dart",
+      "request": "attach"
+    },
+    {
+      "name": "Flutter: profile mode (no hot reload, performance testing)",
+      "type": "dart",
+      "request": "launch",
+      "program": "frontend/lib/main.dart",
+      "flutterMode": "profile"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "serverUrl",
+      "type": "pickString",
+      "description": "Backend WebSocket URL passed as --dart-define=SERVER_URL (compile-time; changing it needs a re-launch, not hot reload)",
+      "options": [
+        "ws://127.0.0.1:3000",
+        "ws://10.0.2.2:3000",
+        "ws://192.168.1.100:3000"
+      ]
+    }
+  ]
+}
