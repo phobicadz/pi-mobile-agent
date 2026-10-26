@@ -22,9 +22,21 @@
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <!--
+    The app draws under the status bar and the home indicator (see
+    lib/utils/browser_viewport.dart, which adds viewport-fit=cover to the
+    viewport tag Flutter Web writes), so an installed app uses the whole screen.
+    "black-translucent" is what lets a standalone app on iOS do the same.
+  -->
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="pi_mobile_agent">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!--
+    No <meta name="viewport"> here on purpose: Flutter Web removes any viewport
+    tag it finds in the page and writes its own. The app extends that one with
+    viewport-fit=cover at startup instead.
+  -->
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>

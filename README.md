@@ -117,6 +117,16 @@ flutter build apk --split-per-abi
 flutter build ios
 ```
 
+### On a phone browser
+
+The web build runs the full length of the screen on iOS and Android. Flutter Web
+writes its own `<meta name="viewport">` without `viewport-fit`, which is what
+stops an iPhone page short of the status bar and the home indicator; the app adds
+`viewport-fit=cover` to that tag at startup and then reads the safe areas back
+out of the browser (`env(safe-area-inset-*)`) and feeds them to `MediaQuery`,
+because Flutter Web reports none of its own. See
+`frontend/lib/utils/browser_viewport.dart` and `test/browser_safe_area_test.dart`.
+
 ## Deploying as a service (Linux)
 
 `deploy/install-service.sh` builds the backend and the Flutter web bundle and

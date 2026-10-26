@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'services/pi_service.dart';
 import 'providers/pi_view_model.dart';
 import 'screens/home_screen.dart';
+import 'utils/browser_viewport.dart';
 
 /// Resolves the backend WebSocket URL for the platform the app runs on.
 ///
@@ -30,13 +31,25 @@ String resolveServerUrl() {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(MyApp(serverUrl: resolveServerUrl()));
+  // On the web the browser owns the safe areas, not Flutter. This is what makes
+  // the page run the full length of a phone screen - see
+  // utils/browser_viewport.dart. On native platforms it reports nothing.
+  final safeArea = useBrowserSafeArea();
+  runApp(MyApp(serverUrl: resolveServerUrl(), safeArea: safeArea));
 }
 
 class MyApp extends StatelessWidget {
   final String serverUrl;
 
-  MyApp({super.key, required this.serverUrl});
+  /// Safe areas the browser was asked to cover, or empty on native platforms
+  /// where the platform already reports them to Flutter.
+  final ValueNotifier<EdgeInsets> safeArea;
+
+  MyApp(
+      {super.key,
+      required this.serverUrl,
+      ValueNotifier<EdgeInsets>? safeArea})
+      : safeArea = safeArea ?? ValueNotifier<EdgeInsets>(EdgeInsets.zero);
 
   @override
   Widget build(BuildContext context) {
@@ -71,6 +84,8 @@ class MyApp extends StatelessWidget {
         ),
         themeMode: ThemeMode.system,
         home: const HomeScreen(),
+        builder: (context, child) =>
+            applyBrowserSafeArea(context, child, safeArea),
       ),
     );
   }
