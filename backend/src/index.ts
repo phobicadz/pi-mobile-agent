@@ -29,6 +29,12 @@ const connectedClients: Set<WebSocket> = new Set();
 let currentCwd =
   (process.env.PI_CWD && resolveExistingDir(process.env.PI_CWD)) || process.cwd();
 
+// The directory the running Pi child was spawned in. Pi's own fallback when a
+// session file records no working directory is its process cwd, which is this -
+// not the mutable currentCwd, which a resume can move. Keeping the two apart is
+// what lets the backend follow Pi instead of guessing.
+let piProcessCwd = currentCwd;
+
 // Directories recently used by Pi sessions, most recent first (deduplicated).
 function recentDirectories(): string[] {
   const seen = new Set<string>();
@@ -47,6 +53,7 @@ async function initializePi(cwd: string = currentCwd) {
   if (piClient) return;
 
   console.log(`Starting Pi in RPC mode (cwd: ${cwd})...`);
+  piProcessCwd = cwd;
 
   // Spawn Pi process in RPC mode
   // On Windows, "pi" resolves to pi.cmd, which spawn() cannot execute without a shell
@@ -298,9 +305,11 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         // the current directory has to follow, or the app keeps showing - and
         // browsing from - the directory from before the resume.
         if ((response.data as any)?.cancelled !== true) {
-          const resumedCwd = sessionCwdOf(params.sessionPath);
-          const resolved = resumedCwd ? resolveExistingDir(resumedCwd) : null;
-          if (resolved) currentCwd = resolved;
+          const recorded = sessionCwdOf(params.sessionPath);
+          const resolved = recorded ? resolveExistingDir(recorded) : null;
+          // Same order Pi uses: the directory recorded in the session file, and
+          // if it records none, the directory the Pi process was started in.
+          currentCwd = resolved ?? piProcessCwd;
           if (response.data) {
             response.data = {
               ...response.data,
