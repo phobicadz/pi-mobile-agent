@@ -7,7 +7,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
-import { listPiSessions } from "./session-store.js";
+import { listPiSessions, sessionCwdOf } from "./session-store.js";
 import { listDirectory, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
 const app = express();
@@ -293,6 +293,22 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         // Loads a saved session into the live Pi runtime; the client then
         // fetches the history with get_messages.
         response = await piClient.switchSession(params.sessionPath);
+        // Pi does not just load the conversation: it rebuilds the session in the
+        // directory that conversation was recorded in. The backend's own idea of
+        // the current directory has to follow, or the app keeps showing - and
+        // browsing from - the directory from before the resume.
+        if ((response.data as any)?.cancelled !== true) {
+          const resumedCwd = sessionCwdOf(params.sessionPath);
+          const resolved = resumedCwd ? resolveExistingDir(resumedCwd) : null;
+          if (resolved) currentCwd = resolved;
+          if (response.data) {
+            response.data = {
+              ...response.data,
+              cwd: currentCwd,
+              cwdDisplay: shrinkHome(currentCwd),
+            };
+          }
+        }
         break;
       default:
         ws.send(

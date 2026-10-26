@@ -100,6 +100,40 @@ function parseSessionFile(filePath: string): PiSessionInfo | null {
 }
 
 /**
+ * The working directory a saved session restores into.
+ *
+ * Pi reads this same field when it opens the file (`SessionManager.open` uses
+ * the header's `cwd`, falling back to its own process cwd), and then runs the
+ * whole session there. Returning undefined means "no recorded cwd", which is
+ * exactly the case where Pi keeps the directory it already had - so the caller
+ * can leave its own idea of the current directory alone.
+ */
+export function sessionCwdOf(sessionPath: string): string | undefined {
+  try {
+    for (const line of readFileSync(sessionPath, "utf8").split("\n")) {
+      if (!line.trim()) continue;
+      let record: any;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (record.type === "session") {
+        return typeof record.cwd === "string" && record.cwd
+          ? record.cwd
+          : undefined;
+      }
+      // The header comes first; stop at the conversation rather than reading a
+      // long session file for one field.
+      if (record.type === "message") return undefined;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * List saved Pi sessions, most recently modified first.
  * When cwd is given, only sessions from that working directory are returned.
  */

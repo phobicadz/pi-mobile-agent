@@ -45,12 +45,21 @@ class FakeDirService extends FakePiService {
   }
 }
 
-/// PiService stub whose resume command returns canned saved history.
+/// PiService stub whose resume command returns canned saved history, and whose
+/// state afterwards is the directory the resumed session was recorded in - which
+/// is what the backend reports after switch_session, because Pi rebuilds the
+/// session there.
 class FakeResumeService extends FakePiService {
   final List<Map<String, dynamic>> history;
+  final String resumedCwd;
+  final _states = StreamController<PiState>.broadcast();
   String? resumedPath;
+  int stateRefreshes = 0;
 
-  FakeResumeService(this.history);
+  FakeResumeService(this.history, {this.resumedCwd = r'\Projects\resumed'});
+
+  @override
+  Stream<PiState> get stateUpdates => _states.stream;
 
   @override
   Future<List<PiModel>> getAvailableModels() async => const [];
@@ -59,6 +68,22 @@ class FakeResumeService extends FakePiService {
   Future<List<Map<String, dynamic>>> resumeSession(String sessionPath) async {
     resumedPath = sessionPath;
     return history;
+  }
+
+  @override
+  Future<PiSessionStats> getSessionStats() async => const PiSessionStats(
+        tokens: PiUsage.zero,
+        contextTokens: 1200,
+        contextWindow: 200000,
+      );
+
+  @override
+  Future<void> refreshState() async {
+    stateRefreshes++;
+    _states.add(PiState.fromJson({
+      'cwd': resumedCwd,
+      'cwdDisplay': '~/resumed',
+    }));
   }
 }
 
@@ -157,7 +182,8 @@ void main() {
     expect(vm.messages[1].role, 'assistant');
     expect(vm.messages[1].content, 'Hello there, friend!');
     expect(vm.messages[1].streaming, isFalse);
-    expect(vm.messages[1].toolCalls.length, 1, reason: 'tool call not duplicated');
+    expect(vm.messages[1].toolCalls.length, 1,
+        reason: 'tool call not duplicated');
     expect(vm.messages[1].toolCalls.single.name, 'bash');
     expect(vm.messages[1].toolCalls.single.result, 'file1\nfile2');
     expect(vm.isLoading, isFalse);
@@ -253,6 +279,32 @@ void main() {
     expect(vm.messages[1].toolCalls.single.name, 'write');
     expect(vm.messages[1].toolCalls.single.result, 'wrote 120 lines');
     expect(vm.isLoading, isFalse);
+
+    vm.dispose();
+  });
+
+  test('resuming a session follows the directory that session was recorded in',
+      () async {
+    final service = FakeResumeService(const []);
+    final vm = PiViewModel(piService: service);
+
+    // A settled run first, so there are per-session counters that must not
+    // survive switching to a different session.
+    service.emit({'type': 'agent_settled', 'aborted': false});
+    await pumpEventQueue();
+    expect(vm.sessionStats, isNotNull);
+
+    await vm.resumeSession(r'\Projects\resumed\session.jsonl');
+    await pumpEventQueue();
+
+    expect(service.stateRefreshes, greaterThan(0),
+        reason:
+            'the app has to re-read the backend state after a session switch: '
+            'the working directory is not something Pi reports in a chat event');
+    expect(vm.workingDirectory, r'\Projects\resumed');
+    expect(vm.workingDirectoryDisplay, '~/resumed');
+    expect(vm.sessionStats, isNull,
+        reason: 'token totals belong to the session that was just left');
 
     vm.dispose();
   });
@@ -496,7 +548,8 @@ void main() {
     });
     await Future<void>.delayed(Duration.zero);
     expect(viewModel.progress.toolOutputChars, 1200,
-        reason: 'a shorter replacement partial result must not shrink the count');
+        reason:
+            'a shorter replacement partial result must not shrink the count');
 
     service.emit({
       'type': 'message_end',
@@ -538,7 +591,8 @@ void main() {
     viewModel.dispose();
   });
 
-  test('progress estimates tokens when the provider reports none while streaming',
+  test(
+      'progress estimates tokens when the provider reports none while streaming',
       () async {
     final service = QuietPiService();
     final viewModel = PiViewModel(piService: service);
@@ -562,7 +616,8 @@ void main() {
     expect(viewModel.progress.live.isEmpty, isTrue);
     expect(viewModel.progress.estimated, isTrue);
     expect(viewModel.progress.estimatedTokens, 100,
-        reason: '20 thinking deltas of 20 characters, at ~4 characters per token');
+        reason:
+            '20 thinking deltas of 20 characters, at ~4 characters per token');
     expect(viewModel.progress.producedTokens, 100,
         reason: 'the estimate is what makes the counter move at all');
 
@@ -585,14 +640,17 @@ void main() {
 
     expect(stats.tokens.output, 10000);
     expect(stats.tokens.totalTokens, 105000,
-        reason: 'session totals use "total" where a response usage uses "totalTokens"');
+        reason:
+            'session totals use "total" where a response usage uses "totalTokens"');
     expect(stats.cost, closeTo(0.45, 0.0001));
     expect(stats.contextTokens, 60000);
     expect(stats.contextPercent, 30);
 
     // Right after compaction Pi omits the context usage.
-    final withoutContext =
-        PiSessionStats.fromJson({'tokens': {'output': 1}, 'cost': 0});
+    final withoutContext = PiSessionStats.fromJson({
+      'tokens': {'output': 1},
+      'cost': 0
+    });
     expect(withoutContext.contextTokens, isNull);
   });
 }

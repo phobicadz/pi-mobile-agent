@@ -36,8 +36,8 @@ bool _copyThroughDom(String text) {
     if (body == null || !body.isA<JSObject>()) return false;
     final bodyElement = body as JSObject;
 
-    final textarea = doc.callMethod<JSObject>(
-        'createElement'.toJS, 'textarea'.toJS);
+    final textarea =
+        doc.callMethod<JSObject>('createElement'.toJS, 'textarea'.toJS);
     textarea['value'] = text.toJS;
     final style = textarea['style'];
     if (style != null && style.isA<JSObject>()) {

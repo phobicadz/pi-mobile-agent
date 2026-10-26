@@ -400,7 +400,14 @@ class PiViewModel extends ChangeNotifier {
   /// writing one, a terminal for a command, a magnifier for a search.
   static ActivityKind _kindForTool(String name) {
     const readers = {'read', 'ls', 'list_dir', 'view', 'open', 'tail'};
-    const writers = {'write', 'edit', 'multiedit', 'create', 'patch', 'apply_patch'};
+    const writers = {
+      'write',
+      'edit',
+      'multiedit',
+      'create',
+      'patch',
+      'apply_patch'
+    };
     const commands = {'bash', 'shell', 'exec', 'run', 'process'};
     const searches = {'grep', 'find', 'glob', 'ripgrep', 'ast_grep'};
     const network = {'web_fetch', 'fetch', 'web_search', 'browser'};
@@ -642,6 +649,14 @@ class PiViewModel extends ChangeNotifier {
     try {
       final history = await piService.resumeSession(sessionPath);
       _loadHistory(history);
+      // Pi restores the session in the directory that conversation was recorded
+      // in, with its own model and its own token totals. Everything the progress
+      // line shows belongs to the session being left behind, so drop it and ask
+      // the backend what is live now - otherwise the app bar keeps reporting the
+      // working directory from before the resume.
+      _resetRunCounters();
+      _sessionStats = null;
+      await piService.refreshState();
       _isLoading = false;
       _notifyNow();
     } catch (e) {

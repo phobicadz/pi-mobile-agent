@@ -25,14 +25,14 @@ class PiState {
   factory PiState.fromJson(Map<String, dynamic> json) {
     // The backend reports the model as an object; only its id is needed here.
     final model = json['model'];
-    final modelId = model is Map
-        ? model['id'] as String?
-        : model as String?;
+    final modelId = model is Map ? model['id'] as String? : model as String?;
 
     return PiState(
       currentModel: modelId,
       messageCount: json['messageCount'] as int?,
-      isProcessing: json['isStreaming'] as bool? ?? json['isProcessing'] as bool? ?? false,
+      isProcessing: json['isStreaming'] as bool? ??
+          json['isProcessing'] as bool? ??
+          false,
       systemPrompt: json['systemPrompt'] as String?,
       cwd: json['cwd'] as String?,
       cwdDisplay: json['cwdDisplay'] as String?,
@@ -137,13 +137,14 @@ class PiUsage {
       other.cost == cost;
 
   @override
-  int get hashCode =>
-      Object.hash(input, output, cacheRead, cacheWrite, totalTokens, reasoning, cost);
+  int get hashCode => Object.hash(
+      input, output, cacheRead, cacheWrite, totalTokens, reasoning, cost);
 
   static int _asInt(dynamic value) =>
       value is int ? value : int.tryParse(value?.toString() ?? '') ?? 0;
-  static double _asDouble(dynamic value) =>
-      value is num ? value.toDouble() : double.tryParse(value?.toString() ?? '') ?? 0;
+  static double _asDouble(dynamic value) => value is num
+      ? value.toDouble()
+      : double.tryParse(value?.toString() ?? '') ?? 0;
 }
 
 /// Session-wide totals from the backend's `get_session_stats` command.

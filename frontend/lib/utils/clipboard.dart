@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import 'clipboard_native.dart'
-    if (dart.library.js_interop) 'clipboard_web.dart' as impl;
+import 'clipboard_native.dart' if (dart.library.js_interop) 'clipboard_web.dart'
+    as impl;
 
 /// Outcome of a copy attempt. Reported rather than thrown: a copy button has to
 /// be able to say what happened, and on the web the browser may refuse.

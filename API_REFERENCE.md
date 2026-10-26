@@ -295,6 +295,47 @@ response.
 
 ---
 
+### resume_session
+
+Load a saved session into the live Pi runtime - the app's "Resume a session"
+sheet. Session paths come from `list_sessions` (or `GET /api/sessions`).
+
+Pi restores a session **in the directory that conversation was recorded in**, so
+resuming also moves the working directory. The backend follows it: the response
+carries the new `cwd`, and every later `get_state`, `list_dir` and `/health`
+reports it too. Afterwards call `get_messages` for the restored conversation.
+
+**Request:**
+```json
+{
+  "id": "req-8",
+  "command": "resume_session",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-8",
+  "type": "response",
+  "command": "resume_session",
+  "success": true,
+  "data": {
+    "cancelled": false,
+    "cwd": "/home/adam/projects/other",
+    "cwdDisplay": "~/projects/other"
+  }
+}
+```
+
+`cancelled: true` means an extension vetoed the switch (`session_before_switch`)
+and nothing moved. If the directory the session was recorded in no longer exists,
+Pi refuses the resume and the error names both the missing directory and the one
+still in use.
+
+---
+
 ## Streaming events
 
 The backend forwards every Pi record to all connected clients as

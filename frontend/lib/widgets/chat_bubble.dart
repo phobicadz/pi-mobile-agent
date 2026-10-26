@@ -49,12 +49,12 @@ class ChatBubble extends StatelessWidget {
     final accentColor = isAssistant
         ? (isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00697A))
         : (isDark ? const Color(0xFF64B5F6) : const Color(0xFF0B4D8C));
-    final toolColor = isDark ? const Color(0xFFFFB74D) : const Color(0xFF8A5A00);
+    final toolColor =
+        isDark ? const Color(0xFFFFB74D) : const Color(0xFF8A5A00);
     final toolResultColor =
         isDark ? const Color(0xFF9CCC65) : const Color(0xFF2E6B12);
-    final toolCardColor = isDark
-        ? const Color(0xFF3A3427)
-        : const Color(0xFFFFF6E0);
+    final toolCardColor =
+        isDark ? const Color(0xFF3A3427) : const Color(0xFFFFF6E0);
 
     // Body text is tinted to match its source while staying high contrast
     // against the bubble it is rendered on.
@@ -68,9 +68,9 @@ class ChatBubble extends StatelessWidget {
     // hands back the *same widget instances* and Flutter skips rebuilding those
     // subtrees entirely. Only a message that is still streaming changes.
     final cacheKey = _signatureOf(message, isDark);
-    final body =
-        _BubbleBodyCache.lookup(cacheKey) ?? _buildBody(context, message, bodyColor,
-                toolColor, toolResultColor, toolCardColor, mutedColor, isDark);
+    final body = _BubbleBodyCache.lookup(cacheKey) ??
+        _buildBody(context, message, bodyColor, toolColor, toolResultColor,
+            toolCardColor, mutedColor, isDark);
     _BubbleBodyCache.store(cacheKey, body);
 
     // MediaQuery.sizeOf only depends on the window size, not on the soft
@@ -104,10 +104,8 @@ class ChatBubble extends StatelessWidget {
                 const SizedBox(width: 6),
                 Text(
                   isAssistant ? 'Pi' : 'You',
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelSmall
-                      ?.copyWith(color: accentColor, fontWeight: FontWeight.bold),
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: accentColor, fontWeight: FontWeight.bold),
                 ),
                 // Finished assistant replies carry the usage Pi reported for
                 // them, so each reply shows what it cost.
@@ -171,9 +169,15 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildBody(BuildContext context, PiMessage message,
-      Color bodyColor, Color toolColor, Color toolResultColor,
-      Color toolCardColor, Color mutedColor, bool isDark) {
+  List<Widget> _buildBody(
+      BuildContext context,
+      PiMessage message,
+      Color bodyColor,
+      Color toolColor,
+      Color toolResultColor,
+      Color toolCardColor,
+      Color mutedColor,
+      bool isDark) {
     return [
       if (message.content.isNotEmpty)
         _buildContent(context, message.content, bodyColor, isDark),
@@ -209,8 +213,8 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(BuildContext context, String text, Color textColor,
-      bool isDark) {
+  Widget _buildContent(
+      BuildContext context, String text, Color textColor, bool isDark) {
     try {
       // Check if it looks like markdown
       if (text.contains('```') || text.contains('#') || text.contains('**')) {
@@ -231,17 +235,11 @@ class ChatBubble extends StatelessWidget {
                   : Colors.black.withAlpha(20),
             ),
             h1: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: textColor),
+                fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
             h2: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: textColor),
+                fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
             h3: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.bold,
-                color: textColor),
+                fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
             strong: TextStyle(
                 fontSize: 14, fontWeight: FontWeight.bold, color: textColor),
             blockquote: TextStyle(fontSize: 14, color: textColor),
@@ -258,12 +256,16 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildTool(BuildContext context, PiTool tool, Color toolColor,
-      Color toolResultColor, Color toolCardColor, Color mutedColor,
+  Widget _buildTool(
+      BuildContext context,
+      PiTool tool,
+      Color toolColor,
+      Color toolResultColor,
+      Color toolCardColor,
+      Color mutedColor,
       bool isDark) {
-    final args = tool.arguments.entries
-        .map((e) => '${e.key}: ${e.value}')
-        .join(', ');
+    final args =
+        tool.arguments.entries.map((e) => '${e.key}: ${e.value}').join(', ');
 
     return Container(
       margin: const EdgeInsets.only(top: 6),
