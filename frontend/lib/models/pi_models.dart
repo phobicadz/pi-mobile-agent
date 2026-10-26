@@ -229,6 +229,15 @@ class PiMessage {
       usage: json['usage'] == null ? null : PiUsage.fromJson(json['usage']),
     );
   }
+
+  /// What the copy button puts on the clipboard: the reply text, or - for a
+  /// bubble that is only tool calls - the calls and their results, which is the
+  /// text that bubble actually shows.
+  String get copyableText {
+    if (content.isNotEmpty) return content;
+    if (toolCalls.isEmpty) return '';
+    return toolCalls.map((tool) => tool.toPlainText()).join('\n\n');
+  }
 }
 
 class PiTool {
@@ -251,6 +260,17 @@ class PiTool {
       arguments: json['arguments'] as Map<String, dynamic>? ?? {},
       result: json['result'] as String?,
     );
+  }
+
+  /// The call as plain text, for copying a bubble that is only tool calls:
+  /// `bash(command: ls)` followed by what it printed.
+  String toPlainText() {
+    final args = arguments.entries
+        .map((entry) => '${entry.key}: ${entry.value}')
+        .join(', ');
+    final header = args.isEmpty ? name : '$name($args)';
+    final body = result ?? '';
+    return body.isEmpty ? header : '$header\n$body';
   }
 }
 

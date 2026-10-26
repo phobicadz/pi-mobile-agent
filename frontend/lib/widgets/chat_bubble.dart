@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 import '../models/pi_models.dart';
+import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
 import '../utils/format.dart';
+import '../utils/toast.dart';
 
 class ChatBubble extends StatelessWidget {
   final PiMessage message;
@@ -76,6 +78,10 @@ class ChatBubble extends StatelessWidget {
     // focus on a phone.
     final maxBubbleWidth = MediaQuery.sizeOf(context).width * 0.8;
 
+    // A bubble with nothing to say has nothing to copy: no button then.
+    final copyText = message.copyableText;
+    final canCopy = copyText.isNotEmpty;
+
     return Align(
       alignment: isAssistant ? Alignment.centerLeft : Alignment.centerRight,
       child: Container(
@@ -118,6 +124,25 @@ class ChatBubble extends StatelessWidget {
                         ?.copyWith(color: mutedColor),
                   ),
                 ],
+                // Copy button in the top-right corner of the bubble. The header
+                // row already spans the whole bubble, so a Spacer puts it in the
+                // corner without changing any widths, and being in the row's own
+                // band it can never cover the reply.
+                if (canCopy) ...[
+                  const Spacer(),
+                  IconButton(
+                    icon: const Icon(Icons.content_copy, size: 15),
+                    color: mutedColor,
+                    tooltip: 'Copy',
+                    visualDensity: VisualDensity.compact,
+                    style: IconButton.styleFrom(
+                      minimumSize: const Size(26, 26),
+                      padding: const EdgeInsets.all(4),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: () => _copyMessage(context, copyText),
+                  ),
+                ],
               ],
             ),
             const SizedBox(height: 6),
@@ -129,6 +154,20 @@ class ChatBubble extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  /// Copies the whole reply - Markdown source, code fences included, which is
+  /// what you want when you copy from a chat - and says whether it worked.
+  Future<void> _copyMessage(BuildContext context, String text) async {
+    final outcome = await copyToClipboard(text);
+    if (!context.mounted) return;
+    showToast(
+      context,
+      outcome == CopyOutcome.copied
+          ? 'Copied to clipboard'
+          : 'Copy failed - this browser blocked it',
+      isError: outcome != CopyOutcome.copied,
     );
   }
 
