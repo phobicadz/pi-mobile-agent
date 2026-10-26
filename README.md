@@ -209,7 +209,7 @@ Events stream continuously as the Pi agent works:
 ### Current
 - ✅ Send prompts to Pi agent
 - ✅ Real-time streaming of agent responses
-- ✅ Live progress line while Pi works: what it is doing (`thinking`, `read index.ts`, `bash npm test`), how many tokens the run has produced so far, how much tool output it has read, and the context-window percentage — with finished replies showing the usage they cost
+- ✅ Live status line inside the reply Pi is currently writing: an icon that matches what it is doing (brain while reasoning, pad and pen while writing text, book while reading a file, edit icon while writing one, terminal for a command, magnifier for a search), plus how many tokens the run has produced so far, how much tool output it has read, and the context-window percentage — finished replies show the usage they cost
 - ✅ View all events/messages
 - ✅ Model selection
 - ✅ Abort running tasks

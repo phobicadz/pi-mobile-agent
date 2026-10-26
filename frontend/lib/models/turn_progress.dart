@@ -1,14 +1,34 @@
 import '../models/pi_models.dart';
 
-/// Snapshot of what Pi is doing right now, for the progress line.
+/// What Pi is doing, as far as the app can tell. Drives the icon in the status
+/// line: a brain while it reasons, a pad and pen while it writes text, a book
+/// while it reads a file, a terminal while it runs a command.
+enum ActivityKind {
+  idle,
+  waiting,
+  thinking,
+  writing,
+  callingTool,
+  reading,
+  editingFile,
+  runningCommand,
+  searching,
+  browsing,
+  tool,
+}
+
+/// Snapshot of the run in flight, shown in the streaming chat bubble.
 ///
-/// Immutable and with value equality so a Selector can rebuild the progress bar
-/// only when a number actually changed, not on every stream frame.
+/// Immutable with value equality so the status line rebuilds only when a value
+/// actually changed - not on every streamed token.
 class TurnProgress {
   /// True while a run is in flight (or has just produced usage to show).
   final bool active;
 
-  /// Human-readable activity: `thinking`, `read package.json`, `bash npm test`.
+  /// Which icon to show.
+  final ActivityKind kind;
+
+  /// Label next to it: `thinking`, `read index.ts`, `bash npm test`.
   final String activity;
 
   /// Usage of the responses that already completed in this run. Pi runs one
@@ -34,6 +54,7 @@ class TurnProgress {
 
   const TurnProgress({
     required this.active,
+    required this.kind,
     required this.activity,
     required this.completed,
     required this.live,
@@ -46,6 +67,7 @@ class TurnProgress {
 
   static const TurnProgress idle = TurnProgress(
     active: false,
+    kind: ActivityKind.idle,
     activity: '',
     completed: PiUsage.zero,
     live: PiUsage.zero,
@@ -71,6 +93,7 @@ class TurnProgress {
   bool operator ==(Object other) =>
       other is TurnProgress &&
       other.active == active &&
+      other.kind == kind &&
       other.activity == activity &&
       other.completed == completed &&
       other.live == live &&
@@ -83,6 +106,7 @@ class TurnProgress {
   @override
   int get hashCode => Object.hash(
         active,
+        kind,
         activity,
         completed,
         live,

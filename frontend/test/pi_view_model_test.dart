@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/models/turn_progress.dart';
 import 'package:pi_mobile_agent/widgets/chat_bubble.dart';
 
 /// PiService stub that replays canned backend frames instead of a WebSocket.
@@ -454,6 +455,7 @@ void main() {
     await Future<void>.delayed(Duration.zero);
 
     expect(viewModel.progress.active, isTrue);
+    expect(viewModel.progress.kind, ActivityKind.thinking);
     expect(viewModel.progress.activity, 'thinking',
         reason: 'reasoning must look like progress, not a frozen chat');
     expect(viewModel.progress.live.output, 4);
@@ -465,6 +467,7 @@ void main() {
       'args': {'path': r'C:\Users\chamb\app\src\index.ts'},
     });
     await Future<void>.delayed(Duration.zero);
+    expect(viewModel.progress.kind, ActivityKind.reading);
     expect(viewModel.progress.activity, 'read index.ts');
 
     service.emit({

@@ -7,6 +7,7 @@ import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:pi_mobile_agent/widgets/chat_bubble.dart';
 import 'package:pi_mobile_agent/widgets/chat_list.dart';
+import 'package:pi_mobile_agent/widgets/turn_status.dart';
 import 'package:provider/provider.dart';
 
 /// Replays canned backend frames without a WebSocket or any HTTP.
@@ -96,7 +97,7 @@ void main() {
     expect(viewModel.messages.length, 1, reason: 'only the prompt is stored');
     expect(find.byType(ChatBubble), findsNWidgets(2),
         reason: 'the prompt plus a thinking indicator');
-    expect(find.byType(CircularProgressIndicator), findsWidgets,
+    expect(find.byType(TurnStatusRow), findsOneWidget,
         reason: 'the indicator has to look alive, not like a stuck bubble');
 
     // Pi opens the assistant reply before any text arrives: the real bubble
@@ -113,14 +114,14 @@ void main() {
     // ~17ms after the prompt, then the model thinks for seconds before emitting
     // thinking_delta / text_delta. The reply bubble must show an indicator
     // throughout, and thinking deltas must not clear it.
-    expect(find.byType(CircularProgressIndicator), findsWidgets,
+    expect(find.byType(TurnStatusRow), findsOneWidget,
         reason: 'the empty reply bubble is what the user stares at while thinking');
     service.emit({
       'type': 'message_update',
       'assistantMessageEvent': {'type': 'thinking_delta', 'delta': 'hmm'},
     });
     await tester.pump(const Duration(milliseconds: 120));
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(find.byType(TurnStatusRow), findsOneWidget);
 
     service.emit({
       'type': 'message_update',
@@ -152,7 +153,7 @@ void main() {
     service.emit({'type': 'turn_start'});
     await tester.pump(const Duration(milliseconds: 120));
     expect(viewModel.awaitingModel, isTrue);
-    expect(find.byType(CircularProgressIndicator), findsWidgets);
+    expect(find.byType(TurnStatusRow), findsOneWidget);
 
     service.emit({'type': 'agent_end', 'messages': []});
     await tester.pump(const Duration(milliseconds: 120));
@@ -160,7 +161,7 @@ void main() {
     expect(viewModel.messages.length, 2);
     expect(find.byType(ChatBubble), findsNWidgets(2),
         reason: 'prompt + finished reply, indicator gone');
-    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.byType(TurnStatusRow), findsNothing);
 
     viewModel.dispose();
   });

@@ -51,11 +51,12 @@ class PiViewModel extends ChangeNotifier {
   int _toolOutputChars = 0;
   final Map<String, int> _toolOutputByCall = {};
 
-  /// Status-line label per tool call, so a `tool_execution_update` that omits
-  /// the arguments does not downgrade `read index.ts` to `read`.
-  final Map<String, String> _toolLabels = {};
+  /// Status-line label and icon per tool call, so a `tool_execution_update`
+  /// that omits the arguments does not downgrade `read index.ts` to `read`.
+  final Map<String, (String, ActivityKind)> _toolLabels = {};
 
-  /// Short description of what Pi is doing, shown in the progress line.
+  /// What the status line shows: the icon kind and its label.
+  ActivityKind _activityKind = ActivityKind.idle;
   String _activity = '';
 
   PiSessionStats? _sessionStats;
@@ -96,13 +97,15 @@ class PiViewModel extends ChangeNotifier {
   int get messagesVersion => _messagesVersion;
   bool get awaitingModel => _awaitingModel;
 
-  /// Live view of the run in flight, for the progress line in the input area.
+  /// Live view of the run in flight, shown in the streaming chat bubble.
   TurnProgress get progress {
+    final waiting = _activity.isEmpty && _awaitingModel;
     return TurnProgress(
       active: _isLoading,
+      kind: waiting ? ActivityKind.waiting : _activityKind,
       activity: _activity.isNotEmpty
           ? _activity
-          : (_awaitingModel ? 'waiting for model' : ''),
+          : (waiting ? 'waiting for model' : ''),
       completed: _runUsage,
       live: _liveUsage,
       estimatedTokens: _responseChars ~/ 4,
@@ -191,7 +194,7 @@ class PiViewModel extends ChangeNotifier {
 
       case 'turn_start':
         _awaitingModel = true;
-        _activity = 'waiting for model';
+        _setActivity(ActivityKind.waiting, 'waiting for model');
         break;
 
       case 'message_start':
@@ -203,7 +206,7 @@ class PiViewModel extends ChangeNotifier {
             // is kept separately in [_runUsage].
             _liveUsage = PiUsage.zero;
             _responseChars = 0;
-            _activity = 'thinking';
+            _setActivity(ActivityKind.thinking, 'thinking');
           }
           _addMessage(PiMessage.fromJson(message),
               streaming: message['role'] == 'assistant');
@@ -228,8 +231,14 @@ class PiViewModel extends ChangeNotifier {
           final text = _textOf(message);
           if (_streamingMessage != null) {
             if (text.isNotEmpty) _streamingMessage!.content = text;
+            // The bubble Pi just finished writing carries its own usage, so the
+            // reply shows what it cost.
+            if (!usage.isEmpty) _streamingMessage!.usage = usage;
             _streamingMessage!.streaming = false;
             _streamingMessage = null;
+            // The bubble Pi finished writing must stop showing the live status
+            // line, so the chat list has to rebuild it.
+            _bumpMessages();
           } else {
             final parsed = PiMessage.fromJson(message);
             if (parsed.content.isNotEmpty || parsed.toolCalls.isNotEmpty) {
@@ -242,12 +251,11 @@ class PiViewModel extends ChangeNotifier {
       case 'tool_execution_start':
         final args = _argsOf(data['args']);
         final toolId = data['toolCallId'] as String? ?? '';
-        final label = _describeTool(
-          data['toolName'] as String? ?? 'tool',
-          args,
-        );
-        _toolLabels[toolId] = label;
-        _activity = label;
+        final toolName = data['toolName'] as String? ?? 'tool';
+        final label = _describeTool(toolName, args);
+        final kind = _kindForTool(toolName);
+        _toolLabels[toolId] = (label, kind);
+        _setActivity(kind, label);
         _appendTool(PiTool(
           id: toolId,
           name: data['toolName'] as String? ?? 'tool',
@@ -280,10 +288,11 @@ class PiViewModel extends ChangeNotifier {
       case 'agent_end':
         _streamingMessage?.streaming = false; // never leave a spinner spinning
         _streamingMessage = null;
+        _bumpMessages();
         _awaitingModel = false;
         _isLoading = false;
         _liveUsage = PiUsage.zero; // already counted into [_runUsage]
-        _activity = '';
+        _setActivity(ActivityKind.idle, '');
         break;
 
       case 'agent_settled':
@@ -291,7 +300,7 @@ class PiViewModel extends ChangeNotifier {
         // run can show real context usage instead of only this run's numbers.
         _awaitingModel = false;
         _isLoading = false;
-        _activity = '';
+        _setActivity(ActivityKind.idle, '');
         unawaited(_refreshSessionStats());
         break;
 
@@ -316,7 +325,7 @@ class PiViewModel extends ChangeNotifier {
 
     switch (inner['type']) {
       case 'thinking_start':
-        _activity = 'thinking';
+        _setActivity(ActivityKind.thinking, 'thinking');
         break;
 
       case 'thinking_delta':
@@ -325,24 +334,25 @@ class PiViewModel extends ChangeNotifier {
         // Thinking is not rendered as a bubble, but counting it is what makes
         // "Pi is working" visible while it reasons.
         _responseChars += delta.length;
-        _activity = 'thinking';
+        _setActivity(ActivityKind.thinking, 'thinking');
         break;
 
       case 'text_start':
-        _activity = 'writing';
+        _setActivity(ActivityKind.writing, 'writing');
         break;
 
       case 'text_delta':
         final delta = inner['delta'] as String? ?? '';
         if (delta.isEmpty) return;
         _responseChars += delta.length;
-        _activity = 'writing';
+        _setActivity(ActivityKind.writing, 'writing');
         _ensureStreamingMessage().content += delta;
         _bumpMessages();
         break;
 
       case 'toolcall_start':
-        _activity = 'calling ${inner['toolName'] as String? ?? 'tool'}';
+        final toolName = inner['toolName'] as String? ?? 'tool';
+        _setActivity(_kindForTool(toolName), 'calling $toolName');
         break;
 
       case 'toolcall_delta':
@@ -378,6 +388,28 @@ class PiViewModel extends ChangeNotifier {
     _toolOutputByCall.clear();
     _toolLabels.clear();
     _activity = '';
+    _activityKind = ActivityKind.idle;
+  }
+
+  void _setActivity(ActivityKind kind, String text) {
+    _activityKind = kind;
+    _activity = text;
+  }
+
+  /// Picks the icon for a tool: a book for reading a file, a pad and pen for
+  /// writing one, a terminal for a command, a magnifier for a search.
+  static ActivityKind _kindForTool(String name) {
+    const readers = {'read', 'ls', 'list_dir', 'view', 'open', 'tail'};
+    const writers = {'write', 'edit', 'multiedit', 'create', 'patch', 'apply_patch'};
+    const commands = {'bash', 'shell', 'exec', 'run', 'process'};
+    const searches = {'grep', 'find', 'glob', 'ripgrep', 'ast_grep'};
+    const network = {'web_fetch', 'fetch', 'web_search', 'browser'};
+    if (readers.contains(name)) return ActivityKind.reading;
+    if (writers.contains(name)) return ActivityKind.editingFile;
+    if (commands.contains(name)) return ActivityKind.runningCommand;
+    if (searches.contains(name)) return ActivityKind.searching;
+    if (network.contains(name)) return ActivityKind.browsing;
+    return ActivityKind.tool;
   }
 
   /// Counts tool output growth per call: `partialResult` is the *latest*
@@ -400,10 +432,11 @@ class PiViewModel extends ChangeNotifier {
     final label = _describeTool(toolName, args);
     if (label == toolName && _toolLabels[id] != null) {
       // The update repeated no arguments: keep what the start frame reported.
-      _activity = _toolLabels[id]!;
+      _setActivity(_toolLabels[id]!.$2, _toolLabels[id]!.$1);
     } else {
-      _toolLabels[id] = label;
-      _activity = label;
+      final kind = _kindForTool(toolName);
+      _toolLabels[id] = (label, kind);
+      _setActivity(kind, label);
     }
   }
 

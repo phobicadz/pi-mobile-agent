@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -5,7 +6,6 @@ import '../providers/pi_view_model.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
 import '../widgets/model_selector.dart';
-import '../widgets/turn_progress.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -18,6 +18,38 @@ class _HomeScreenState extends State<HomeScreen> {
   final _chatKey = GlobalKey<ChatListState>();
   final _inputController = TextEditingController();
 
+  /// PageUp / PageDown are desktop keys - a physical keyboard, or a desktop
+  /// browser (on the web `defaultTargetPlatform` reports the browser's OS).
+  static bool get _pageKeysExpected => const {
+        TargetPlatform.windows,
+        TargetPlatform.macOS,
+        TargetPlatform.linux,
+      }.contains(defaultTargetPlatform);
+
+  @override
+  void initState() {
+    super.initState();
+    if (_pageKeysExpected) {
+      // A Focus/Shortcuts wrapper would only work while something inside the
+      // app holds focus, and the prompt field swallows PageUp/PageDown as text
+      // navigation - the chat would scroll some of the time and not others.
+      // A keyboard handler makes the two keys mean the same thing everywhere.
+      HardwareKeyboard.instance.addHandler(_scrollChatWithPageKeys);
+    }
+  }
+
+  /// Scrolls the chat a viewport per press. Handing the key back as unhandled
+  /// when the chat cannot move keeps the browser's own paging behaviour.
+  bool _scrollChatWithPageKeys(KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) return false;
+    final forward = event.logicalKey == LogicalKeyboardKey.pageDown;
+    if (!forward && event.logicalKey != LogicalKeyboardKey.pageUp) return false;
+    // While the sessions sheet or the folder browser is open, the chat behind it
+    // must not move.
+    if (!(ModalRoute.of(context)?.isActive ?? true)) return false;
+    return _chatKey.currentState?.scrollByPage(forward: forward) ?? false;
+  }
+
   void _sendPrompt(PiViewModel viewModel) {
     if (viewModel.isLoading || _inputController.text.trim().isEmpty) return;
     viewModel.submitPrompt(_inputController.text);
@@ -28,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_scrollChatWithPageKeys);
     _inputController.dispose();
     super.dispose();
   }
@@ -193,13 +226,13 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => _showSessionPicker(context),
           ),
           Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(6),
             child: Center(
               child: Selector<PiViewModel, bool>(
                 selector: (_, viewModel) => viewModel.isConnected,
                 builder: (context, isConnected, _) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: isConnected ? Colors.green : Colors.red,
                       borderRadius: BorderRadius.circular(20),
@@ -278,10 +311,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: SafeArea(
                   child: Column(
                     children: [
-                      // What Pi is doing right now and how many tokens it has
-                      // used - gone as soon as the run finishes.
-                      const TurnProgressBar(),
-
                       // Model selector
                       const ModelSelector(),
                       const SizedBox(height: 12),

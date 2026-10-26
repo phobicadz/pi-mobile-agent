@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
 import '../providers/pi_view_model.dart';
 import 'chat_bubble.dart';
+import 'turn_status.dart';
 
 /// The chat scroll view, kept separate from the rest of the screen.
 ///
@@ -85,6 +86,35 @@ class ChatListState extends State<ChatList> {
     _stickNow();
   }
 
+  /// Scroll one viewport up or down: the PageUp / PageDown keys on a desktop
+  /// keyboard.
+  ///
+  /// Returns whether anything moved. At the very top or bottom there is nothing
+  /// to do, and the caller should not claim the key for nothing.
+  ///
+  /// A page is 90% of the viewport, not 100%: keeping a sliver of the previous
+  /// screen is what makes paging readable instead of jumping somewhere
+  /// unrecognisable. Landing back at the bottom resumes following the live chat.
+  bool scrollByPage({required bool forward}) {
+    if (!mounted || !_scrollController.hasClients) return false;
+
+    final position = _scrollController.position;
+    final page = position.viewportDimension * 0.9;
+    final target = (position.pixels + (forward ? page : -page))
+        .clamp(position.minScrollExtent, position.maxScrollExtent);
+    if ((target - position.pixels).abs() < 1) return false;
+
+    // Jump, not animate: paging is a repeated key, and an animation would be
+    // interrupted by the next press and look like sliding mush.
+    position.jumpTo(target);
+
+    final following =
+        position.maxScrollExtent - position.pixels <= _stickTolerance;
+    if (following != _followLatest) setState(() => _followLatest = following);
+    if (following) _stickAttempts = 0;
+    return true;
+  }
+
   void _stickNow() {
     if (!mounted || !_scrollController.hasClients) return;
     final position = _scrollController.position;
@@ -144,8 +174,16 @@ class ChatListState extends State<ChatList> {
                           timestamp: DateTime.now(),
                           streaming: true,
                         ),
+                        status: const TurnStatusRow(),
                       )
-                    : ChatBubble(message: messages[index]);
+                    : ChatBubble(
+                        message: messages[index],
+                        // The reply Pi is still writing carries the live status;
+                        // finished ones carry nothing, and stay cached.
+                        status: messages[index].streaming
+                            ? const TurnStatusRow()
+                            : null,
+                      );
                 return Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: bubble,

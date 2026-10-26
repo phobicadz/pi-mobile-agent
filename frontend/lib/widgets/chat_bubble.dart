@@ -10,9 +10,15 @@ import '../utils/format.dart';
 class ChatBubble extends StatelessWidget {
   final PiMessage message;
 
+  /// Live busy indicator for a reply that is still streaming. Only
+  /// [ChatList] decides which bubble gets one, so a finished bubble never
+  /// subscribes to the stream at all.
+  final Widget? status;
+
   const ChatBubble({
     super.key,
     required this.message,
+    this.status,
   });
   @override
   Widget build(BuildContext context) {
@@ -116,18 +122,10 @@ class ChatBubble extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             ...body,
-            if (message.streaming)
-              Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: mutedColor,
-                  ),
-                ),
-              ),
+            // The one busy indicator: passed in by ChatList for the bubble that
+            // is actually streaming (or for the "thinking" placeholder), so
+            // there is never a second spinner anywhere else.
+            if (status != null) status!,
           ],
         ),
       ),
