@@ -168,6 +168,15 @@ class _HomeScreenState extends State<HomeScreen> {
     return time.toLocal().toString().split(' ').first;
   }
 
+  /// Start a fresh chat in the directory Pi is already working in. Nothing is
+  /// deleted: the conversation being left behind is still listed under
+  /// "Resume a previous session".
+  Future<void> _startNewSession(BuildContext context) async {
+    await context.read<PiViewModel>().startNewSession();
+    _inputController.clear();
+    _chatKey.currentState?.stickToBottom();
+  }
+
   void _showDirectoryBrowser(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -191,6 +200,20 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        leading: Selector<PiViewModel, bool>(
+          // Disabled while a run is in flight: starting over mid-run would
+          // throw away a reply that is still being written.
+          selector: (_, viewModel) => viewModel.isLoading,
+          builder: (context, busy, _) {
+            return IconButton(
+              icon: const Icon(Icons.add),
+              tooltip: busy
+                  ? 'Finish or stop the current run first'
+                  : 'New session in this directory',
+              onPressed: busy ? null : () => _startNewSession(context),
+            );
+          },
+        ),
         title: const Text('Pi Agent'),
         centerTitle: true,
         elevation: 0,

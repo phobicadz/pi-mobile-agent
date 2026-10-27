@@ -87,6 +87,36 @@ class FakeResumeService extends FakePiService {
   }
 }
 
+/// PiService stub for the "new session in this directory" command: it records
+/// the call, keeps reporting the same working directory afterwards (which is
+/// what the backend does - Pi starts a fresh conversation where it already
+/// works), and can be made to fail like a backend rejection.
+class FakeNewSessionService extends FakePiService {
+  final String cwd;
+  final _states = StreamController<PiState>.broadcast();
+  int newSessionCalls = 0;
+  bool failNewSession = false;
+
+  FakeNewSessionService({this.cwd = r'\Projects\current'});
+
+  @override
+  Stream<PiState> get stateUpdates => _states.stream;
+
+  @override
+  Future<List<PiModel>> getAvailableModels() async => const [];
+
+  @override
+  Future<void> newSession() async {
+    newSessionCalls++;
+    if (failNewSession) throw Exception('Pi client not initialized');
+  }
+
+  @override
+  Future<void> refreshState() async {
+    _states.add(PiState.fromJson({'cwd': cwd, 'cwdDisplay': '~'}));
+  }
+}
+
 void main() {
   test('Pi event stream becomes chat messages', () async {
     final service = FakePiService();
@@ -305,6 +335,70 @@ void main() {
     expect(vm.workingDirectoryDisplay, '~/resumed');
     expect(vm.sessionStats, isNull,
         reason: 'token totals belong to the session that was just left');
+
+    vm.dispose();
+  });
+
+  test('startNewSession empties the chat and keeps the working directory',
+      () async {
+    const home = r'\Projects\current';
+    final service = FakeNewSessionService(cwd: home);
+    final vm = PiViewModel(piService: service);
+
+    // The app bar learns the directory from the state stream, the same way it
+    // does against the real backend.
+    await service.refreshState();
+    await pumpEventQueue();
+    expect(vm.workingDirectory, home);
+
+    service.emit({
+      'type': 'message_end',
+      'message': {
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': 'hi'}
+        ],
+      },
+    });
+    await pumpEventQueue();
+    expect(vm.messages, isNotEmpty);
+
+    final ok = await vm.startNewSession();
+    await pumpEventQueue();
+
+    expect(ok, isTrue);
+    expect(service.newSessionCalls, 1);
+    expect(vm.messages, isEmpty, reason: 'a new chat starts empty');
+    expect(vm.workingDirectory, home,
+        reason: 'the new session stays in the directory being worked in');
+    expect(vm.error, isNull);
+
+    vm.dispose();
+  });
+
+  test('startNewSession reports a backend rejection and keeps the chat',
+      () async {
+    final service = FakeNewSessionService()..failNewSession = true;
+    final vm = PiViewModel(piService: service);
+
+    service.emit({
+      'type': 'message_end',
+      'message': {
+        'role': 'user',
+        'content': [
+          {'type': 'text', 'text': 'keep this'}
+        ],
+      },
+    });
+    await pumpEventQueue();
+
+    final ok = await vm.startNewSession();
+    await pumpEventQueue();
+
+    expect(ok, isFalse);
+    expect(vm.error, contains('new session'));
+    expect(vm.messages, isNotEmpty,
+        reason: 'a failed command must not throw away the visible conversation');
 
     vm.dispose();
   });

@@ -336,6 +336,43 @@ still in use.
 
 ---
 
+### new_session
+
+Start a fresh Pi conversation in the directory Pi is already working in - the
+app's **`+` button in the top-left of the app bar** (like `/new` in the Pi TUI).
+The working directory, model and settings are untouched; only the conversation
+restarts. The session being left behind stays on disk and is still listed by
+`list_sessions`.
+
+**Request:**
+```json
+{
+  "id": "req-9",
+  "command": "new_session"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-9",
+  "type": "response",
+  "command": "new_session",
+  "success": true,
+  "data": {
+    "cancelled": false,
+    "cwd": "/home/adam/projects/app",
+    "cwdDisplay": "~/projects/app"
+  }
+}
+```
+
+`cancelled: true` means an extension vetoed the switch (`session_before_switch`)
+and the current conversation is still live. The app clears its chat only when the
+command succeeds, and the button is disabled while a run is in flight.
+
+---
+
 ## Streaming events
 
 The backend forwards every Pi record to all connected clients as

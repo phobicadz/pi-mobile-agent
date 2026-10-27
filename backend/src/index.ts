@@ -260,6 +260,19 @@ async function handleClientMessage(ws: WebSocket, message: any) {
       case "prompt":
         response = await piClient.prompt(params.message);
         break;
+      case "new_session":
+        // A fresh conversation in the directory Pi is already working in. The
+        // session being left behind stays on disk, so the session picker can
+        // still load it.
+        response = await piClient.newSession();
+        if (response.data) {
+          response.data = {
+            ...response.data,
+            cwd: currentCwd,
+            cwdDisplay: shrinkHome(currentCwd),
+          };
+        }
+        break;
       case "get_state":
         response = await piClient.getState();
         // Pi's RPC state has no cwd; the app needs it to show the current

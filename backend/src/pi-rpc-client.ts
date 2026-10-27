@@ -138,6 +138,17 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
+  /**
+   * Start a fresh session. Pi keeps the directory it is already running in, so
+   * this is "new chat in this folder"; the session being left behind stays on
+   * disk and is reachable through switch_session.
+   */
+  async newSession(): Promise<RpcResponse> {
+    return this.sendCommand({
+      type: "new_session",
+    });
+  }
+
   async switchSession(sessionPath: string): Promise<RpcResponse> {
     return this.sendCommand({
       type: "switch_session",

@@ -227,6 +227,7 @@ Events stream continuously as the Pi agent works:
 - ✅ Auto-reconnection
 - ✅ Error handling and display
 - ✅ Works on iOS, Android, Web
+- ✅ Start a new session in the current directory (`+` button in the top-left of the app bar, like `/new` in the Pi TUI): the chat empties, the directory and model stay as they are, and the conversation you left is still resumable
 - ✅ Resume previous sessions (history button, like `/resume` in the Pi TUI)
 - ✅ Browse and set the working directory (folder button in the app bar): browse drives, folders, and recently used directories; setting a new directory restarts Pi with a fresh session in that directory
 

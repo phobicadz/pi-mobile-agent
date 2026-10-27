@@ -640,6 +640,35 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// Start a fresh session in the current working directory (like `/new` in the
+  /// TUI): the chat is emptied, the directory, model and token counters are left
+  /// as they are. The conversation being replaced stays on disk and is still
+  /// reachable from the session picker.
+  Future<bool> startNewSession() async {
+    _error = null;
+    _notifyNow();
+    try {
+      await piService.newSession();
+      _messages.clear();
+      _streamingMessage = null;
+      _bumpMessages();
+      _resetRunCounters();
+      _awaitingModel = false;
+      _isLoading = false;
+      _sessionStats = null;
+      _userInput = '';
+      // Ask the backend what is live now: the new session has its own token
+      // totals, and a fresh chat must not keep showing the old context bar.
+      await piService.refreshState();
+      _notifyNow();
+      return true;
+    } catch (e) {
+      _error = 'Failed to start a new session: $e';
+      _notifyNow();
+      return false;
+    }
+  }
+
   /// Resume a previous Pi session (like `/resume` in the TUI): load it into
   /// the live runtime and restore its conversation in the chat.
   Future<void> resumeSession(String sessionPath) async {

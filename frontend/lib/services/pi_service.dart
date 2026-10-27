@@ -204,6 +204,16 @@ class PiService {
         .toList();
   }
 
+  /// Start a fresh Pi session in the directory Pi is already working in (like
+  /// `/new` in the TUI). The conversation being left behind stays on disk, so
+  /// the session picker can load it again.
+  Future<void> newSession() async {
+    final response = await _sendCommand('new_session');
+    if (response['success'] == false) {
+      throw Exception('New session failed: ${response['error']}');
+    }
+  }
+
   /// Loads a saved session into the live Pi runtime. Returns the restored
   /// conversation history so the UI can hydrate it.
   Future<List<Map<String, dynamic>>> resumeSession(String sessionPath) async {
