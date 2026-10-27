@@ -298,15 +298,20 @@ class _HomeScreenState extends State<HomeScreen> {
           // The prompt panel's own padding, safe areas included. The bottom
           // inset is the bottom padding, not a base for adding more: on a phone
           // the browser's home-indicator band already is the gap between the
-          // field and the edge of the screen, so the old fixed 16 on top of it
-          // left an empty band under the field - 50px on a notched iPhone that
-          // only needs 34.
+          // field and the edge of the screen, so the fixed 16 this panel used to
+          // add on top of it just left an empty band under the field - 50px on a
+          // notched iPhone that needs 34.
+          //
+          // The band is a swipe zone rather than a dead zone, so the composer
+          // reaches 12px into it: the field's bottom edge stays off the very
+          // bottom of the screen, where a tap would compete with the home
+          // gesture, but it is not pushed a whole band above it.
           final insets = MediaQuery.of(context).padding;
           final panelPadding = EdgeInsets.only(
             left: math.max(16.0, insets.left),
             right: math.max(16.0, insets.right),
             top: 16,
-            bottom: math.max(10.0, insets.bottom),
+            bottom: math.max(10.0, insets.bottom - 12),
           );
 
           return Column(

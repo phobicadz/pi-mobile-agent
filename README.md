@@ -130,7 +130,9 @@ because Flutter Web reports none of its own. See
 The prompt panel treats those insets as its bottom padding instead of as a base
 for adding more on top: the home-indicator band already is the space the field
 needs above the edge of the screen, so a fixed margin stacked on it just left an
-empty band under the composer on every phone with one
+empty band under the composer on every phone with one. The composer reaches 12px
+*into* that band - it is a swipe zone, not a dead zone - while keeping 10px clear
+of the bottom edge, where a tap would compete with the home gesture
 (`test/input_safe_area_test.dart`).
 
 ## Deploying as a service (Linux)

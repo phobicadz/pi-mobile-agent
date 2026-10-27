@@ -56,20 +56,20 @@ Future<void> pumpApp(WidgetTester tester, EdgeInsets insets,
 }
 
 void main() {
-  testWidgets('the prompt panel reserves the home-indicator band and nothing more',
-      (tester) async {
+  testWidgets('the prompt panel dips into the home-indicator band', (tester) async {
     await pumpApp(tester, notchedInsets);
 
     final field = tester.getRect(find.byType(TextField));
     final screen = tester.getRect(find.byType(Scaffold));
 
-    // The field ends exactly where the home indicator begins. Stacking a fixed
-    // 16 on top of the inset - what the app used to do - made this 50 and left
-    // an empty band under the field on every phone with a home indicator.
-    expect(screen.bottom - field.bottom, notchedInsets.bottom);
+    // The band is a swipe zone, not a dead zone: the field reaches 12px into it
+    // instead of being pushed a whole 34px band above it. It was 50 while a
+    // fixed 16 was stacked on top of the inset.
+    expect(screen.bottom - field.bottom, notchedInsets.bottom - 12);
 
-    // The panel itself still runs flush to the bottom edge of the screen, so
-    // what was reclaimed goes to the chat instead of to a gap.
+    // ...and it still keeps 10px clear of the very bottom, where a tap would
+    // compete with the home gesture.
+    expect(screen.bottom - field.bottom, greaterThanOrEqualTo(10));
     expect(field.bottom, lessThan(screen.bottom));
   });
 
@@ -80,14 +80,13 @@ void main() {
     final field = tester.getRect(find.byType(TextField));
     final screen = tester.getRect(find.byType(Scaffold));
 
+    // The dip is off the inset, so with no inset there is nothing to dip into:
+    // the floor is what the field keeps.
     expect(screen.bottom - field.bottom, 10);
   });
 
   testWidgets('side insets in landscape are not crowded out by the fixed padding',
       (tester) async {
-    tester.view.physicalSize = const Size(844, 390);
-    addTearDown(tester.view.reset);
-
     await pumpApp(
       tester,
       const EdgeInsets.only(top: 0, left: 47, right: 47, bottom: 21),
@@ -95,8 +94,11 @@ void main() {
     );
 
     final field = tester.getRect(find.byType(TextField));
+    final screen = tester.getRect(find.byType(Scaffold));
     expect(field.left, greaterThanOrEqualTo(47),
         reason: 'the notch side inset has to beat the 16 the panel uses otherwise');
     expect(field.right, lessThanOrEqualTo(844 - 47));
+    // A 21px inset dips to 9, which is under the floor: the floor wins.
+    expect(screen.bottom - field.bottom, 10);
   });
 }
