@@ -373,6 +373,46 @@ command succeeds, and the button is disabled while a run is in flight.
 
 ---
 
+### client_metrics
+
+Sent by the app on load, after the page settles, and on every viewport change. The
+backend only logs it — it is the two sides of a phone layout problem in one line:
+what Flutter's view thinks it is (`flutter`) and what the browser laid the page
+out as (`browser`), including the size of Flutter's own host element and the safe
+areas the app is laying out under.
+
+```json
+{
+  "id": "req-10",
+  "command": "client_metrics",
+  "metrics": {
+    "n": 1,
+    "flutter": {"physical": "393x754", "logical": "393.0x754.0", "dpr": 1},
+    "browser": {
+      "inner": "393x720", "client": "393x720", "visual": "393x720 offsetTop 0 scale 1",
+      "screen": "393x852", "dpr": 1,
+      "viewportMeta": "width=device-width, initial-scale=1.0, maximum-scale=5.0, viewport-fit=cover",
+      "hostRect": "top 0 bottom 720 width 393 height 720",
+      "cssInsets": "48/0/34/0"
+    },
+    "appliedInsets": {"top": 48, "right": 0, "bottom": 34, "left": 0}
+  }
+}
+```
+
+Read them off the service log:
+
+```bash
+journalctl --user -u pi-mobile-agent | grep client_metrics
+```
+
+When `flutter` and `browser` disagree, the app is drawing and hit-testing at one
+size while the page is laid out at another: a gap at the bottom of the screen,
+and taps that land somewhere other than the widget they were aimed at. A reply is
+sent only so the app can retire the request; nothing acts on it.
+
+---
+
 ## Streaming events
 
 The backend forwards every Pi record to all connected clients as

@@ -117,6 +117,24 @@ class FakeNewSessionService extends FakePiService {
   }
 }
 
+/// PiService stub that reports the backend's state on demand, the way the real
+/// one does on connect and after a run settles.
+class FakeStateService extends FakePiService {
+  final _states = StreamController<PiState>.broadcast();
+
+  @override
+  Stream<PiState> get stateUpdates => _states.stream;
+
+  @override
+  Future<List<PiModel>> getAvailableModels() async => const [];
+
+  @override
+  Future<void> sendPrompt(String message) async {}
+
+  void report({required bool streaming}) =>
+      _states.add(PiState.fromJson({'isStreaming': streaming, 'cwd': r'C:\work'}));
+}
+
 void main() {
   test('Pi event stream becomes chat messages', () async {
     final service = FakePiService();
@@ -399,6 +417,38 @@ void main() {
     expect(vm.error, contains('new session'));
     expect(vm.messages, isNotEmpty,
         reason: 'a failed command must not throw away the visible conversation');
+
+    vm.dispose();
+  });
+
+  test('a run left in flight by a dropped socket is cleared by the next state',
+      () async {
+    final service = FakeStateService();
+    final vm = PiViewModel(piService: service);
+
+    await vm.submitPrompt('half a run');
+    expect(vm.isLoading, isTrue);
+
+    // The backend restarted mid-run: no agent_end is coming for this one, but
+    // the app does get a state when it reconnects.
+    service.report(streaming: false);
+    await pumpEventQueue();
+
+    expect(vm.isLoading, isFalse,
+        reason: 'otherwise the send, stop and new-session buttons stay disabled '
+            'for the rest of the session');
+    expect(vm.awaitingModel, isFalse);
+    expect(vm.progress.active, isFalse);
+
+    // A run that really is streaming is not cleared by it.
+    await vm.submitPrompt('still going');
+    service.report(streaming: true);
+    await pumpEventQueue();
+    expect(vm.isLoading, isTrue);
+
+    service.report(streaming: false);
+    await pumpEventQueue();
+    expect(vm.isLoading, isFalse);
 
     vm.dispose();
   });

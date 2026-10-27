@@ -132,6 +132,19 @@ class PiViewModel extends ChangeNotifier {
         _workingDirectory = state.cwd;
         _workingDirectoryDisplay = state.cwdDisplay ?? state.cwd;
       }
+      // Pi's state is the only thing that can say whether a run is still in
+      // flight after the socket dropped mid-run - a backend restart, a phone
+      // sleeping, a walk out of wifi range. The agent_end that would have
+      // cleared it never arrives, and without this the send, stop and new-session
+      // buttons stay disabled for the rest of the session.
+      if (!state.isProcessing && _isLoading) {
+        _isLoading = false;
+        _awaitingModel = false;
+        _streamingMessage?.streaming = false;
+        _streamingMessage = null;
+        _bumpMessages();
+        _setActivity(ActivityKind.idle, '');
+      }
       // The first state fetch can beat the initial model load (the socket may
       // not be open yet), so retry once we know the backend is reachable.
       if (_availableModels.isEmpty) {
