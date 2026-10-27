@@ -310,7 +310,13 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         response = await piClient.abort();
         break;
       case "set_model":
-        response = await piClient.setModel(params.model);
+        // Pi names a model by provider and model id. Sending a bare "model"
+        // string is what made this command answer "Model not found:
+        // undefined/undefined" for as long as the app has had a model picker.
+        if (!params.provider || !params.modelId) {
+          throw new Error("set_model needs a provider and a modelId");
+        }
+        response = await piClient.setModel(params.provider, params.modelId);
         break;
       case "get_available_models":
         response = await piClient.getAvailableModels();

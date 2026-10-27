@@ -1,5 +1,10 @@
 class PiState {
   final String? currentModel;
+
+  /// The provider the current model belongs to. Pi's `set_model` takes a provider
+  /// and a model id rather than one string, and this is also what labels the
+  /// model Pi is actually using when it is not among the ones Pi offered.
+  final String? currentModelProvider;
   final int? messageCount;
   final bool isProcessing;
   final String? systemPrompt;
@@ -14,6 +19,7 @@ class PiState {
 
   PiState({
     this.currentModel,
+    this.currentModelProvider,
     this.messageCount,
     this.isProcessing = false,
     this.systemPrompt,
@@ -23,12 +29,14 @@ class PiState {
   });
 
   factory PiState.fromJson(Map<String, dynamic> json) {
-    // The backend reports the model as an object; only its id is needed here.
+    // The backend reports the model as an object; its id and provider together
+    // are what name a model to Pi.
     final model = json['model'];
     final modelId = model is Map ? model['id'] as String? : model as String?;
 
     return PiState(
       currentModel: modelId,
+      currentModelProvider: model is Map ? model['provider'] as String? : null,
       messageCount: json['messageCount'] as int?,
       isProcessing: json['isStreaming'] as bool? ??
           json['isProcessing'] as bool? ??
@@ -42,6 +50,7 @@ class PiState {
 
   PiState copyWith({
     String? currentModel,
+    String? currentModelProvider,
     int? messageCount,
     bool? isProcessing,
     String? systemPrompt,
@@ -50,6 +59,7 @@ class PiState {
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
+      currentModelProvider: currentModelProvider ?? this.currentModelProvider,
       messageCount: messageCount ?? this.messageCount,
       isProcessing: isProcessing ?? this.isProcessing,
       systemPrompt: systemPrompt ?? this.systemPrompt,
@@ -190,6 +200,16 @@ class PiMessage {
   /// streaming, and for tool results (Pi reports none there).
   PiUsage? usage;
 
+  /// Why Pi ended this response, as the provider reported it: `stop`, `error`,
+  /// `length`, `aborted`… Null while it is still streaming.
+  String? stopReason;
+
+  /// The provider's own description of a failed response - a model the account
+  /// cannot use, an expired login, a context window full. Without it the app
+  /// shows a failed run as silence: the assistant message exists, has no text,
+  /// and a model that never answers looks like a model that is not answering.
+  String? errorMessage;
+
   /// True while Pi is still streaming this reply.
   bool streaming;
 
@@ -200,6 +220,8 @@ class PiMessage {
     required this.timestamp,
     List<PiTool>? toolCalls,
     this.usage,
+    this.stopReason,
+    this.errorMessage,
     this.streaming = false,
   }) : toolCalls = toolCalls ?? [];
 
@@ -228,6 +250,8 @@ class PiMessage {
           ?.map((e) => PiTool.fromJson(e as Map<String, dynamic>))
           .toList(),
       usage: json['usage'] == null ? null : PiUsage.fromJson(json['usage']),
+      stopReason: json['stopReason'] as String?,
+      errorMessage: json['errorMessage'] as String?,
     );
   }
 

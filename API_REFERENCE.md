@@ -169,12 +169,29 @@ Get message history from the current session.
 
 Change the AI model being used.
 
+Pi names a model by **provider and model id** - one string is not enough, and a
+request without both answers `Model not found: undefined/undefined`.
+
 **Request:**
 ```json
 {
   "id": "req-5",
   "command": "set_model",
-  "model": "claude-3-opus-20250219"
+  "provider": "anthropic",
+  "modelId": "claude-3-opus-20250219"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-5",
+  "type": "response",
+  "command": "set_model",
+  "success": true,
+  "data": {
+    "model": "claude-3-opus-20250219"
+  }
 }
 ```
 

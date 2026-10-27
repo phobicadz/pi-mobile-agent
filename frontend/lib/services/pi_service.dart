@@ -40,7 +40,7 @@ class PiService {
   Future<void> connect() async {
     try {
       _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
-      
+
       _channel.stream.listen(
         _handleMessage,
         onError: _handleError,
@@ -74,7 +74,7 @@ class PiService {
         // Handle Pi session events
         final event = PiEvent.fromJson(data);
         _messageController.add(event);
-        
+
         // Update state when the agent finishes a turn (message_update fires
         // many times per reply, so polling on it would flood the backend).
         if (data['event']['type'] == 'agent_settled') {
@@ -115,7 +115,7 @@ class PiService {
 
     const uuid = Uuid();
     final id = uuid.v4();
-    
+
     final completer = Completer<Map<String, dynamic>>();
     _pendingRequests[id] = completer;
 
@@ -154,8 +154,13 @@ class PiService {
     await _sendCommand('abort');
   }
 
-  Future<void> setModel(String model) async {
-    await _sendCommand('set_model', params: {'model': model});
+  /// Switch the model Pi answers with. Pi names a model by *provider* and
+  /// *model id* - sending only a bare `model` makes Pi answer
+  /// "Model not found: undefined/undefined", which is why the model picker used
+  /// to look like it did nothing at all.
+  Future<void> setModel(String modelId, String provider) async {
+    await _sendCommand('set_model',
+        params: {'provider': provider, 'modelId': modelId});
   }
 
   Future<List<PiModel>> getAvailableModels() async {
@@ -165,7 +170,7 @@ class PiService {
     final models = (data['models'] as List<dynamic>? ?? [])
         .map((e) => PiModel.fromJson(e as Map<String, dynamic>))
         .toList();
-    
+
     return models;
   }
 
@@ -251,7 +256,8 @@ class PiService {
   Future<void> _fetchState() async {
     try {
       final response = await _sendCommand('get_state');
-      final state = PiState.fromJson(unwrapData(response, command: 'get_state'));
+      final state =
+          PiState.fromJson(unwrapData(response, command: 'get_state'));
       _stateController.add(state);
     } catch (e) {
       print('Error fetching state: $e');

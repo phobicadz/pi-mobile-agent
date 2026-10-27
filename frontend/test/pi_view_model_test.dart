@@ -131,8 +131,8 @@ class FakeStateService extends FakePiService {
   @override
   Future<void> sendPrompt(String message) async {}
 
-  void report({required bool streaming}) =>
-      _states.add(PiState.fromJson({'isStreaming': streaming, 'cwd': r'C:\work'}));
+  void report({required bool streaming}) => _states
+      .add(PiState.fromJson({'isStreaming': streaming, 'cwd': r'C:\work'}));
 }
 
 void main() {
@@ -416,7 +416,8 @@ void main() {
     expect(ok, isFalse);
     expect(vm.error, contains('new session'));
     expect(vm.messages, isNotEmpty,
-        reason: 'a failed command must not throw away the visible conversation');
+        reason:
+            'a failed command must not throw away the visible conversation');
 
     vm.dispose();
   });
@@ -435,7 +436,8 @@ void main() {
     await pumpEventQueue();
 
     expect(vm.isLoading, isFalse,
-        reason: 'otherwise the send, stop and new-session buttons stay disabled '
+        reason:
+            'otherwise the send, stop and new-session buttons stay disabled '
             'for the rest of the session');
     expect(vm.awaitingModel, isFalse);
     expect(vm.progress.active, isFalse);
@@ -796,6 +798,80 @@ void main() {
       'cost': 0
     });
     expect(withoutContext.contextTokens, isNull);
+  });
+
+  test(
+    'a model that refuses to answer leaves its reason in the chat, not silence',
+    () async {
+      final service = QuietPiService();
+      final vm = PiViewModel(piService: service);
+
+      // Captured from the live backend with a model the Copilot account does
+      // not have: the assistant message exists, has no text, and says why.
+      service.emit({'type': 'agent_start'});
+      service.emit({
+        'type': 'message_start',
+        'message': {'role': 'assistant', 'content': <dynamic>[]},
+      });
+      service.emit({
+        'type': 'message_end',
+        'message': {
+          'role': 'assistant',
+          'content': <dynamic>[],
+          'stopReason': 'error',
+          'errorMessage':
+              'github-copilot API error (400): The requested model is not '
+                  'available for integrator "vscode-chat".',
+        },
+      });
+      service.emit({'type': 'agent_end', 'messages': []});
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(vm.messages.length, 1,
+          reason: 'the failed reply must not be dropped');
+      expect(vm.messages.single.errorMessage, contains('not available'));
+      expect(vm.messages.single.stopReason, 'error');
+      // A run that failed is a finished run: nothing may stay disabled waiting
+      // for a reply that is never coming.
+      expect(vm.isLoading, isFalse);
+
+      vm.dispose();
+    },
+  );
+
+  testWidgets('the reason a provider gave is readable in the chat',
+      (tester) async {
+    final message = PiMessage(
+      id: 'assistant-1',
+      role: 'assistant',
+      content: '',
+      timestamp: DateTime(2026),
+      stopReason: 'error',
+      errorMessage: 'github-copilot API error (400): model_not_available',
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ListView(children: [ChatBubble(message: message)])),
+    ));
+
+    expect(find.textContaining('model_not_available'), findsOneWidget);
+    // An empty reply with no error still renders nothing at all.
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(
+        body: ListView(children: [
+          ChatBubble(
+              message: PiMessage(
+            id: 'assistant-2',
+            role: 'assistant',
+            content: '',
+            timestamp: DateTime(2026),
+          )),
+        ]),
+      ),
+    ));
+    expect(find.textContaining('model_not_available'), findsNothing);
+    expect(tester.takeException(), isNull);
   });
 }
 

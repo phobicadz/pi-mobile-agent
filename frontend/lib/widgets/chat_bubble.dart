@@ -29,9 +29,11 @@ class ChatBubble extends StatelessWidget {
 
     // An assistant reply that has started but has no text yet is Pi thinking.
     // Keeping it renders the bubble header plus its streaming spinner, which is
-    // the typing indicator; empty finished messages stay hidden.
+    // the typing indicator; empty finished messages stay hidden - unless the
+    // provider reported why it failed, which is the whole content of that reply.
     if (message.content.isEmpty &&
         message.toolCalls.isEmpty &&
+        message.errorMessage == null &&
         !message.streaming) {
       return const SizedBox.shrink();
     }
@@ -179,12 +181,45 @@ class ChatBubble extends StatelessWidget {
       Color mutedColor,
       bool isDark) {
     return [
+      if (message.errorMessage != null)
+        _buildModelError(context, message, isDark),
       if (message.content.isNotEmpty)
         _buildContent(context, message.content, bodyColor, isDark),
       for (final tool in message.toolCalls)
         _buildTool(context, tool, toolColor, toolResultColor, toolCardColor,
             mutedColor, isDark),
     ];
+  }
+
+  /// A response the provider refused. Pi reports why in `errorMessage`, and that
+  /// text is the only thing the run produced - hiding it is what makes a model
+  /// the account cannot use look like a model that is simply not answering.
+  Widget _buildModelError(
+      BuildContext context, PiMessage message, bool isDark) {
+    final color = isDark ? const Color(0xFFFF8A80) : const Color(0xFF7F0000);
+    final detail = message.errorMessage!.trim();
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(Icons.error_outline, size: 18, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: SelectableText(
+              message.stopReason == 'error' || message.stopReason == null
+                  ? detail
+                  : '$detail (${message.stopReason})',
+              style: TextStyle(
+                color: color,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   /// Hash of everything the cached rendering depends on. Content length is
@@ -196,6 +231,8 @@ class ChatBubble extends StatelessWidget {
       isDark,
       message.content.length,
       Object.hashAll(message.content.codeUnits),
+      message.errorMessage,
+      message.stopReason,
       message.toolCalls.length,
       Object.hashAll([
         for (final tool in message.toolCalls)

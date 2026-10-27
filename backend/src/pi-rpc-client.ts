@@ -118,10 +118,11 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
-  async setModel(model: string): Promise<RpcResponse> {
+  async setModel(provider: string, modelId: string): Promise<RpcResponse> {
     return this.sendCommand({
       type: "set_model",
-      model,
+      provider,
+      modelId,
     });
   }
 

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/pi_models.dart';
 import '../providers/pi_view_model.dart';
 
 class ModelSelector extends StatefulWidget {
@@ -20,6 +21,7 @@ class _ModelSelectorState extends State<ModelSelector> {
     return Selector<PiViewModel, String>(
       selector: (_, viewModel) => [
         viewModel.state?.currentModel ?? '',
+        viewModel.state?.currentModelProvider ?? '',
         for (final model in viewModel.availableModels)
           '${model.id}:${model.name}:${model.provider}',
       ].join('|'),
@@ -33,7 +35,46 @@ class _ModelSelectorState extends State<ModelSelector> {
         }
 
         final models = viewModel.availableModels;
-        final currentModel = viewModel.state?.currentModel;
+        final state = viewModel.state;
+        final currentModel = state?.currentModel;
+
+        // Pi can be running a model it never offered - a model its provider
+        // stopped making available, for one, which is exactly the state that
+        // makes every prompt fail. DropdownButton asserts that its value is one
+        // of its items, so a current model missing from the list used to take
+        // the whole input area down with it. Show it, marked as not offered, so
+        // what is live is visible and one tap gets off it.
+        final listed = List<PiModel>.from(models);
+        if (currentModel != null &&
+            !listed.any((model) => model.id == currentModel)) {
+          listed.insert(
+            0,
+            PiModel(
+              id: currentModel,
+              name: '$currentModel (not offered)',
+              provider: state?.currentModelProvider ?? '',
+              available: false,
+            ),
+          );
+        }
+
+        if (listed.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(8),
+            child: Text('Loading models...'),
+          );
+        }
+
+        // A remembered choice that is no longer a choice falls back to what Pi
+        // is actually using.
+        final remembered = _selectedModel;
+        final value =
+            remembered != null && listed.any((model) => model.id == remembered)
+                ? remembered
+                : (currentModel != null &&
+                        listed.any((model) => model.id == currentModel)
+                    ? currentModel
+                    : null);
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -45,13 +86,18 @@ class _ModelSelectorState extends State<ModelSelector> {
             isExpanded: true,
             underline: const SizedBox(),
             hint: const Text('Select a model'),
-            value: _selectedModel ?? currentModel,
-            items: models.map((model) {
+            value: value,
+            items: listed.map((model) {
+              final offered = model.available;
               return DropdownMenuItem(
                 value: model.id,
                 child: Row(
                   children: [
-                    const Icon(Icons.model_training, size: 16),
+                    Icon(
+                      offered ? Icons.model_training : Icons.error_outline,
+                      size: 16,
+                      color: offered ? null : Colors.redAccent,
+                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: Column(
@@ -75,10 +121,17 @@ class _ModelSelectorState extends State<ModelSelector> {
               );
             }).toList(),
             onChanged: (modelId) {
-              if (modelId != null) {
-                setState(() => _selectedModel = modelId);
-                viewModel.selectModel(modelId);
+              if (modelId == null) return;
+              PiModel? chosen;
+              for (final model in listed) {
+                if (model.id == modelId) {
+                  chosen = model;
+                  break;
+                }
               }
+              if (chosen == null) return;
+              setState(() => _selectedModel = modelId);
+              viewModel.selectModel(chosen);
             },
           ),
         );

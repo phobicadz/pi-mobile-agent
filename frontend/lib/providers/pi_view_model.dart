@@ -233,9 +233,11 @@ class PiViewModel extends ChangeNotifier {
       case 'message_end':
         final message = data['message'];
         if (message is Map<String, dynamic>) {
-          // The completed message is the authoritative source of its usage; the
-          // streaming frames only carry counts as far as the provider reported.
-          final usage = PiUsage.fromJson(message['usage']);
+          // The completed message is the authoritative source of its usage, and
+          // of why it ended: a provider that refused the request says so here,
+          // and that reason is the only content the response has.
+          final parsed = PiMessage.fromJson(message);
+          final usage = parsed.usage ?? PiUsage.zero;
           if (!usage.isEmpty) {
             _runUsage = _runUsage + usage;
             _liveUsage = PiUsage.zero;
@@ -247,14 +249,17 @@ class PiViewModel extends ChangeNotifier {
             // The bubble Pi just finished writing carries its own usage, so the
             // reply shows what it cost.
             if (!usage.isEmpty) _streamingMessage!.usage = usage;
+            _streamingMessage!.stopReason = parsed.stopReason;
+            _streamingMessage!.errorMessage = parsed.errorMessage;
             _streamingMessage!.streaming = false;
             _streamingMessage = null;
             // The bubble Pi finished writing must stop showing the live status
             // line, so the chat list has to rebuild it.
             _bumpMessages();
           } else {
-            final parsed = PiMessage.fromJson(message);
-            if (parsed.content.isNotEmpty || parsed.toolCalls.isNotEmpty) {
+            if (parsed.content.isNotEmpty ||
+                parsed.toolCalls.isNotEmpty ||
+                parsed.errorMessage != null) {
               _addMessage(parsed);
             }
           }
@@ -820,12 +825,16 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
-  Future<void> selectModel(String modelId) async {
+  Future<void> selectModel(PiModel model) async {
     try {
       _isLoading = true;
       _notifyNow();
 
-      await piService.setModel(modelId);
+      await piService.setModel(model.id, model.provider);
+      // Read the state back rather than assuming the call worked: it is the only
+      // way to know the model really changed, and it puts the picker back on the
+      // model Pi is actually using.
+      await piService.refreshState();
 
       _isLoading = false;
       _notifyNow();
