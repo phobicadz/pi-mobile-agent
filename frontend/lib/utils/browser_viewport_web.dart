@@ -6,8 +6,7 @@ import 'package:flutter/widgets.dart';
 
 import 'dom_geometry_web.dart';
 
-/// Ask the browser for the whole screen, and reserve exactly the safe areas that
-/// end up inside the app.
+/// Ask the browser for the whole screen, and reserve the safe areas it reports.
 ///
 /// Flutter Web writes its own `<meta name="viewport">` and drops the one in
 /// `web/index.html`, and the one it writes has no `viewport-fit`. On an iPhone
@@ -17,14 +16,20 @@ import 'dom_geometry_web.dart';
 ///
 /// Asking is not the same as getting it, and the app cannot assume it: Flutter
 /// Web reports no safe areas of its own (`MediaQuery.padding` is empty on the
-/// web), so the app has to learn them from the browser - and then check them
-/// against where Flutter's own element actually landed. An installed iOS app
-/// measured through `client_metrics` reported a 47px status-bar inset *and* a
-/// Flutter element starting at y=47: the browser had already kept that area out
-/// of the canvas. Reserving the reported inset on top of that is the same space
-/// twice, and it moves content further from the edge it was meant to clear.
-/// `PageGeometry.overlappedInsets` is what reserves only what is the app's to
-/// reserve.
+/// web), so the app has to learn them from the browser and reserve them.
+///
+/// It used to subtract, from each inset, the distance between the reported safe
+/// area and Flutter's own element - an element measured at y=47 with a 47px
+/// inset reported looked like a browser that had already kept the status bar out
+/// of the canvas, and reserving it again would have been the same space twice.
+/// That reading was wrong, and the phone said so: with the top inset no longer
+/// reserved, the app bar sat under the status bar and the buttons in it were
+/// unreadable. The two measurements are not in the same coordinate space - the
+/// same sample reports the visual viewport at `offsetTop -47`, so a rect read in
+/// document coordinates says nothing about where that rectangle is on the screen.
+/// The browser's own safe-area numbers are the only ones here that describe the
+/// screen, so they are what the layout reserves. `PageGeometry` stays for
+/// measurement and diagnostics, not for layout.
 ValueNotifier<EdgeInsets> useBrowserSafeArea() {
   final notifier = ValueNotifier<EdgeInsets>(EdgeInsets.zero);
   _SafeAreaTracker(notifier).start();
@@ -60,7 +65,7 @@ class _SafeAreaTracker extends WidgetsBindingObserver {
 
   void _measure() {
     try {
-      final insets = readPageGeometry().overlappedInsets;
+      final insets = readPageGeometry().cssInsets;
       if (insets != _notifier.value) _notifier.value = insets;
     } catch (_) {
       // Keep whatever was measured last; a wrong inset is better than none.

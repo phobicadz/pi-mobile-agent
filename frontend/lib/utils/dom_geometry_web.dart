@@ -3,13 +3,13 @@ import 'dart:js_interop_unsafe';
 
 import 'package:flutter/widgets.dart';
 
-/// The page geometry the layout has to respect, read from the browser.
+/// The page geometry the app measures itself with, read from the browser.
 ///
 /// Two different things live here and the app needs both of them: the safe areas
 /// the browser reports (`env(safe-area-inset-*)`), and where Flutter's own
-/// element actually sits on the page. Comparing the two is the only way to tell
-/// which safe areas the app has to reserve for itself and which the browser has
-/// already reserved for it - see [PageGeometry.overlappedInsets].
+/// element actually sits on the page. The first is what the layout reserves; the
+/// second is what makes a layout problem on a phone visible in the logs. They
+/// cannot be subtracted from each other - see [PageGeometry.overlappedInsets].
 class PageGeometry {
   PageGeometry({
     required this.cssInsets,
@@ -56,16 +56,12 @@ class PageGeometry {
 
   /// The part of each safe area that falls inside Flutter's element.
   ///
-  /// The app asks the browser to let it draw under the safe areas, and a browser
-  /// does not always: an installed iOS app measured here was laid out *below* its
-  /// status bar - the Flutter element starting at y=47 with a 47px inset reported
-  /// - even with `viewport-fit=cover` in the viewport tag. Reserving the reported
-  /// inset in that case is the same space twice, and the app bar sits 47px below
-  /// a status bar that was already clear of it.
-  ///
-  /// Only the overlap is the app's to reserve. Where the browser already kept an
-  /// area out of the canvas, adding it again just moves content further from the
-  /// edge it was trying to stay away from.
+  /// Reported, never laid out from. It was tried as the layout's rule and it put
+  /// the app bar under the status bar: the element rect is in *document*
+  /// coordinates while the safe areas belong to the *screen*, and the same
+  /// sample reports the visual viewport at `offsetTop -47` - the two coordinate
+  /// spaces are not the same distance apart, so "the element starts at y=47" does
+  /// not mean the status bar is clear of the app.
   EdgeInsets get overlappedInsets {
     final host = hostRect;
     if (host == null) return cssInsets; // nothing measured: assume all of them
