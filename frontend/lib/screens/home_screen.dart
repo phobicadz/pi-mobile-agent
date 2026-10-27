@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -293,6 +295,20 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           }
 
+          // The prompt panel's own padding, safe areas included. The bottom
+          // inset is the bottom padding, not a base for adding more: on a phone
+          // the browser's home-indicator band already is the gap between the
+          // field and the edge of the screen, so the old fixed 16 on top of it
+          // left an empty band under the field - 50px on a notched iPhone that
+          // only needs 34.
+          final insets = MediaQuery.of(context).padding;
+          final panelPadding = EdgeInsets.only(
+            left: math.max(16.0, insets.left),
+            right: math.max(16.0, insets.right),
+            top: 16,
+            bottom: math.max(10.0, insets.bottom),
+          );
+
           return Column(
             children: [
               // Error message
@@ -321,7 +337,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // Input area
               Container(
-                padding: const EdgeInsets.all(16),
+                padding: panelPadding,
                 decoration: BoxDecoration(
                   color: Theme.of(context).scaffoldBackgroundColor,
                   border: Border(
@@ -331,79 +347,77 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                child: SafeArea(
-                  child: Column(
-                    children: [
-                      // Model selector
-                      const ModelSelector(),
-                      const SizedBox(height: 12),
-                      
-                      // Input field
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Focus(
-                              onKeyEvent: (node, event) {
-                                // Enter submits, Ctrl+Enter inserts a newline.
-                                if (event is KeyDownEvent &&
-                                    (event.logicalKey ==
-                                            LogicalKeyboardKey.enter ||
-                                        event.logicalKey ==
-                                            LogicalKeyboardKey.numpadEnter)) {
-                                  if (HardwareKeyboard.instance
-                                      .isControlPressed) {
-                                    return KeyEventResult.ignored;
-                                  }
-                                  _sendPrompt(
-                                      context.read<PiViewModel>());
-                                  return KeyEventResult.handled;
+                child: Column(
+                  children: [
+                    // Model selector
+                    const ModelSelector(),
+                    const SizedBox(height: 12),
+                    
+                    // Input field
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Focus(
+                            onKeyEvent: (node, event) {
+                              // Enter submits, Ctrl+Enter inserts a newline.
+                              if (event is KeyDownEvent &&
+                                  (event.logicalKey ==
+                                          LogicalKeyboardKey.enter ||
+                                      event.logicalKey ==
+                                          LogicalKeyboardKey.numpadEnter)) {
+                                if (HardwareKeyboard.instance
+                                    .isControlPressed) {
+                                  return KeyEventResult.ignored;
                                 }
-                                return KeyEventResult.ignored;
-                              },
-                              child: TextField(
-                                controller: _inputController,
-                                onChanged: viewModel.setUserInput,
-                                enabled: !viewModel.isLoading,
-                                maxLines: null,
-                                decoration: InputDecoration(
-                                  hintText: 'Enter a prompt or command...',
-                                  border: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
+                                _sendPrompt(
+                                    context.read<PiViewModel>());
+                                return KeyEventResult.handled;
+                              }
+                              return KeyEventResult.ignored;
+                            },
+                            child: TextField(
+                              controller: _inputController,
+                              onChanged: viewModel.setUserInput,
+                              enabled: !viewModel.isLoading,
+                              maxLines: null,
+                              decoration: InputDecoration(
+                                hintText: 'Enter a prompt or command...',
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
                                 ),
                               ),
                             ),
                           ),
-                          const SizedBox(width: 12),
-                          Column(
-                            children: [
-                              FloatingActionButton(
-                                mini: true,
-                                onPressed: viewModel.isLoading
-                                    ? null
-                                    : () => _sendPrompt(viewModel),
-                                child: const Icon(Icons.send),
-                              ),
-                              if (viewModel.isLoading)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 8),
-                                  child: FloatingActionButton(
-                                    mini: true,
-                                    backgroundColor: Colors.red,
-                                    onPressed: viewModel.abortCurrentTask,
-                                    child: const Icon(Icons.stop),
-                                  ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          children: [
+                            FloatingActionButton(
+                              mini: true,
+                              onPressed: viewModel.isLoading
+                                  ? null
+                                  : () => _sendPrompt(viewModel),
+                              child: const Icon(Icons.send),
+                            ),
+                            if (viewModel.isLoading)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: FloatingActionButton(
+                                  mini: true,
+                                  backgroundColor: Colors.red,
+                                  onPressed: viewModel.abortCurrentTask,
+                                  child: const Icon(Icons.stop),
                                 ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                              ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ],

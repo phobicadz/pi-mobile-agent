@@ -127,6 +127,12 @@ out of the browser (`env(safe-area-inset-*)`) and feeds them to `MediaQuery`,
 because Flutter Web reports none of its own. See
 `frontend/lib/utils/browser_viewport.dart` and `test/browser_safe_area_test.dart`.
 
+The prompt panel treats those insets as its bottom padding instead of as a base
+for adding more on top: the home-indicator band already is the space the field
+needs above the edge of the screen, so a fixed margin stacked on it just left an
+empty band under the composer on every phone with one
+(`test/input_safe_area_test.dart`).
+
 ## Deploying as a service (Linux)
 
 `deploy/install-service.sh` builds the backend and the Flutter web bundle and
