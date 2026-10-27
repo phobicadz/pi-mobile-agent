@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,6 +7,7 @@ import 'services/pi_service.dart';
 import 'providers/pi_view_model.dart';
 import 'screens/home_screen.dart';
 import 'utils/browser_viewport.dart';
+import 'utils/client_diagnostics.dart';
 
 /// Resolves the backend WebSocket URL for the platform the app runs on.
 ///
@@ -35,11 +38,27 @@ void main() async {
   // the page run the full length of a phone screen - see
   // utils/browser_viewport.dart. On native platforms it reports nothing.
   final safeArea = useBrowserSafeArea();
-  runApp(MyApp(serverUrl: resolveServerUrl(), safeArea: safeArea));
+  final service = PiService(serverUrl: resolveServerUrl());
+  service.connect();
+  // Send what the browser and Flutter each think the screen is, with the safe
+  // areas the app is actually laying out under. The backend logs it, so a layout
+  // problem that only appears on a phone can be read off the service log.
+  installClientDiagnostics((sample) {
+    unawaited(service.sendClientMetrics({
+      ...sample,
+      'appliedInsets': {
+        'top': safeArea.value.top,
+        'right': safeArea.value.right,
+        'bottom': safeArea.value.bottom,
+        'left': safeArea.value.left,
+      },
+    }));
+  });
+  runApp(MyApp(service: service, safeArea: safeArea));
 }
 
 class MyApp extends StatelessWidget {
-  final String serverUrl;
+  final PiService service;
 
   /// Safe areas the browser was asked to cover, or empty on native platforms
   /// where the platform already reports them to Flutter.
@@ -47,7 +66,7 @@ class MyApp extends StatelessWidget {
 
   MyApp(
       {super.key,
-      required this.serverUrl,
+      required this.service,
       ValueNotifier<EdgeInsets>? safeArea})
       : safeArea = safeArea ?? ValueNotifier<EdgeInsets>(EdgeInsets.zero);
 
@@ -55,11 +74,7 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        Provider(create: (_) {
-          final service = PiService(serverUrl: serverUrl);
-          service.connect();
-          return service;
-        }),
+        Provider<PiService>.value(value: service),
         ChangeNotifierProvider(
           create: (context) => PiViewModel(
             piService: context.read<PiService>(),

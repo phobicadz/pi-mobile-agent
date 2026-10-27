@@ -44,15 +44,12 @@ Future<void> pumpApp(WidgetTester tester, EdgeInsets insets,
   addTearDown(tester.view.reset);
 
   await tester.pumpWidget(MyApp(
-    serverUrl: 'ws://example.test:3000',
+    service: FakeService(),
     safeArea: ValueNotifier<EdgeInsets>(insets),
   ));
   for (var i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
-  // The service's command timeout is a real 30 s timer; let it fire so the test
-  // framework does not find a pending timer at the end.
-  await tester.pump(const Duration(seconds: 35));
 }
 
 void main() {

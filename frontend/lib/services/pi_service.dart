@@ -231,6 +231,15 @@ class PiService {
         .toList();
   }
 
+  /// Report what the browser and Flutter each think the screen is, along with
+  /// the safe areas the app is laying out under. The backend only logs it: this
+  /// is how a layout problem that only shows on a phone gets diagnosed from the
+  /// service log instead of from a screenshot.
+  Future<void> sendClientMetrics(Map<String, dynamic> metrics) async {
+    if (!_isConnected) return;
+    await _sendCommand('client_metrics', params: {'metrics': metrics});
+  }
+
   /// Ask the backend for its current state (model, working directory, ...).
   /// The reply arrives on [stateUpdates]. Safe to call from tests: it does
   /// nothing while the socket is down.

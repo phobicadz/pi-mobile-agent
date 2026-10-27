@@ -243,6 +243,24 @@ async function handleClientMessage(ws: WebSocket, message: any) {
     return;
   }
 
+  // The app reporting what the browser and Flutter each think the screen is.
+  // Nothing acts on it: it is logged, so a layout problem that only shows on a
+  // phone can be read off `journalctl --user -u pi-mobile-agent` instead of
+  // guessed at from a description.
+  if (command === "client_metrics") {
+    console.log(`client_metrics ${JSON.stringify(params.metrics ?? {})}`);
+    ws.send(
+      JSON.stringify({
+        type: "response",
+        id,
+        command,
+        success: true,
+        data: {},
+      })
+    );
+    return;
+  }
+
   if (!piClient) {
     ws.send(
       JSON.stringify({

@@ -46,7 +46,7 @@ class _SafeAreaTracker extends WidgetsBindingObserver {
 
   void _measure() {
     try {
-      final insets = _readSafeArea();
+      final insets = readSafeAreaInsets();
       if (insets != _notifier.value) _notifier.value = insets;
     } catch (_) {
       // Keep whatever was measured last; a wrong inset is better than none.
@@ -93,7 +93,13 @@ void _requestFullViewport() {
   meta['content'] = updated.toJS;
 }
 
-EdgeInsets _readSafeArea() {
+/// The safe areas the browser was asked to draw under, read back out of CSS.
+///
+/// `env(safe-area-inset-*)` only resolves as a *computed* value on a real
+/// element in the page, which is why this has to add a probe and read its
+/// padding rather than ask for the values directly. Public because
+/// `client_diagnostics_web.dart` reports the same numbers it does.
+EdgeInsets readSafeAreaInsets() {
   final document = _global('document');
   final body = document['body'];
   if (body == null || !body.isA<JSObject>()) return EdgeInsets.zero;
