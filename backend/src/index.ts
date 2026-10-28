@@ -457,8 +457,17 @@ app.use(
   express.static(webBuildDir, {
     // Always revalidate so browsers pick up new builds immediately after
     // `npm run build:web` instead of serving a stale cached main.dart.js.
-    setHeaders: (res) => {
-      res.setHeader("Cache-Control", "no-cache");
+    //
+    // The app shell is not cached at all. A cached index.html is how a phone ends
+    // up running an old page while main.dart.js is new - the two halves of one
+    // build coming from two different places - and that is not a stale build, it
+    // is a build that does not exist: the page and the code disagree about what
+    // the page is.
+    setHeaders: (res, filePath) => {
+      res.setHeader(
+        "Cache-Control",
+        path.basename(filePath) === "index.html" ? "no-store" : "no-cache",
+      );
     },
   }),
 );

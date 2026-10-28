@@ -22,6 +22,8 @@ class PageGeometry {
     required this.visualHeight,
     required this.visualOffsetTop,
     required this.visualScale,
+    required this.rootInlineHeight,
+    required this.rootComputedHeight,
     required this.viewportMeta,
     required this.devicePixelRatio,
   });
@@ -48,6 +50,18 @@ class PageGeometry {
   final double visualOffsetTop;
   final double visualScale;
 
+  /// What the root element's own inline `height` says, and what it ended up as.
+  ///
+  /// The app sizes the page from `window.innerHeight` because on iOS `100dvh`
+  /// resolves to something else, and the engine reads the root element's box.
+  /// Those two facts only meet once, at the page load, so when the band is still
+  /// there the question is which of them won - and nothing else in these numbers
+  /// can answer it. `rootInlineHeight` being empty means the sizing never
+  /// reached this page; a number there with a different `rootComputedHeight`
+  /// means the browser overrode it.
+  final String rootInlineHeight;
+  final double rootComputedHeight;
+
   /// The viewport tag in force, which is what decides whether the page is asked
   /// to draw under the safe areas at all.
   final String viewportMeta;
@@ -56,12 +70,16 @@ class PageGeometry {
 
   /// The part of each safe area that falls inside Flutter's element.
   ///
-  /// Reported, never laid out from. It was tried as the layout's rule and it put
-  /// the app bar under the status bar: the element rect is in *document*
-  /// coordinates while the safe areas belong to the *screen*, and the same
-  /// sample reports the visual viewport at `offsetTop -47` - the two coordinate
-  /// spaces are not the same distance apart, so "the element starts at y=47" does
-  /// not mean the status bar is clear of the app.
+  /// This is what the layout reserves. It was not, once, and the reason it wasn't
+  /// is the reason it is now: the element rect is read in *document* coordinates
+  /// while the safe areas belong to the *screen*, and while the page could scroll
+  /// those two were a different distance apart - a sample reporting the visual
+  /// viewport at `offsetTop -47` shows it. The page is pinned to the visual
+  /// viewport now, so they coincide and the overlap says what it appears to say.
+  ///
+  /// The far edges are measured the other way round: how much page is left between
+  /// the element and the edge of the window is how much of that inset the browser
+  /// already kept out of the canvas.
   EdgeInsets get overlappedInsets {
     final host = hostRect;
     if (host == null) return cssInsets; // nothing measured: assume all of them
@@ -95,6 +113,8 @@ class PageGeometry {
             '${overlappedInsets.bottom}/${overlappedInsets.left}',
         'viewportMeta': viewportMeta,
         'dpr': devicePixelRatio,
+        'rootInlineHeight': rootInlineHeight,
+        'rootComputedHeight': rootComputedHeight,
       };
 }
 
@@ -116,6 +136,8 @@ PageGeometry readPageGeometry() {
     innerHeight: _num(globalContext, 'innerHeight'),
     clientWidth: _num(root, 'clientWidth'),
     clientHeight: _num(root, 'clientHeight'),
+    rootInlineHeight: _styleValue(root, 'height'),
+    rootComputedHeight: _computedHeight(root),
     visualWidth: _num(visual, 'width'),
     visualHeight: _num(visual, 'height'),
     visualOffsetTop: _num(visual, 'offsetTop'),
@@ -136,16 +158,18 @@ EdgeInsets _readCssInsets(JSObject document) {
   final probe = document.callMethod<JSObject>('createElement'.toJS, 'div'.toJS);
   final style = probe['style'];
   if (style == null || !style.isA<JSObject>()) return EdgeInsets.zero;
-  (style as JSObject)['cssText'] = ('position:fixed;top:0;left:0;width:0;height:0;'
-          'visibility:hidden;pointer-events:none;'
-          'padding-top:env(safe-area-inset-top);'
-          'padding-right:env(safe-area-inset-right);'
-          'padding-bottom:env(safe-area-inset-bottom);'
-          'padding-left:env(safe-area-inset-left);')
-      .toJS;
+  (style as JSObject)['cssText'] =
+      ('position:fixed;top:0;left:0;width:0;height:0;'
+              'visibility:hidden;pointer-events:none;'
+              'padding-top:env(safe-area-inset-top);'
+              'padding-right:env(safe-area-inset-right);'
+              'padding-bottom:env(safe-area-inset-bottom);'
+              'padding-left:env(safe-area-inset-left);')
+          .toJS;
 
   bodyElement.callMethod<JSAny?>('appendChild'.toJS, probe);
-  final computed = globalContext.callMethod<JSAny?>('getComputedStyle'.toJS, probe);
+  final computed =
+      globalContext.callMethod<JSAny?>('getComputedStyle'.toJS, probe);
   final insets = EdgeInsets.only(
     top: _pixels(computed, 'paddingTop'),
     right: _pixels(computed, 'paddingRight'),
@@ -169,11 +193,34 @@ Rect? _readRect(JSObject? element) {
   );
 }
 
+/// The root element's own inline `height`, as written by whoever set it - empty
+/// when nothing did. Read off `style`, not computed, because "did our code run"
+/// is a different question from "what did the browser end up doing".
+String _styleValue(JSObject? element, String property) {
+  if (element == null) return '';
+  final style = element['style'];
+  if (style == null || !style.isA<JSObject>()) return '';
+  final value = (style as JSObject)[property];
+  return value != null && value.isA<JSString>()
+      ? (value as JSString).toDart
+      : '';
+}
+
+/// The height the browser actually resolved for an element.
+double _computedHeight(JSObject? element) {
+  if (element == null) return -1;
+  final style = globalContext.callMethod<JSAny?>(
+      'getComputedStyle'.toJS, element as JSAny);
+  return _pixels(style, 'height');
+}
+
 double _pixels(JSAny? style, String property) {
   if (style == null || !style.isA<JSObject>()) return 0;
   final value = (style as JSObject)[property];
   if (!value.isA<JSString>()) return 0;
-  return double.tryParse((value as JSString).toDart.replaceAll('px', '').trim()) ?? 0;
+  return double.tryParse(
+          (value as JSString).toDart.replaceAll('px', '').trim()) ??
+      0;
 }
 
 JSObject _global(String property) {
@@ -191,7 +238,8 @@ JSObject? _child(JSObject? owner, String key) {
 }
 
 JSObject? _query(JSObject document, String selector) {
-  final found = document.callMethod<JSAny?>('querySelector'.toJS, selector.toJS);
+  final found =
+      document.callMethod<JSAny?>('querySelector'.toJS, selector.toJS);
   return found != null && found.isA<JSObject>() ? found as JSObject : null;
 }
 

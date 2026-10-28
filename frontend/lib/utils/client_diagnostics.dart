@@ -15,7 +15,8 @@ import 'client_diagnostics_native.dart'
 /// the numbers are sent over the existing socket and the backend logs them (the
 /// `client_metrics` command). Reading them off the service log is what makes a
 /// phone-only layout bug diagnosable without a screenshot.
-void installClientDiagnostics(void Function(Map<String, dynamic> sample) onSample) {
+void installClientDiagnostics(
+    void Function(Map<String, dynamic> sample) onSample) {
   _Diagnostics(onSample).start();
 }
 
@@ -60,11 +61,42 @@ class _Diagnostics extends WidgetsBindingObserver {
   void _emit() {
     if (_samples >= _maxSamples) return;
     _samples++;
-    _onSample({
-      'n': _samples,
-      ..._flutterView(),
-      ...impl.browserMetrics(),
-    });
+    final flutter = _flutterView();
+    final browser = impl.browserMetrics();
+    _reportUnpaintedHost(flutter, browser);
+    _onSample({'n': _samples, ...flutter, ...browser});
+  }
+
+  /// The height of Flutter's host element minus the height of the canvas drawn
+  /// inside it.
+  ///
+  /// That difference is a band of the screen the app never paints, which the
+  /// browser fills with the page's own background - and it is invisible to every
+  /// other number here, because they compare the host with the viewport, which
+  /// agree with each other perfectly while both disagree with the canvas.
+  ///
+  /// Assumes the canvas starts at the top of its host, which is how the engine
+  /// lays it out: a shortfall therefore sits at the bottom.
+  void _reportUnpaintedHost(
+      Map<String, dynamic> flutter, Map<String, dynamic> browser) {
+    // Both are nested: the sample is {'flutter': {...}, 'browser': {...}}, and
+    // reading a key off the outer map finds nothing. The compiler spotted that
+    // this could never produce a number and removed the whole calculation.
+    final canvas = _number(flutter['flutter'], 'logicalHeight');
+    final host = _number(browser['browser'], 'hostHeight');
+    if (canvas == null || host == null || host <= 0) return;
+    final gap = host - canvas;
+    (browser['browser'] as Map<String, dynamic>)['unpaintedHostHeight'] =
+        gap < 0 ? 0.0 : gap;
+  }
+
+  /// A number out of one of the reported sections, or null when the section is
+  /// not there or does not hold a number - both of them report a plain string
+  /// instead when there is nothing to measure.
+  static double? _number(Object? section, String key) {
+    if (section is! Map) return null;
+    final value = section[key];
+    return value is num ? value.toDouble() : null;
   }
 }
 
@@ -78,6 +110,7 @@ Map<String, dynamic> _flutterView() {
       'physical': '${view.physicalSize.width}x${view.physicalSize.height}',
       'logical': '${(view.physicalSize.width / dpr).toStringAsFixed(1)}x'
           '${(view.physicalSize.height / dpr).toStringAsFixed(1)}',
+      'logicalHeight': view.physicalSize.height / dpr,
       'dpr': dpr,
       'paddingBottom': view.viewPadding.bottom,
       'insetsBottom': view.viewInsets.bottom,

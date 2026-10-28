@@ -116,8 +116,26 @@ class MyApp extends StatelessWidget {
         ),
         themeMode: themeMode,
         home: const HomeScreen(),
-        builder: (context, child) =>
-            applyBrowserSafeArea(context, child, safeArea),
+        builder: (context, child) {
+          // Paint the page behind the canvas with the theme that is actually in
+          // force right now.
+          //
+          // On iOS the canvas can end up shorter than the screen it is drawn on
+          // (see web/index.html), and whatever is left over is the browser's to
+          // paint - white by default, which is a band across the bottom of a
+          // phone. This is the part of that gap the app can still account for:
+          // make it the colour the app paints its own bottom edge with, and there
+          // is nothing there for the eye to find.
+          //
+          // The builder is the one place in the app with both the theme and the
+          // page in reach, and it re-runs when the theme changes - including when
+          // the phone's own appearance changes while the app is following it. A
+          // DOM write during build is not something to be casual about, but this
+          // one is idempotent and it is the only moment the page is guaranteed to
+          // be painted before the frame that sits on it.
+          paintPageBehindCanvas(Theme.of(context).scaffoldBackgroundColor);
+          return applyBrowserSafeArea(context, child, safeArea);
+        },
       ),
     );
   }

@@ -66,6 +66,50 @@
     dynamic viewport units - `dvh` is the one that tracks Safari's toolbars
     instead of ignoring them.
   -->
+  <!--
+    The height of the document is what Flutter Web sizes its canvas from, and on
+    iOS it is not the height of the window. Measured on a phone, in one sample,
+    in the same frame:
+
+      window.innerHeight        428 x 926   the whole screen
+      documentElement.clientHeight 428 x 879
+      flutter-view (fixed, inset 0)  height 926
+      Flutter's canvas          428 x 879   drawn at the top of that host
+
+    So 47px of the host has no canvas in it and the page paints it: a white band
+    across the bottom, 47px being the status-bar inset - `100dvh` on iOS is the
+    screen minus the status bar, while `window.innerHeight` is the screen. Two
+    rules for one box, and the app cannot argue with which one the browser chose.
+
+    What it can use is the number the browser gives for its own window. This
+    script runs before Flutter loads, so the first measurement Flutter takes is
+    already the right one, and it re-applies on the events that change the
+    window. The `100vh`/`100dvh` rules above stay as the fallback for the moments
+    before this runs, and an inline style outranks a stylesheet rule without
+    needing `!important`.
+  -->
+  <script>
+    (function () {
+      function pinDocumentToWindow() {
+        var height = window.innerHeight;
+        if (!height) return;
+        document.documentElement.style.height = height + 'px';
+      }
+
+      pinDocumentToWindow();
+      window.addEventListener('resize', pinDocumentToWindow);
+      // Rotation reports the new orientation before it reports the new size.
+      window.addEventListener('orientationchange', function () {
+        setTimeout(pinDocumentToWindow, 250);
+      });
+      // The app rewrites the viewport meta at startup to add viewport-fit=cover,
+      // which is exactly the kind of change a browser applies on its own
+      // schedule; the settled size is the one the layout has to match.
+      setTimeout(pinDocumentToWindow, 500);
+      setTimeout(pinDocumentToWindow, 2000);
+    })();
+  </script>
+
   <style>
     html,
     body {
@@ -77,11 +121,44 @@
       overscroll-behavior: none;
     }
 
+    /* Follows whatever the document ends up being, rather than resolving its own
+       viewport unit that could disagree with it. */
+    body {
+      height: 100%;
+    }
+
     flutter-view {
+      /*
+       * The canvas is never going to be the height of the screen on iOS.
+       *
+       * The root element was measured at `height: 926px` inline, and
+       * `getComputedStyle` agreed it was 926px - while `clientHeight` reported
+       * 879, which is 926 minus the 47px status-bar inset. iOS carves the status
+       * bar out of the root element's client area whatever its box says, and
+       * `clientHeight` is exactly what the engine reads on iOS (see
+       * `full_page_dimensions_provider.dart`, which does that on purpose). So the
+       * drawing surface is 879 tall, and no amount of resizing the page changes
+       * that.
+       *
+       * What can change is where those 879 pixels sit. Pinned to `inset: 0` they
+       * start at the top of the screen and stop 47px short of the bottom, which
+       * is why the prompt field sits above the bottom edge with a strip of page
+       * below it. Inset by the status bar instead, the canvas covers exactly the
+       * area the browser considers usable - top edge to home indicator - and the
+       * engine's measurement and the screen agree for the first time.
+       *
+       * The app then reserves only the safe areas that fall *inside* its own
+       * canvas, which is what `PageGeometry.overlappedInsets` measures; the
+       * status bar is outside it, so reserving it again would push the app bar
+       * down twice.
+       */
       position: fixed !important;
-      inset: 0 !important;
-      width: 100% !important;
-      height: 100% !important;
+      top: env(safe-area-inset-top) !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      width: auto !important;
+      height: auto !important;
     }
   </style>
 
