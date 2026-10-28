@@ -21,14 +21,19 @@ class _HomeScreenState extends State<HomeScreen> {
   final _inputController = TextEditingController();
   final _inputFocus = FocusNode();
 
-  /// Sending takes the field out of action, and nothing in the widget tree
-  /// hands focus back to it afterwards - a field that looks ready but has no
-  /// keyboard attached. Set on send, cleared when the run that took it ends.
+  /// Set when a send on a physical keyboard takes focus away, so the field gets
+  /// it back when the run ends rather than on every idle rebuild. Cleared once.
+  /// Never set on a touch platform, where focus would mean an on-screen
+  /// keyboard landing over the reply that just finished.
   bool _refocusAfterRun = false;
 
-  /// PageUp / PageDown are desktop keys - a physical keyboard, or a desktop
+  /// Whether this is a context with a physical keyboard: a desktop, or a desktop
   /// browser (on the web `defaultTargetPlatform` reports the browser's OS).
-  static bool get _pageKeysExpected => const {
+  ///
+  /// Two things depend on it, and they depend on it for the same reason - on a
+  /// touch platform focus *is* the on-screen keyboard, so giving focus away is
+  /// not a neutral act there.
+  static bool get _physicalKeyboardExpected => const {
         TargetPlatform.windows,
         TargetPlatform.macOS,
         TargetPlatform.linux,
@@ -37,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    if (_pageKeysExpected) {
+    if (_physicalKeyboardExpected) {
       // A Focus/Shortcuts wrapper would only work while something inside the
       // app holds focus, and the prompt field swallows PageUp/PageDown as text
       // navigation - the chat would scroll some of the time and not others.
@@ -63,7 +68,19 @@ class _HomeScreenState extends State<HomeScreen> {
     viewModel.submitPrompt(_inputController.text);
     _inputController.clear();
     viewModel.setUserInput('');
-    _refocusAfterRun = true;
+    // Tapping the send button already dismissed the on-screen keyboard, because
+    // focus went to the button. Enter never got the same treatment: the field
+    // kept focus, so the keyboard stayed up over the reply the user had just
+    // sent. On a touch platform releasing focus *is* hiding the keyboard, which
+    // is what the two buttons should mean. On a physical keyboard there is no
+    // keyboard to hide, and holding focus is what lets the next prompt be typed
+    // while the agent is still working - so there the field keeps focus and the
+    // run that ends asks for it back.
+    if (_physicalKeyboardExpected) {
+      _refocusAfterRun = true;
+    } else {
+      _inputFocus.unfocus();
+    }
     _chatKey.currentState?.stickToBottom();
   }
 
@@ -135,12 +152,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (_, index) {
                             final session = sessions[index];
-                            final title = session.name != null &&
-                                    session.name!.isNotEmpty
-                                ? session.name!
-                                : (session.preview.isNotEmpty
-                                    ? session.preview
-                                    : '(empty session)');
+                            final title =
+                                session.name != null && session.name!.isNotEmpty
+                                    ? session.name!
+                                    : (session.preview.isNotEmpty
+                                        ? session.preview
+                                        : '(empty session)');
                             return ListTile(
                               leading: const Icon(Icons.chat_bubble_outline),
                               title: Text(
@@ -265,7 +282,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 selector: (_, viewModel) => viewModel.isConnected,
                 builder: (context, isConnected, _) {
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: isConnected ? Colors.green : Colors.red,
                       borderRadius: BorderRadius.circular(20),
@@ -326,6 +344,11 @@ class _HomeScreenState extends State<HomeScreen> {
           // change - no extra listener needed to notice the run ending. The
           // request goes after the frame so it lands on the field that the
           // rebuild produced, not one about to be replaced.
+          //
+          // Only ever asked for where a physical keyboard makes it free: on a
+          // phone the run ending is exactly when the user came back to read the
+          // reply, and asking for focus there brings the on-screen keyboard
+          // straight back up over it.
           if (!viewModel.isLoading && _refocusAfterRun) {
             _refocusAfterRun = false;
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -376,7 +399,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     // Model selector
                     const ModelSelector(),
                     const SizedBox(height: 12),
-                    
+
                     // Input field
                     Row(
                       children: [
@@ -393,12 +416,12 @@ class _HomeScreenState extends State<HomeScreen> {
                                 // too: submitting would be ignored anyway, and
                                 // swallowing the key would leave no way to
                                 // compose the next message while the agent works.
-                                if (HardwareKeyboard.instance.isControlPressed ||
+                                if (HardwareKeyboard
+                                        .instance.isControlPressed ||
                                     context.read<PiViewModel>().isLoading) {
                                   return KeyEventResult.ignored;
                                 }
-                                _sendPrompt(
-                                    context.read<PiViewModel>());
+                                _sendPrompt(context.read<PiViewModel>());
                                 return KeyEventResult.handled;
                               }
                               return KeyEventResult.ignored;
