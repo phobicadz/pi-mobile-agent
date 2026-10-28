@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/main.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/providers/theme_controller.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
+import 'package:provider/provider.dart';
 
 /// A service that reports a live connection, so HomeScreen renders the chat and
 /// the prompt panel instead of the connecting spinner.
@@ -43,9 +45,15 @@ Future<void> pumpApp(WidgetTester tester, EdgeInsets insets,
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  await tester.pumpWidget(MyApp(
-    service: FakeService(),
-    safeArea: ValueNotifier<EdgeInsets>(insets),
+  // The theme provider is part of how the app is built now, not an optional
+  // extra: MyApp is the widget that builds MaterialApp, and MaterialApp needs to
+  // be told which theme to build with.
+  await tester.pumpWidget(ChangeNotifierProvider<ThemeController>.value(
+    value: ThemeController(),
+    child: MyApp(
+      service: FakeService(),
+      safeArea: ValueNotifier<EdgeInsets>(insets),
+    ),
   ));
   for (var i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 100));
@@ -53,7 +61,8 @@ Future<void> pumpApp(WidgetTester tester, EdgeInsets insets,
 }
 
 void main() {
-  testWidgets('the prompt panel dips into the home-indicator band', (tester) async {
+  testWidgets('the prompt panel dips into the home-indicator band',
+      (tester) async {
     await pumpApp(tester, notchedInsets);
 
     final field = tester.getRect(find.byType(TextField));
@@ -82,7 +91,8 @@ void main() {
     expect(screen.bottom - field.bottom, 10);
   });
 
-  testWidgets('side insets in landscape are not crowded out by the fixed padding',
+  testWidgets(
+      'side insets in landscape are not crowded out by the fixed padding',
       (tester) async {
     await pumpApp(
       tester,
@@ -93,7 +103,8 @@ void main() {
     final field = tester.getRect(find.byType(TextField));
     final screen = tester.getRect(find.byType(Scaffold));
     expect(field.left, greaterThanOrEqualTo(47),
-        reason: 'the notch side inset has to beat the 16 the panel uses otherwise');
+        reason:
+            'the notch side inset has to beat the 16 the panel uses otherwise');
     expect(field.right, lessThanOrEqualTo(844 - 47));
     // A 21px inset dips to 9, which is under the floor: the floor wins.
     expect(screen.bottom - field.bottom, 10);

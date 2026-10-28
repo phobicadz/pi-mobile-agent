@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'services/pi_service.dart';
 import 'providers/pi_view_model.dart';
 import 'screens/home_screen.dart';
+import 'providers/theme_controller.dart';
 import 'utils/browser_viewport.dart';
 import 'utils/client_diagnostics.dart';
 
@@ -54,7 +55,20 @@ void main() async {
       },
     }));
   });
-  runApp(MyApp(service: service, safeArea: safeArea));
+  // Restored before the first frame, so the app does not open in one theme and
+  // then change to another.
+  final theme = ThemeController();
+  await theme.restore();
+
+  // Provided above MyApp rather than inside it: MyApp is what builds
+  // MaterialApp, and MaterialApp is the thing that has to be told which theme
+  // to build with.
+  runApp(
+    ChangeNotifierProvider<ThemeController>.value(
+      value: theme,
+      child: MyApp(service: service, safeArea: safeArea),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -64,14 +78,17 @@ class MyApp extends StatelessWidget {
   /// where the platform already reports them to Flutter.
   final ValueNotifier<EdgeInsets> safeArea;
 
-  MyApp(
-      {super.key,
-      required this.service,
-      ValueNotifier<EdgeInsets>? safeArea})
+  MyApp({super.key, required this.service, ValueNotifier<EdgeInsets>? safeArea})
       : safeArea = safeArea ?? ValueNotifier<EdgeInsets>(EdgeInsets.zero);
 
   @override
   Widget build(BuildContext context) {
+    // The theme is watched here because this is the widget that builds
+    // MaterialApp, and themeMode is a property of MaterialApp - not of anything
+    // below it. A toggle deeper in the tree could change the colours of a
+    // screen but not the theme the screens are built from.
+    final themeMode = context.watch<ThemeController>().mode;
+
     return MultiProvider(
       providers: [
         Provider<PiService>.value(value: service),
@@ -97,7 +114,7 @@ class MyApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
         ),
-        themeMode: ThemeMode.system,
+        themeMode: themeMode,
         home: const HomeScreen(),
         builder: (context, child) =>
             applyBrowserSafeArea(context, child, safeArea),

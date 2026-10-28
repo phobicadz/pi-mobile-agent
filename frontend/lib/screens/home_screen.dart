@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/pi_view_model.dart';
+import '../providers/theme_controller.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
 import '../widgets/model_selector.dart';
@@ -268,6 +269,12 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Read once, and from the theme rather than the platform: under
+    // ThemeMode.system the two agree, but once a choice has been made the
+    // platform still reports what the phone is set to, which is not what is on
+    // the screen. This decides both the icon and which way the toggle goes.
+    final showingDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
       appBar: AppBar(
         leading: Selector<PiViewModel, bool>(
@@ -327,31 +334,42 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
+          // The connection state as a dot and nothing else. The colour is the
+          // whole message, and the word next to it was the part of the app bar a
+          // phone could not afford. The words are still there for anyone who
+          // asks the dot.
           Padding(
-            padding: const EdgeInsets.all(6),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Center(
               child: Selector<PiViewModel, bool>(
                 selector: (_, viewModel) => viewModel.isConnected,
                 builder: (context, isConnected, _) {
-                  return Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: isConnected ? Colors.green : Colors.red,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      isConnected ? 'Connected' : 'Disconnected',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
+                  return Tooltip(
+                    message: isConnected ? 'Connected' : 'Disconnected',
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: isConnected ? Colors.green : Colors.red,
+                        shape: BoxShape.circle,
                       ),
                     ),
                   );
                 },
               ),
             ),
+          ),
+          IconButton(
+            // The icon shows what is on the screen, because that is the only
+            // thing the button can truthfully act on: the toggle moves away from
+            // whatever is currently being rendered, which is also what a user
+            // looking for the dark-mode button is checking.
+            icon: Icon(showingDark ? Icons.light_mode : Icons.dark_mode),
+            tooltip:
+                showingDark ? 'Switch to light mode' : 'Switch to dark mode',
+            onPressed: () => context
+                .read<ThemeController>()
+                .toggle(Theme.of(context).brightness),
           ),
         ],
       ),
