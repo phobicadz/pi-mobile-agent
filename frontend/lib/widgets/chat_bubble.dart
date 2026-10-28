@@ -56,18 +56,27 @@ class ChatBubble extends StatelessWidget {
         : (isDark ? const Color(0xFF1E3A5F) : Colors.blue.shade100);
     final mutedColor = isDark ? Colors.white70 : const Color(0x99000000);
 
-    // Colour coding by output kind: assistant replies are teal-accented,
-    // your own messages blue, and tool calls amber with green results.
+    // Colour coding by output kind: assistant replies are teal-accented, your
+    // own messages blue. A tool call is part of Pi's turn, so it stays in the
+    // teal it is written in and is set apart by shape - a bordered, raised card
+    // - rather than by a second hue. The amber card was the only warm colour in
+    // the app, which is what made a command look like it came from somewhere
+    // else. Results keep green: it is the one signal that says "this is output",
+    // and a cool green sits with teal instead of fighting it.
     // All accent colours are tuned per theme so contrast is preserved.
     final accentColor = isAssistant
         ? (isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00697A))
         : (isDark ? const Color(0xFF64B5F6) : const Color(0xFF0B4D8C));
-    final toolColor =
-        isDark ? const Color(0xFFFFB74D) : const Color(0xFF8A5A00);
+    // Tool calls only ever appear in an assistant reply, so the tool label uses
+    // that reply's own accent - the same teal that says "Pi" in the header.
+    final toolColor = accentColor;
     final toolResultColor =
-        isDark ? const Color(0xFF9CCC65) : const Color(0xFF2E6B12);
+        isDark ? const Color(0xFF7FCBA5) : const Color(0xFF2E6B4F);
+    // A card raised off the bubble it sits on, tinted the same way as the
+    // accent rather than tinted warm. Lighter than the bubble in both themes,
+    // which is how the card already read before.
     final toolCardColor =
-        isDark ? const Color(0xFF3A3427) : const Color(0xFFFFF6E0);
+        isDark ? const Color(0xFF333A41) : const Color(0xFFF2F7F8);
 
     // Body text is tinted to match its source while staying high contrast
     // against the bubble it is rendered on.
@@ -392,11 +401,13 @@ class ChatBubble extends StatelessWidget {
     return HighlightedCode(
       source,
       isDark: isDark,
-      background: isDark ? const Color(0xFF2A2D34) : const Color(0xFFFFFDF5),
-      textStyle: TextStyle(
+      // No background and no text colour: a command's output is code like any
+      // other block in the reply, so it gets the same theme the reply uses.
+      // Forcing the card's warm colour over it is what made tool output look
+      // like it belonged to a different app.
+      textStyle: const TextStyle(
         fontFamily: 'JetBrainsMono',
         fontSize: 11,
-        color: fallbackColor,
       ),
     );
   }
