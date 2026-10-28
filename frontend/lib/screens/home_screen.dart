@@ -19,6 +19,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _chatKey = GlobalKey<ChatListState>();
   final _inputController = TextEditingController();
+  final _inputFocus = FocusNode();
+
+  /// Sending takes the field out of action, and nothing in the widget tree
+  /// hands focus back to it afterwards - a field that looks ready but has no
+  /// keyboard attached. Set on send, cleared when the run that took it ends.
+  bool _refocusAfterRun = false;
 
   /// PageUp / PageDown are desktop keys - a physical keyboard, or a desktop
   /// browser (on the web `defaultTargetPlatform` reports the browser's OS).
@@ -57,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
     viewModel.submitPrompt(_inputController.text);
     _inputController.clear();
     viewModel.setUserInput('');
+    _refocusAfterRun = true;
     _chatKey.currentState?.stickToBottom();
   }
 
@@ -64,6 +71,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_scrollChatWithPageKeys);
     _inputController.dispose();
+    _inputFocus.dispose();
     super.dispose();
   }
 
@@ -314,6 +322,17 @@ class _HomeScreenState extends State<HomeScreen> {
             bottom: math.max(10.0, insets.bottom - 12),
           );
 
+          // The body is already a Consumer, so this builder runs on every
+          // change - no extra listener needed to notice the run ending. The
+          // request goes after the frame so it lands on the field that the
+          // rebuild produced, not one about to be replaced.
+          if (!viewModel.isLoading && _refocusAfterRun) {
+            _refocusAfterRun = false;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _inputFocus.requestFocus();
+            });
+          }
+
           return Column(
             children: [
               // Error message
@@ -364,14 +383,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         Expanded(
                           child: Focus(
                             onKeyEvent: (node, event) {
-                              // Enter submits, Ctrl+Enter inserts a newline.
+                              // Enter submits; Ctrl+Enter inserts a newline.
                               if (event is KeyDownEvent &&
                                   (event.logicalKey ==
                                           LogicalKeyboardKey.enter ||
                                       event.logicalKey ==
                                           LogicalKeyboardKey.numpadEnter)) {
-                                if (HardwareKeyboard.instance
-                                    .isControlPressed) {
+                                // While a run is in flight Enter falls through
+                                // too: submitting would be ignored anyway, and
+                                // swallowing the key would leave no way to
+                                // compose the next message while the agent works.
+                                if (HardwareKeyboard.instance.isControlPressed ||
+                                    context.read<PiViewModel>().isLoading) {
                                   return KeyEventResult.ignored;
                                 }
                                 _sendPrompt(
@@ -382,8 +405,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             },
                             child: TextField(
                               controller: _inputController,
+                              focusNode: _inputFocus,
                               onChanged: viewModel.setUserInput,
-                              enabled: !viewModel.isLoading,
                               maxLines: null,
                               decoration: InputDecoration(
                                 hintText: 'Enter a prompt or command...',
