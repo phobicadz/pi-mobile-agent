@@ -572,18 +572,18 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                         const SizedBox(width: 12),
-                        Column(
+                        // Side by side, stop first. Stacked, the pair grew
+                        // downwards into the space a phone reserves for its own
+                        // gestures, and stop appeared exactly when the run was
+                        // already long enough to need scrolling. In a row, stop
+                        // takes room from the field instead and both stay under
+                        // the thumb that has to reach them.
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            FloatingActionButton(
-                              mini: true,
-                              onPressed: viewModel.isLoading
-                                  ? null
-                                  : () => _sendPrompt(viewModel),
-                              child: const Icon(Icons.send),
-                            ),
                             if (viewModel.isLoading)
                               Padding(
-                                padding: const EdgeInsets.only(top: 8),
+                                padding: const EdgeInsets.only(right: 8),
                                 child: FloatingActionButton(
                                   mini: true,
                                   backgroundColor: Colors.red,
@@ -591,6 +591,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                   child: const Icon(Icons.stop),
                                 ),
                               ),
+                            FloatingActionButton(
+                              mini: true,
+                              onPressed: viewModel.isLoading
+                                  ? null
+                                  : () => _sendPrompt(viewModel),
+                              child: const Icon(Icons.send),
+                            ),
                           ],
                         ),
                       ],
