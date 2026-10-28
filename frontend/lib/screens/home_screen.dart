@@ -92,6 +92,49 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
+  /// The busy state for loading a saved conversation back into the live session.
+  ///
+  /// A panel over the chat rather than a spinner in a corner: restoring a session
+  /// reads every saved `.jsonl` in the archive and then hands the history back,
+  /// which is seconds of doing nothing visible on a phone. The chat behind it is
+  /// the thing that is about to change, so that is what carries the notice.
+  Widget _resumeOverlay(BuildContext context) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Positioned.fill(
+      child: ColoredBox(
+        color: (isDark ? Colors.black : Colors.white).withValues(alpha: 0.62),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(
+                width: 28,
+                height: 28,
+                child: CircularProgressIndicator(strokeWidth: 2.5),
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Restoring session…',
+                  style: theme.textTheme.bodyMedium
+                      ?.copyWith(color: theme.colorScheme.onSurface),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Future<void> _showSessionPicker(BuildContext context) async {
     final viewModel = context.read<PiViewModel>();
     // Fetch fresh before opening the sheet; the sheet can refresh too.
@@ -270,10 +313,19 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.history),
-            tooltip: 'Resume a previous session',
-            onPressed: () => _showSessionPicker(context),
+          Selector<PiViewModel, bool>(
+            selector: (_, viewModel) => viewModel.resumingSession,
+            builder: (context, resuming, _) {
+              // Disabled while one is being restored: opening the picker again
+              // would let a second resume start over the first.
+              return IconButton(
+                icon: const Icon(Icons.history),
+                tooltip: resuming
+                    ? 'Restoring a session'
+                    : 'Resume a previous session',
+                onPressed: resuming ? null : () => _showSessionPicker(context),
+              );
+            },
           ),
           Padding(
             padding: const EdgeInsets.all(6),
@@ -379,8 +431,18 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                 ),
 
-              // Messages list
-              Expanded(child: ChatList(key: _chatKey)),
+              // Messages list, with the busy state for restoring a saved
+              // conversation laid over it rather than in place of it. What is on
+              // screen is about to be swapped for the restored conversation, and
+              // swapping it for a spinner would read as the app going blank.
+              Expanded(
+                child: Stack(
+                  children: [
+                    ChatList(key: _chatKey),
+                    if (viewModel.resumingSession) _resumeOverlay(context),
+                  ],
+                ),
+              ),
 
               // Input area
               Container(

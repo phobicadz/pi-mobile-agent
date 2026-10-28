@@ -17,6 +17,15 @@ class PiViewModel extends ChangeNotifier {
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
+
+  /// A saved conversation is being loaded back into the live Pi session.
+  ///
+  /// Kept apart from [_isLoading] because the two need saying differently: the
+  /// chat shows "restoring session" for this one, and the app must not put a
+  /// running-turn status line over a chat that is only being read off disk.
+  /// [_isLoading] is still set as well, because every action that would start a
+  /// new turn has to be closed while the old one is being restored.
+  bool _resumingSession = false;
   String? _error;
   String _userInput = '';
 
@@ -92,6 +101,7 @@ class PiViewModel extends ChangeNotifier {
   bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
+  bool get resumingSession => _resumingSession;
   String? get error => _error;
   String get userInput => _userInput;
   int get messagesVersion => _messagesVersion;
@@ -691,6 +701,7 @@ class PiViewModel extends ChangeNotifier {
   /// the live runtime and restore its conversation in the chat.
   Future<void> resumeSession(String sessionPath) async {
     _isLoading = true;
+    _resumingSession = true;
     _error = null;
     _notifyNow();
     try {
@@ -705,9 +716,11 @@ class PiViewModel extends ChangeNotifier {
       _sessionStats = null;
       await piService.refreshState();
       _isLoading = false;
+      _resumingSession = false;
       _notifyNow();
     } catch (e) {
       _isLoading = false;
+      _resumingSession = false;
       _error = 'Failed to resume session: $e';
       _notifyNow();
     }
