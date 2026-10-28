@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/main.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
-import 'package:pi_mobile_agent/providers/theme_controller.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:provider/provider.dart';
 
@@ -49,8 +49,8 @@ Future<void> pumpApp(WidgetTester tester, {required bool connected}) async {
   addTearDown(tester.view.reset);
 
   await tester.pumpWidget(
-    ChangeNotifierProvider<ThemeController>.value(
-      value: ThemeController(),
+    ChangeNotifierProvider<AppearanceController>.value(
+      value: AppearanceController(),
       child: MyApp(
         service: FakeService(connected: connected),
         safeArea: ValueNotifier<EdgeInsets>(EdgeInsets.zero),

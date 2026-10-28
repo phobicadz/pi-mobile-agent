@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/screens/home_screen.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
@@ -54,9 +55,14 @@ void main() {
     final service = FakeNewSessionService();
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
-      ChangeNotifierProvider<PiViewModel>.value(
-        value: viewModel,
-        child: const MaterialApp(home: HomeScreen()),
+      // HomeScreen reads the appearance settings, so a test that builds it has
+      // to supply them the way main.dart does.
+      ChangeNotifierProvider<AppearanceController>(
+        create: (_) => AppearanceController(),
+        child: ChangeNotifierProvider<PiViewModel>.value(
+          value: viewModel,
+          child: const MaterialApp(home: HomeScreen()),
+        ),
       ),
     );
     await settle(tester);
@@ -121,9 +127,14 @@ void main() {
     final service = FakeNewSessionService();
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
-      ChangeNotifierProvider<PiViewModel>.value(
-        value: viewModel,
-        child: const MaterialApp(home: HomeScreen()),
+      // HomeScreen reads the appearance settings, so a test that builds it has
+      // to supply them the way main.dart does.
+      ChangeNotifierProvider<AppearanceController>(
+        create: (_) => AppearanceController(),
+        child: ChangeNotifierProvider<PiViewModel>.value(
+          value: viewModel,
+          child: const MaterialApp(home: HomeScreen()),
+        ),
       ),
     );
     await settle(tester);

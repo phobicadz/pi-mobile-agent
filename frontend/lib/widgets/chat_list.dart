@@ -14,7 +14,13 @@ import 'turn_status.dart';
 /// and it follows the conversation while Pi is streaming without fighting the
 /// user's own scroll gestures.
 class ChatList extends StatefulWidget {
-  const ChatList({super.key});
+  /// Multiplier for the chat text, decided by [HomeScreen]'s text-size buttons
+  /// and passed to every bubble. Defaulted so a list built on its own - in a
+  /// test, or from a screen that has no buttons - renders at the size the
+  /// bubbles were designed for.
+  final double fontScale;
+
+  const ChatList({super.key, this.fontScale = 1.0});
 
   @override
   State<ChatList> createState() => ChatListState();
@@ -198,12 +204,14 @@ class ChatListState extends State<ChatList> {
                           timestamp: DateTime.now(),
                           streaming: true,
                         ),
+                        fontScale: widget.fontScale,
                         expanded: _expandedIds.contains('thinking'),
                         onToggleExpanded: () => _toggleExpanded('thinking'),
                         status: const TurnStatusRow(),
                       )
                     : ChatBubble(
                         message: messages[index],
+                        fontScale: widget.fontScale,
                         // Pi gives every message an id. A history entry that
                         // arrives without one falls back to its position: the
                         // list only ever grows at the end, so a position is as

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/main.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
-import 'package:pi_mobile_agent/providers/theme_controller.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:provider/provider.dart';
 
@@ -26,16 +26,16 @@ class FakeService extends PiService {
 }
 
 /// Pump the app the way main.dart does, theme provider included.
-Future<ThemeController> pumpApp(WidgetTester tester,
+Future<AppearanceController> pumpApp(WidgetTester tester,
     {Size size = const Size(900, 1200)}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
 
-  final theme = ThemeController();
+  final appearance = AppearanceController();
   await tester.pumpWidget(
-    ChangeNotifierProvider<ThemeController>.value(
-      value: theme,
+    ChangeNotifierProvider<AppearanceController>.value(
+      value: appearance,
       child: MyApp(
         service: FakeService(),
         safeArea: ValueNotifier<EdgeInsets>(EdgeInsets.zero),
@@ -45,7 +45,7 @@ Future<ThemeController> pumpApp(WidgetTester tester,
   for (var i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 100));
   }
-  return theme;
+  return appearance;
 }
 
 /// Press the theme button and let the change land.
@@ -65,51 +65,51 @@ void main() {
 
   testWidgets('the theme button switches the whole app to dark',
       (tester) async {
-    final theme = await pumpApp(tester);
+    final appearance = await pumpApp(tester);
 
     // The test surface is light, and the app starts by following it.
-    expect(theme.mode, ThemeMode.system);
+    expect(appearance.themeMode, ThemeMode.system);
     expect(brightnessOf(tester), Brightness.light);
     expect(find.byIcon(Icons.dark_mode), findsOneWidget,
         reason: 'the button offers the thing the screen is not');
 
     await pressThemeButton(tester, Icons.dark_mode);
 
-    expect(theme.mode, ThemeMode.dark);
+    expect(appearance.themeMode, ThemeMode.dark);
     expect(brightnessOf(tester), Brightness.dark,
         reason: 'the theme MaterialApp builds with, not the colours of one '
             'widget inside it');
     expect(find.byIcon(Icons.dark_mode), findsNothing);
     expect(find.byIcon(Icons.light_mode), findsOneWidget);
 
-    theme.dispose();
+    appearance.dispose();
   });
 
   testWidgets('the button switches back to light', (tester) async {
-    final theme = await pumpApp(tester);
+    final appearance = await pumpApp(tester);
 
     await pressThemeButton(tester, Icons.dark_mode);
     expect(brightnessOf(tester), Brightness.dark);
 
     await pressThemeButton(tester, Icons.light_mode);
 
-    expect(theme.mode, ThemeMode.light);
+    expect(appearance.themeMode, ThemeMode.light);
     expect(brightnessOf(tester), Brightness.light);
     expect(find.byIcon(Icons.dark_mode), findsOneWidget);
 
-    theme.dispose();
+    appearance.dispose();
   });
 
   testWidgets('the app bar still fits a phone with the theme button in it',
       (tester) async {
     // Four actions on a 390 logical pixel wide bar overflowed it by 29px the
     // moment the theme button went in, which is content that cannot be seen.
-    final theme = await pumpApp(tester, size: const Size(390, 844));
+    final appearance = await pumpApp(tester, size: const Size(390, 844));
 
     expect(tester.takeException(), isNull,
         reason: 'the bar has to hold the new button on a phone as well as on a '
             'desktop');
 
-    theme.dispose();
+    appearance.dispose();
   });
 }

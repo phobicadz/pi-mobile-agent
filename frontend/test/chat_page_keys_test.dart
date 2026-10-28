@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/screens/home_screen.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
@@ -13,7 +14,8 @@ import 'package:provider/provider.dart';
 /// Replays canned backend frames; the prompt send succeeds so the chat stays in
 /// a normal (non-error) state while it is being scrolled.
 class FakeScrollChatService extends PiService {
-  final StreamController<PiEvent> _events = StreamController<PiEvent>.broadcast();
+  final StreamController<PiEvent> _events =
+      StreamController<PiEvent>.broadcast();
 
   @override
   Stream<PiState> get stateUpdates => const Stream.empty();
@@ -54,9 +56,14 @@ void main() {
     final service = FakeScrollChatService();
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
-      ChangeNotifierProvider<PiViewModel>.value(
-        value: viewModel,
-        child: const MaterialApp(home: HomeScreen()),
+      // HomeScreen reads the appearance settings, so a test that builds it has
+      // to supply them the way main.dart does.
+      ChangeNotifierProvider<AppearanceController>(
+        create: (_) => AppearanceController(),
+        child: ChangeNotifierProvider<PiViewModel>.value(
+          value: viewModel,
+          child: const MaterialApp(home: HomeScreen()),
+        ),
       ),
     );
 
@@ -70,8 +77,10 @@ void main() {
     return viewModel;
   }
 
-  ScrollPosition chatPosition(WidgetTester tester) =>
-      tester.widget<Scrollable>(find.byType(Scrollable).first).controller!.position;
+  ScrollPosition chatPosition(WidgetTester tester) => tester
+      .widget<Scrollable>(find.byType(Scrollable).first)
+      .controller!
+      .position;
 
   Future<double> press(WidgetTester tester, LogicalKeyboardKey key) async {
     await tester.sendKeyDownEvent(key);
@@ -111,7 +120,8 @@ void main() {
     for (var i = 0; i < 12; i++) {
       final next = await press(tester, LogicalKeyboardKey.pageUp);
       if (next == previous) {
-        expect(next, closeTo(0, 1), reason: 'the only place paging can stop is the top');
+        expect(next, closeTo(0, 1),
+            reason: 'the only place paging can stop is the top');
         break;
       }
       previous = next;
@@ -151,9 +161,14 @@ void main() {
     final service = FakeScrollChatService();
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
-      ChangeNotifierProvider<PiViewModel>.value(
-        value: viewModel,
-        child: const MaterialApp(home: HomeScreen()),
+      // HomeScreen reads the appearance settings, so a test that builds it has
+      // to supply them the way main.dart does.
+      ChangeNotifierProvider<AppearanceController>(
+        create: (_) => AppearanceController(),
+        child: ChangeNotifierProvider<PiViewModel>.value(
+          value: viewModel,
+          child: const MaterialApp(home: HomeScreen()),
+        ),
       ),
     );
     for (var i = 0; i < 12; i++) {

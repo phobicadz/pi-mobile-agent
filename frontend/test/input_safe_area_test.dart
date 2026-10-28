@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/main.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
-import 'package:pi_mobile_agent/providers/theme_controller.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:provider/provider.dart';
 
@@ -48,8 +48,8 @@ Future<void> pumpApp(WidgetTester tester, EdgeInsets insets,
   // The theme provider is part of how the app is built now, not an optional
   // extra: MyApp is the widget that builds MaterialApp, and MaterialApp needs to
   // be told which theme to build with.
-  await tester.pumpWidget(ChangeNotifierProvider<ThemeController>.value(
-    value: ThemeController(),
+  await tester.pumpWidget(ChangeNotifierProvider<AppearanceController>.value(
+    value: AppearanceController(),
     child: MyApp(
       service: FakeService(),
       safeArea: ValueNotifier<EdgeInsets>(insets),

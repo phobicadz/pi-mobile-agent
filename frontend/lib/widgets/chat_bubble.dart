@@ -26,13 +26,29 @@ class ChatBubble extends StatelessWidget {
   /// Double-click / double-tap the bubble. Null leaves it at its normal width.
   final VoidCallback? onToggleExpanded;
 
+  /// Multiplier for every size in this bubble, from the app bar's text-size
+  /// buttons. 1.0 is the size the bubbles were laid out for.
+  ///
+  /// Passed in rather than read from a provider here because the rendered body is
+  /// cached: whatever the rendering depends on has to be part of the cache key, a
+  /// size a bubble reads for itself would not be.
+  final double fontScale;
+
   const ChatBubble({
     super.key,
     required this.message,
     this.status,
     this.expanded = false,
     this.onToggleExpanded,
+    this.fontScale = 1.0,
   });
+
+  /// One size in this bubble, scaled.
+  ///
+  /// The sizes stay written as the values the chat was designed at, so the
+  /// design is still readable in the code and only one thing multiplies them.
+  double _font(double base) => base * fontScale;
+
   @override
   Widget build(BuildContext context) {
     final isAssistant = message.role == 'assistant';
@@ -89,7 +105,7 @@ class ChatBubble extends StatelessWidget {
     // children are cached per message content, so re-entering the viewport
     // hands back the *same widget instances* and Flutter skips rebuilding those
     // subtrees entirely. Only a message that is still streaming changes.
-    final cacheKey = _signatureOf(message, isDark);
+    final cacheKey = _signatureOf(message, isDark, fontScale);
     final body = _BubbleBodyCache.lookup(cacheKey) ??
         _buildBody(context, message, bodyColor, toolColor, toolResultColor,
             toolCardColor, mutedColor, isDark);
@@ -246,7 +262,7 @@ class ChatBubble extends StatelessWidget {
                   : '$detail (${message.stopReason})',
               style: TextStyle(
                 color: color,
-                fontSize: 13,
+                fontSize: _font(13),
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -259,10 +275,16 @@ class ChatBubble extends StatelessWidget {
   /// Hash of everything the cached rendering depends on. Content length is
   /// folded in alongside the hash so two different messages cannot silently
   /// share an entry.
-  static int _signatureOf(PiMessage message, bool isDark) {
+  ///
+  /// The text size is part of it for the same reason the theme is: changing the
+  /// size changes what the rendered children say, so a cache entry keyed without
+  /// it would hand back the old sizes for content that has not changed - which is
+  /// every message in the chat at once.
+  static int _signatureOf(PiMessage message, bool isDark, double fontScale) {
     return Object.hash(
       message.role,
       isDark,
+      fontScale,
       message.content.length,
       Object.hashAll(message.content.codeUnits),
       message.errorMessage,
@@ -293,12 +315,14 @@ class ChatBubble extends StatelessWidget {
           data: text,
           selectable: true,
           // Fenced code blocks get full syntax highlighting.
-          builders: {'pre': _HighlightCodeBuilder(isDark: isDark)},
+          builders: {
+            'pre': _HighlightCodeBuilder(isDark: isDark, fontSize: _font(13)),
+          },
           styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-            p: TextStyle(fontSize: 14, color: textColor, height: 1.4),
-            tableBody: TextStyle(fontSize: 13, color: textColor),
+            p: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
+            tableBody: TextStyle(fontSize: _font(13), color: textColor),
             code: TextStyle(
-              fontSize: 13,
+              fontSize: _font(13),
               fontFamily: 'JetBrainsMono',
               color: textColor,
               backgroundColor: isDark
@@ -306,14 +330,22 @@ class ChatBubble extends StatelessWidget {
                   : Colors.black.withAlpha(20),
             ),
             h1: TextStyle(
-                fontSize: 20, fontWeight: FontWeight.bold, color: textColor),
+                fontSize: _font(20),
+                fontWeight: FontWeight.bold,
+                color: textColor),
             h2: TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: textColor),
+                fontSize: _font(18),
+                fontWeight: FontWeight.bold,
+                color: textColor),
             h3: TextStyle(
-                fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+                fontSize: _font(16),
+                fontWeight: FontWeight.bold,
+                color: textColor),
             strong: TextStyle(
-                fontSize: 14, fontWeight: FontWeight.bold, color: textColor),
-            blockquote: TextStyle(fontSize: 14, color: textColor),
+                fontSize: _font(14),
+                fontWeight: FontWeight.bold,
+                color: textColor),
+            blockquote: TextStyle(fontSize: _font(14), color: textColor),
           ),
         );
       }
@@ -323,7 +355,7 @@ class ChatBubble extends StatelessWidget {
 
     return SelectableText(
       text,
-      style: TextStyle(fontSize: 14, color: textColor, height: 1.4),
+      style: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
     );
   }
 
@@ -357,7 +389,7 @@ class ChatBubble extends StatelessWidget {
                 child: Text(
                   tool.name,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: _font(12),
                     fontWeight: FontWeight.bold,
                     color: toolColor,
                   ),
@@ -370,7 +402,7 @@ class ChatBubble extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 args,
-                style: TextStyle(fontSize: 12, color: mutedColor),
+                style: TextStyle(fontSize: _font(12), color: mutedColor),
               ),
             ),
           if (tool.result != null && tool.result!.isNotEmpty)
@@ -394,7 +426,9 @@ class ChatBubble extends StatelessWidget {
       return Text(
         source,
         style: TextStyle(
-            fontSize: 11, fontFamily: 'JetBrainsMono', color: fallbackColor),
+            fontSize: _font(11),
+            fontFamily: 'JetBrainsMono',
+            color: fallbackColor),
       );
     }
 
@@ -405,9 +439,9 @@ class ChatBubble extends StatelessWidget {
       // other block in the reply, so it gets the same theme the reply uses.
       // Forcing the card's warm colour over it is what made tool output look
       // like it belonged to a different app.
-      textStyle: const TextStyle(
+      textStyle: TextStyle(
         fontFamily: 'JetBrainsMono',
-        fontSize: 11,
+        fontSize: _font(11),
       ),
     );
   }
@@ -418,8 +452,8 @@ class ChatBubble extends StatelessWidget {
   }
 }
 
-/// Cache of rendered bubble bodies, keyed by a signature of the message content
-/// and theme. Bounded so a long chat cannot grow memory without limit.
+/// Cache of rendered bubble bodies, keyed by a signature of the message content,
+/// theme and text size. Bounded so a long chat cannot grow memory without limit.
 class _BubbleBodyCache {
   static final LinkedHashMap<int, List<Widget>> _entries =
       LinkedHashMap<int, List<Widget>>();
@@ -443,9 +477,10 @@ class _BubbleBodyCache {
 /// Renders fenced code blocks with syntax highlighting (colour formatting),
 /// using the fence's language info string when present.
 class _HighlightCodeBuilder extends MarkdownElementBuilder {
-  _HighlightCodeBuilder({required this.isDark});
+  _HighlightCodeBuilder({required this.isDark, required this.fontSize});
 
   final bool isDark;
+  final double fontSize;
 
   String? _language;
 
@@ -476,6 +511,7 @@ class _HighlightCodeBuilder extends MarkdownElementBuilder {
       text.text,
       language: _language,
       isDark: isDark,
+      textStyle: TextStyle(fontSize: fontSize),
     );
   }
 }

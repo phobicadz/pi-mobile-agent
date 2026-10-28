@@ -4,8 +4,8 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
-import '../providers/theme_controller.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
 import '../widgets/model_selector.dart';
@@ -269,11 +269,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // Read once, and from the theme rather than the platform: under
-    // ThemeMode.system the two agree, but once a choice has been made the
-    // platform still reports what the phone is set to, which is not what is on
-    // the screen. This decides both the icon and which way the toggle goes.
+    // Watched here rather than read deeper in the tree: the chat has to rebuild
+    // when the text size changes, and this is the widget that hands the size to
+    // it. The chat list is a StatefulWidget behind a GlobalKey, so its scroll
+    // position and widened messages survive the rebuild.
+    final appearance = context.watch<AppearanceController>();
+
+    // Read from the theme rather than the platform: under ThemeMode.system the
+    // two agree, but once a choice has been made the platform still reports what
+    // the phone is set to, which is not what is on the screen. This decides both
+    // the icon and which way the toggle goes.
     final showingDark = Theme.of(context).brightness == Brightness.dark;
+
+    // The app bar now carries five controls. On a phone that is one too many,
+    // and the one with something to give is the directory label - see the
+    // comment where it is built.
+    final narrowBar = MediaQuery.sizeOf(context).width < 600;
 
     return Scaffold(
       appBar: AppBar(
@@ -301,6 +312,19 @@ class _HomeScreenState extends State<HomeScreen> {
             selector: (_, viewModel) =>
                 viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory,
             builder: (context, cwd, _) {
+              final label =
+                  cwd == null || cwd.isEmpty ? 'Directory' : _shortenPath(cwd);
+              // On a narrow bar this control becomes the folder icon on its own.
+              // A path cut to fit the spare width is not readable there in any
+              // case, and the tooltip can say the whole thing - which is more of
+              // the truth than an ellipsis over a few characters of it.
+              if (narrowBar) {
+                return IconButton(
+                  icon: const Icon(Icons.folder_outlined),
+                  tooltip: 'Working directory: $label',
+                  onPressed: () => _showDirectoryBrowser(context),
+                );
+              }
               return Tooltip(
                 message: 'Browse and set the working directory',
                 child: TextButton.icon(
@@ -308,9 +332,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   label: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 160),
                     child: Text(
-                      cwd == null || cwd.isEmpty
-                          ? 'Directory'
-                          : _shortenPath(cwd),
+                      label,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -368,8 +390,33 @@ class _HomeScreenState extends State<HomeScreen> {
             tooltip:
                 showingDark ? 'Switch to light mode' : 'Switch to dark mode',
             onPressed: () => context
-                .read<ThemeController>()
-                .toggle(Theme.of(context).brightness),
+                .read<AppearanceController>()
+                .toggleTheme(Theme.of(context).brightness),
+          ),
+          // Text size for the chat only. The app bar, the status line and the
+          // prompt field keep their own sizes: this is about reading a reply, not
+          // about making the whole interface larger.
+          IconButton(
+            icon: const Icon(Icons.text_decrease),
+            tooltip: appearance.canDecreaseFont
+                ? 'Smaller chat text'
+                : 'This is the smallest chat text',
+            onPressed: appearance.canDecreaseFont
+                ? () => context
+                    .read<AppearanceController>()
+                    .changeFont(larger: false)
+                : null,
+          ),
+          IconButton(
+            icon: const Icon(Icons.text_increase),
+            tooltip: appearance.canIncreaseFont
+                ? 'Larger chat text'
+                : 'This is the largest chat text',
+            onPressed: appearance.canIncreaseFont
+                ? () => context
+                    .read<AppearanceController>()
+                    .changeFont(larger: true)
+                : null,
           ),
         ],
       ),
@@ -456,7 +503,7 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Stack(
                   children: [
-                    ChatList(key: _chatKey),
+                    ChatList(key: _chatKey, fontScale: appearance.fontScale),
                     if (viewModel.resumingSession) _resumeOverlay(context),
                   ],
                 ),
