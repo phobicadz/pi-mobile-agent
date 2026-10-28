@@ -41,6 +41,50 @@
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
+  <!--
+    Pin the page to the visual viewport.
+
+    Without this, on iOS the layout viewport, the document element and Flutter's
+    own element end up three different sizes: the last measurement on a phone
+    read `inner 428x926`, `client 428x879`, `visual 428x926 offsetTop -47`, and
+    `flutter-view` sitting at `top 47`. Pointer events arrive relative to the
+    visual viewport, so a canvas that starts 47px below it makes every tap land
+    somewhere other than the thing it was aimed at - buttons and list rows feel
+    like their hit area is a little below where they are drawn. Nothing else in
+    the app can correct that, because hit testing happens inside the engine.
+
+    Making the document exactly the visual viewport, with no page scroll, is what
+    removes the mismatch rather than compensating for it: `offsetTop` stays 0 and
+    the canvas starts at 0. The chat scrolls inside Flutter, so the page having
+    its own scroll was never something the app used - it only ever changed what
+    the browser reported about where the canvas was.
+
+    `!important` because the engine writes inline sizes onto its own element, and
+    an inline style outranks a stylesheet rule without it.
+
+    `100vh` first as the fallback, then `100dvh` where the browser understands
+    dynamic viewport units - `dvh` is the one that tracks Safari's toolbars
+    instead of ignoring them.
+  -->
+  <style>
+    html,
+    body {
+      height: 100vh;
+      height: 100dvh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    flutter-view {
+      position: fixed !important;
+      inset: 0 !important;
+      width: 100% !important;
+      height: 100% !important;
+    }
+  </style>
+
   <title>pi_mobile_agent</title>
   <link rel="manifest" href="manifest.json">
 </head>
