@@ -35,6 +35,30 @@ class ChatListState extends State<ChatList> {
   bool _lastThinking = false;
   int _stickAttempts = 0;
 
+  /// Which messages the user has widened to the full column.
+  ///
+  /// This lives with the list, not with the bubble. Bubbles are rebuilt from a
+  /// cached body on every scroll and are keyed by nothing, so state held in one
+  /// would follow its position in the list - widen a reply, resume a session,
+  /// and the width would land on whichever message happened to share the slot.
+  final Set<String> _expandedIds = {};
+
+  void _toggleExpanded(String key) {
+    setState(() {
+      if (!_expandedIds.remove(key)) _expandedIds.add(key);
+    });
+  }
+
+  /// What a widened state is keyed on for a given message.
+  ///
+  /// Pi gives every message an id. A history entry that arrives without one
+  /// falls back to its position: the list only ever grows at the end, so a
+  /// position is as stable as that message can be. Keying on the empty id
+  /// instead would widen every id-less message together, and refusing to key at
+  /// all would make double-clicking them do nothing.
+  String _widenedKey(int index, PiMessage message) =>
+      message.id.isNotEmpty ? message.id : '#$index';
+
   /// Bubbles have no fixed height, so maxScrollExtent is only an estimate for
   /// the part of the list that has not been laid out yet. A single jump can
   /// land short; following it for a few frames lands on the real bottom.
@@ -174,10 +198,23 @@ class ChatListState extends State<ChatList> {
                           timestamp: DateTime.now(),
                           streaming: true,
                         ),
+                        expanded: _expandedIds.contains('thinking'),
+                        onToggleExpanded: () => _toggleExpanded('thinking'),
                         status: const TurnStatusRow(),
                       )
                     : ChatBubble(
                         message: messages[index],
+                        // Pi gives every message an id. A history entry that
+                        // arrives without one falls back to its position: the
+                        // list only ever grows at the end, so a position is as
+                        // stable as that message can be. Keying on nothing at
+                        // all would make two such messages widen together, and
+                        // keying on nothing for real would make double-clicking
+                        // them do nothing at all.
+                        expanded: _expandedIds
+                            .contains(_widenedKey(index, messages[index])),
+                        onToggleExpanded: () => _toggleExpanded(
+                            _widenedKey(index, messages[index])),
                         // The reply Pi is still writing carries the live status;
                         // finished ones carry nothing, and stay cached.
                         status: messages[index].streaming

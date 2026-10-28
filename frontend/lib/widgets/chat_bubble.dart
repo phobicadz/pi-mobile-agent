@@ -17,10 +17,21 @@ class ChatBubble extends StatelessWidget {
   /// subscribes to the stream at all.
   final Widget? status;
 
+  /// Whether this bubble takes the whole width of the chat instead of the usual
+  /// column. Held by [ChatList], not by the bubble: bubbles are rebuilt from a
+  /// cached body on every scroll and carry no key of their own, so state kept
+  /// here would follow a position in the list rather than the message.
+  final bool expanded;
+
+  /// Double-click / double-tap the bubble. Null leaves it at its normal width.
+  final VoidCallback? onToggleExpanded;
+
   const ChatBubble({
     super.key,
     required this.message,
     this.status,
+    this.expanded = false,
+    this.onToggleExpanded,
   });
   @override
   Widget build(BuildContext context) {
@@ -78,7 +89,13 @@ class ChatBubble extends StatelessWidget {
     // MediaQuery.sizeOf only depends on the window size, not on the soft
     // keyboard, so bubbles do not re-render every time the input field gains
     // focus on a phone.
-    final maxBubbleWidth = MediaQuery.sizeOf(context).width * 0.8;
+    //
+    // Widening changes the limit, not the content: the Markdown body comes back
+    // out of the cache as the same widget instances and re-lays out in the
+    // wider box. The screen width is deliberately not the real limit here - the
+    // list's own padding bounds the bubble, and a maxWidth above what the parent
+    // allows simply means "as wide as it can be".
+    final maxWidth = MediaQuery.sizeOf(context).width * (expanded ? 1.0 : 0.8);
 
     // A bubble with nothing to say has nothing to copy: no button then.
     final copyText = message.copyableText;
@@ -86,72 +103,80 @@ class ChatBubble extends StatelessWidget {
 
     return Align(
       alignment: isAssistant ? Alignment.centerLeft : Alignment.centerRight,
-      child: Container(
-        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: bubbleColor,
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(
-                  isAssistant ? Icons.smart_toy : Icons.person,
-                  size: 16,
-                  color: accentColor,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  isAssistant ? 'Pi' : 'You',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: accentColor, fontWeight: FontWeight.bold),
-                ),
-                // Finished assistant replies carry the usage Pi reported for
-                // them, so each reply shows what it cost.
-                if (isAssistant &&
-                    message.usage != null &&
-                    !message.usage!.isEmpty) ...[
-                  const SizedBox(width: 8),
+      // Inside the alignment, so the gesture belongs to the bubble and not to
+      // the empty stretch of row beside a short one.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onDoubleTap: onToggleExpanded,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: bubbleColor,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    isAssistant ? Icons.smart_toy : Icons.person,
+                    size: 16,
+                    color: accentColor,
+                  ),
+                  const SizedBox(width: 6),
                   Text(
-                    '${formatTokens(message.usage!.produced)} tok'
-                    '${message.usage!.reasoning > 0 ? ' (thinking)' : ''}',
-                    style: Theme.of(context)
-                        .textTheme
-                        .labelSmall
-                        ?.copyWith(color: mutedColor),
+                    isAssistant ? 'Pi' : 'You',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        color: accentColor, fontWeight: FontWeight.bold),
                   ),
-                ],
-                // Copy button in the top-right corner of the bubble. The header
-                // row already spans the whole bubble, so a Spacer puts it in the
-                // corner without changing any widths, and being in the row's own
-                // band it can never cover the reply.
-                if (canCopy) ...[
-                  const Spacer(),
-                  IconButton(
-                    icon: const Icon(Icons.content_copy, size: 15),
-                    color: mutedColor,
-                    tooltip: 'Copy',
-                    visualDensity: VisualDensity.compact,
-                    style: IconButton.styleFrom(
-                      minimumSize: const Size(26, 26),
-                      padding: const EdgeInsets.all(4),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  // Finished assistant replies carry the usage Pi reported for
+                  // them, so each reply shows what it cost.
+                  if (isAssistant &&
+                      message.usage != null &&
+                      !message.usage!.isEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      '${formatTokens(message.usage!.produced)} tok'
+                      '${message.usage!.reasoning > 0 ? ' (thinking)' : ''}',
+                      style: Theme.of(context)
+                          .textTheme
+                          .labelSmall
+                          ?.copyWith(color: mutedColor),
                     ),
-                    onPressed: () => _copyMessage(context, copyText),
-                  ),
+                  ],
+                  // Copy button in the top-right corner of the bubble. The header
+                  // row already spans the whole bubble, so a Spacer puts it in the
+                  // corner without changing any widths, and being in the row's own
+                  // band it can never cover the reply.
+                  if (canCopy) ...[
+                    const Spacer(),
+                    IconButton(
+                      icon: const Icon(Icons.content_copy, size: 15),
+                      color: mutedColor,
+                      tooltip: 'Copy',
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        minimumSize: const Size(26, 26),
+                        padding: const EdgeInsets.all(4),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () => _copyMessage(context, copyText),
+                    ),
+                  ],
                 ],
-              ],
-            ),
-            const SizedBox(height: 6),
-            ...body,
-            // The one busy indicator: passed in by ChatList for the bubble that
-            // is actually streaming (or for the "thinking" placeholder), so
-            // there is never a second spinner anywhere else.
-            if (status != null) status!,
-          ],
+              ),
+              const SizedBox(height: 6),
+              ...body,
+              // The one busy indicator: passed in by ChatList for the bubble that
+              // is actually streaming (or for the "thinking" placeholder), so
+              // there is never a second spinner anywhere else.
+              if (status != null) status!,
+            ],
+          ),
         ),
       ),
     );
