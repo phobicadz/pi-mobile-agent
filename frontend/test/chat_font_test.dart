@@ -10,6 +10,8 @@ import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:pi_mobile_agent/widgets/chat_list.dart';
 import 'package:provider/provider.dart';
 
+import 'support/app_menu.dart';
+
 /// Replays canned backend frames so a prompt can be sent and the message it
 /// produces renders in the chat like any other.
 class FakeChatService extends PiService {
@@ -67,7 +69,12 @@ void main() {
       .fontSize!;
 
   Future<void> press(WidgetTester tester, IconData icon) async {
-    await tester.tap(find.widgetWithIcon(IconButton, icon));
+    // The size controls live in the menu the hamburger opens, and the menu stays
+    // open while they are pressed - changing a size is something to see the
+    // effect of before choosing the next one.
+    final button = find.widgetWithIcon(IconButton, icon);
+    await scrollMenuIntoView(tester, button);
+    await tester.tap(button);
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 100));
     }
@@ -85,6 +92,7 @@ void main() {
       (tester) async {
     final (appearance, viewModel) = await pumpHome(tester);
     await oneMessage(tester, viewModel);
+    await openAppMenu(tester);
 
     // The size the bubbles were laid out for.
     expect(chatTextSize(tester), closeTo(14, 0.001));
@@ -108,6 +116,7 @@ void main() {
   testWidgets('the buttons say so at the ends of the range', (tester) async {
     final (appearance, viewModel) = await pumpHome(tester);
     await oneMessage(tester, viewModel);
+    await openAppMenu(tester);
 
     for (var i = 0; i < 12; i++) {
       await press(tester, Icons.text_increase);

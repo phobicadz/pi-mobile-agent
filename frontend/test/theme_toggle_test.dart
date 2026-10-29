@@ -6,6 +6,8 @@ import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:provider/provider.dart';
 
+import 'support/app_menu.dart';
+
 /// A live connection, so the app bar renders its actions instead of the
 /// connecting screen.
 class FakeService extends PiService {
@@ -48,7 +50,7 @@ Future<AppearanceController> pumpApp(WidgetTester tester,
   return appearance;
 }
 
-/// Press the theme button and let the change land.
+/// Press the theme row in the menu and let the change land.
 ///
 /// MaterialApp animates from one theme into the other, so checking the frame
 /// right after the press still sees the theme that was there before it.
@@ -70,8 +72,10 @@ void main() {
     // The test surface is light, and the app starts by following it.
     expect(appearance.themeMode, ThemeMode.system);
     expect(brightnessOf(tester), Brightness.light);
+
+    await openAppMenu(tester);
     expect(find.byIcon(Icons.dark_mode), findsOneWidget,
-        reason: 'the button offers the thing the screen is not');
+        reason: 'the menu offers the thing the screen is not');
 
     await pressThemeButton(tester, Icons.dark_mode);
 
@@ -85,9 +89,10 @@ void main() {
     appearance.dispose();
   });
 
-  testWidgets('the button switches back to light', (tester) async {
+  testWidgets('the menu switches back to light', (tester) async {
     final appearance = await pumpApp(tester);
 
+    await openAppMenu(tester);
     await pressThemeButton(tester, Icons.dark_mode);
     expect(brightnessOf(tester), Brightness.dark);
 
@@ -100,15 +105,22 @@ void main() {
     appearance.dispose();
   });
 
-  testWidgets('the app bar still fits a phone with the theme button in it',
+  testWidgets('the bar fits a phone now that the controls are in the menu',
       (tester) async {
-    // Four actions on a 390 logical pixel wide bar overflowed it by 29px the
-    // moment the theme button went in, which is content that cannot be seen.
+    // Six icon buttons overflowed a 390 logical pixel bar by 29px, which is
+    // content that cannot be seen. The bar no longer carries them: it carries
+    // one control and a status dot, and there is room for both on a phone.
     final appearance = await pumpApp(tester, size: const Size(390, 844));
 
     expect(tester.takeException(), isNull,
-        reason: 'the bar has to hold the new button on a phone as well as on a '
-            'desktop');
+        reason: 'the bar has to hold the menu on a phone as well as on a desktop');
+
+    final barControls = tester
+        .widgetList<IconButton>(find.descendant(
+            of: find.byType(AppBar), matching: find.byType(IconButton)))
+        .where((b) => b.onPressed != null);
+    expect(barControls.length, 1,
+        reason: 'a bar that fits because there is nothing in it to overflow');
 
     appearance.dispose();
   });

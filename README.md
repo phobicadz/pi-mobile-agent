@@ -194,6 +194,32 @@ systemctl --user status pi-mobile-agent
 }
 ```
 
+#### List Files
+
+Lists the files and folders in one directory. With no `path` it starts at the
+working directory. Sent by the file browser.
+
+```json
+{
+  "id": "unique-request-id",
+  "command": "list_files",
+  "params": { "path": "/home/adam/source/repos" }
+}
+```
+
+#### Read File
+
+Reads one file as text (up to 10 MB; a file whose bytes are not text comes back
+with `is_text: false` and no content). Sent by the file viewer.
+
+```json
+{
+  "id": "unique-request-id",
+  "command": "read_file",
+  "params": { "path": "/home/adam/source/repos/pi-mobile-agent/README.md" }
+}
+```
+
 ### Server Response Format
 ```json
 {
@@ -235,9 +261,12 @@ Events stream continuously as the Pi agent works:
 - ✅ Auto-reconnection
 - ✅ Error handling and display
 - ✅ Works on iOS, Android, Web
-- ✅ Start a new session in the current directory (`+` button in the top-left of the app bar, like `/new` in the Pi TUI): the chat empties, the directory and model stay as they are, and the conversation you left is still resumable
-- ✅ Resume previous sessions (history button, like `/resume` in the Pi TUI)
-- ✅ Browse and set the working directory (folder button in the app bar): browse drives, folders, and recently used directories; setting a new directory restarts Pi with a fresh session in that directory
+- ✅ All controls are in a menu opened by the hamburger at the top left of the app bar; the bar itself carries only that and the connection dot. Each entry in the menu says in words what it does and what it is currently set to — the connection state, the full working directory, the chat text size
+- ✅ Start a new session in the current directory (menu entry, like `/new` in the Pi TUI): the chat empties, the directory and model stay as they are, and the conversation you left is still resumable. Closed while a run is in flight, so it cannot throw away a reply that is still being written
+- ✅ Resume previous sessions (menu entry, like `/resume` in the Pi TUI)
+- ✅ Browse and set the working directory (menu entry): browse drives, folders, and recently used directories; setting a new directory restarts Pi with a fresh session in that directory
+- ✅ Browse and read files (menu entry): the directory tree beside the working directory, and a file opened with line numbers down the side and syntax colouring for the languages the app knows (C#, CSS, HTML/XML, TypeScript, Python, and the rest of them). Prose, binaries and files too large to colour are said out loud in the header instead of being guessed at, and the copy button copies the file, not the line numbers
+- ✅ On a phone a reply takes the whole width of the screen. The narrower column and the double-tap that widens a reply are for a wide window, where a reading measure is a choice someone made
 
 ### Future Enhancements
 - [ ] Fork sessions

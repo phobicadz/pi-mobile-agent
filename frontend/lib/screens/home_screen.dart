@@ -8,6 +8,7 @@ import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
+import '../widgets/file_browser.dart';
 import '../widgets/model_selector.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -259,12 +260,204 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  String _shortenPath(String path) {
-    final normalized = path.replaceAll('\\', '/');
-    final segments = normalized.split('/').where((s) => s.isNotEmpty).toList();
-    if (segments.isEmpty) return path;
-    if (segments.length <= 2) return path;
-    return '.../${segments.sublist(segments.length - 2).join('/')}';
+  void _showFileBrowser(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.of(sheetContext).size.height * 0.8,
+        child: const FileBrowser(),
+      ),
+    );
+  }
+
+  /// The menu the hamburger opens.
+  ///
+  /// Every control the app bar used to carry is here instead, where each one has
+  /// room to say what it does and what it is currently set to. Six icon buttons
+  /// in a bar on a phone were six guesses with the explanation hidden behind a
+  /// long press; a menu can spell them out.
+  ///
+  /// The actions run against this State's own context, not the tile's: closing
+  /// the drawer takes the tile out of the tree, and the sheet each action opens
+  /// needs a context that is still there.
+  Widget _buildDrawer() {
+    return Consumer2<PiViewModel, AppearanceController>(
+      builder: (_, viewModel, appearance, __) {
+        final theme = Theme.of(context);
+        // Read from the theme rather than the platform: under ThemeMode.system
+        // the two agree, but once a choice has been made the platform still
+        // reports what the phone is set to, which is not what is on the screen.
+        final showingDark = theme.brightness == Brightness.dark;
+        final directory =
+            viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory ?? '';
+        // Said in full: the bar shortened a path because it had no room for one,
+        // and this menu has. Which directory a session works in is not something
+        // to guess at from the last two segments of it.
+        final directoryLabel = directory;
+
+        void closeMenu() => Navigator.of(context).pop();
+
+        return Drawer(
+          child: SafeArea(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              children: [
+                DrawerHeader(
+                  decoration: BoxDecoration(
+                    color: theme.colorScheme.surfaceContainerHighest,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.smart_toy,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          const SizedBox(width: 8),
+                          Text('Pi Agent',
+                              style: theme.textTheme.titleMedium
+                                  ?.copyWith(color: theme.colorScheme.onSurface)),
+                        ],
+                      ),
+                      const Spacer(),
+                      Row(
+                        children: [
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: viewModel.isConnected
+                                  ? Colors.green
+                                  : Colors.red,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            viewModel.isConnected ? 'Connected' : 'Disconnected',
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                      if (directoryLabel.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Text(
+                            directoryLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall
+                                ?.copyWith(
+                                    color: theme.colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.add),
+                  title: const Text('New session'),
+                  subtitle: Text(directoryLabel.isEmpty
+                      ? 'Start a fresh chat'
+                      : 'Start a fresh chat in $directoryLabel'),
+                  enabled: !viewModel.isLoading,
+                  onTap: viewModel.isLoading
+                      ? null
+                      : () {
+                          closeMenu();
+                          _startNewSession(context);
+                        },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: const Text('Working directory'),
+                  subtitle: Text(directoryLabel.isEmpty
+                      ? 'Not known yet'
+                      : directoryLabel),
+                  onTap: () {
+                    closeMenu();
+                    _showDirectoryBrowser(context);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.history),
+                  title: const Text('Resume a previous session'),
+                  enabled: !viewModel.resumingSession,
+                  onTap: viewModel.resumingSession
+                      ? null
+                      : () {
+                          closeMenu();
+                          _showSessionPicker(context);
+                        },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.description),
+                  title: const Text('Browse and view files'),
+                  onTap: () {
+                    closeMenu();
+                    _showFileBrowser(context);
+                  },
+                ),
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: Text('Appearance',
+                      style: theme.textTheme.labelSmall
+                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                ),
+                ListTile(
+                  // The icon shows what is on the screen, because that is the
+                  // only thing this control can truthfully act on: it moves away
+                  // from whatever is currently being rendered.
+                  leading: Icon(showingDark ? Icons.light_mode : Icons.dark_mode),
+                  title: Text(showingDark
+                      ? 'Switch to light mode'
+                      : 'Switch to dark mode'),
+                  // Left open on purpose: the colours change behind the menu, so
+                  // the effect is visible while the other appearance settings are
+                  // still being chosen.
+                  onTap: () => appearance.toggleTheme(theme.brightness),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.text_fields),
+                  title: const Text('Chat text size'),
+                  subtitle: Text(
+                      '${(appearance.fontScale * 100).round()}% of the size the chat was designed at'),
+                  // Text size for the chat only; the menu and the rest of the
+                  // interface keep their own sizes.
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.text_decrease),
+                        tooltip: appearance.canDecreaseFont
+                            ? 'Smaller chat text'
+                            : 'This is the smallest chat text',
+                        onPressed: appearance.canDecreaseFont
+                            ? () =>
+                                appearance.changeFont(larger: false)
+                            : null,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.text_increase),
+                        tooltip: appearance.canIncreaseFont
+                            ? 'Larger chat text'
+                            : 'This is the largest chat text',
+                        onPressed: appearance.canIncreaseFont
+                            ? () => appearance.changeFont(larger: true)
+                            : null,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
@@ -275,32 +468,18 @@ class _HomeScreenState extends State<HomeScreen> {
     // position and widened messages survive the rebuild.
     final appearance = context.watch<AppearanceController>();
 
-    // Read from the theme rather than the platform: under ThemeMode.system the
-    // two agree, but once a choice has been made the platform still reports what
-    // the phone is set to, which is not what is on the screen. This decides both
-    // the icon and which way the toggle goes.
-    final showingDark = Theme.of(context).brightness == Brightness.dark;
-
-    // The app bar now carries five controls. On a phone that is one too many,
-    // and the one with something to give is the directory label - see the
-    // comment where it is built.
-    final narrowBar = MediaQuery.sizeOf(context).width < 600;
-
     return Scaffold(
+      // Everything the app bar used to carry as icons is here instead: in a
+      // menu, where each one can say what it does and what it is currently set
+      // to, rather than being a tooltip a phone has to press to read.
+      drawer: _buildDrawer(),
       appBar: AppBar(
-        leading: Selector<PiViewModel, bool>(
-          // Disabled while a run is in flight: starting over mid-run would
-          // throw away a reply that is still being written.
-          selector: (_, viewModel) => viewModel.isLoading,
-          builder: (context, busy, _) {
-            return IconButton(
-              icon: const Icon(Icons.add),
-              tooltip: busy
-                  ? 'Finish or stop the current run first'
-                  : 'New session in this directory',
-              onPressed: busy ? null : () => _startNewSession(context),
-            );
-          },
+        leading: Builder(
+          builder: (context) => IconButton(
+            icon: const Icon(Icons.menu),
+            tooltip: 'Menu',
+            onPressed: () => Scaffold.of(context).openDrawer(),
+          ),
         ),
         title: Row(
           mainAxisSize: MainAxisSize.min,
@@ -313,60 +492,9 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
-          Selector<PiViewModel, String?>(
-            // Only the directory text needs to rebuild when the working
-            // directory changes, not the whole app bar on every update.
-            selector: (_, viewModel) =>
-                viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory,
-            builder: (context, cwd, _) {
-              final label =
-                  cwd == null || cwd.isEmpty ? 'Directory' : _shortenPath(cwd);
-              // On a narrow bar this control becomes the folder icon on its own.
-              // A path cut to fit the spare width is not readable there in any
-              // case, and the tooltip can say the whole thing - which is more of
-              // the truth than an ellipsis over a few characters of it.
-              if (narrowBar) {
-                return IconButton(
-                  icon: const Icon(Icons.folder_outlined),
-                  tooltip: 'Working directory: $label',
-                  onPressed: () => _showDirectoryBrowser(context),
-                );
-              }
-              return Tooltip(
-                message: 'Browse and set the working directory',
-                child: TextButton.icon(
-                  icon: const Icon(Icons.folder_outlined, size: 18),
-                  label: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 160),
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  onPressed: () => _showDirectoryBrowser(context),
-                ),
-              );
-            },
-          ),
-          Selector<PiViewModel, bool>(
-            selector: (_, viewModel) => viewModel.resumingSession,
-            builder: (context, resuming, _) {
-              // Disabled while one is being restored: opening the picker again
-              // would let a second resume start over the first.
-              return IconButton(
-                icon: const Icon(Icons.history),
-                tooltip: resuming
-                    ? 'Restoring a session'
-                    : 'Resume a previous session',
-                onPressed: resuming ? null : () => _showSessionPicker(context),
-              );
-            },
-          ),
-          // The connection state as a dot and nothing else. The colour is the
-          // whole message, and the word next to it was the part of the app bar a
-          // phone could not afford. The words are still there for anyone who
-          // asks the dot.
+          // The connection state as a dot and nothing else. It stays in the bar
+          // because it is not a control: it is the one thing on this screen that
+          // has to be visible without asking for it.
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 14),
             child: Center(
@@ -387,43 +515,6 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
             ),
-          ),
-          IconButton(
-            // The icon shows what is on the screen, because that is the only
-            // thing the button can truthfully act on: the toggle moves away from
-            // whatever is currently being rendered, which is also what a user
-            // looking for the dark-mode button is checking.
-            icon: Icon(showingDark ? Icons.light_mode : Icons.dark_mode),
-            tooltip:
-                showingDark ? 'Switch to light mode' : 'Switch to dark mode',
-            onPressed: () => context
-                .read<AppearanceController>()
-                .toggleTheme(Theme.of(context).brightness),
-          ),
-          // Text size for the chat only. The app bar, the status line and the
-          // prompt field keep their own sizes: this is about reading a reply, not
-          // about making the whole interface larger.
-          IconButton(
-            icon: const Icon(Icons.text_decrease),
-            tooltip: appearance.canDecreaseFont
-                ? 'Smaller chat text'
-                : 'This is the smallest chat text',
-            onPressed: appearance.canDecreaseFont
-                ? () => context
-                    .read<AppearanceController>()
-                    .changeFont(larger: false)
-                : null,
-          ),
-          IconButton(
-            icon: const Icon(Icons.text_increase),
-            tooltip: appearance.canIncreaseFont
-                ? 'Larger chat text'
-                : 'This is the largest chat text',
-            onPressed: appearance.canIncreaseFont
-                ? () => context
-                    .read<AppearanceController>()
-                    .changeFont(larger: true)
-                : null,
           ),
         ],
       ),

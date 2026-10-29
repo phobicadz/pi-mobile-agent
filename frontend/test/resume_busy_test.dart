@@ -9,6 +9,8 @@ import 'package:pi_mobile_agent/screens/home_screen.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:provider/provider.dart';
 
+import 'support/app_menu.dart';
+
 /// A backend whose session restore does not finish until the test says so, which
 /// is the only way to see the state the app is supposed to show while it runs.
 class _ControlledResumeService extends PiService {
@@ -100,15 +102,24 @@ void main() {
     return (service, viewModel);
   }
 
+/// A session row in the picker sheet.
+///
+/// Scoped to the sheet on purpose: the menu is a list of ListTiles as well, and
+/// "the first tile on the screen" is whichever one happens to be there.
+Finder sessionRow(WidgetTester tester) => find
+    .descendant(of: find.byType(BottomSheet), matching: find.byType(ListTile))
+    .first;
+
   testWidgets('restoring a session shows a busy state over the chat',
       (tester) async {
     final (service, viewModel) = await pumpHome(tester);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.history));
+    await openAppMenu(tester);
+    await tapMenuRow(tester, Icons.history);
     await settle(tester);
     expect(find.text('The one from earlier'), findsOneWidget);
 
-    await tester.tap(find.byType(ListTile).first);
+    await tester.tap(sessionRow(tester));
     await settle(tester);
 
     expect(viewModel.resumingSession, isTrue);
@@ -130,29 +141,27 @@ void main() {
     viewModel.dispose();
   });
 
-  testWidgets('the history button is closed while a session is being restored',
+  testWidgets('the history entry is closed while a session is being restored',
       (tester) async {
     final (service, viewModel) = await pumpHome(tester);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.history));
+    await openAppMenu(tester);
+    await tapMenuRow(tester, Icons.history);
     await settle(tester);
-    await tester.tap(find.byType(ListTile).first);
+    await tester.tap(sessionRow(tester));
     await settle(tester);
 
-    final button = tester
-        .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.history));
-    expect(button.onPressed, isNull,
+    await openAppMenu(tester);
+    expect(
+        tester.widget<ListTile>(menuRow(Icons.history)).onTap,
+        isNull,
         reason: 'a second resume started over the first would race the history '
             'being loaded into the live session');
 
     service.completeResume();
     await settle(tester);
 
-    expect(
-        tester
-            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.history))
-            .onPressed,
-        isNotNull);
+    expect(tester.widget<ListTile>(menuRow(Icons.history)).onTap, isNotNull);
 
     viewModel.dispose();
   });
@@ -174,9 +183,10 @@ void main() {
     );
     await settle(tester);
 
-    await tester.tap(find.widgetWithIcon(IconButton, Icons.history));
+    await openAppMenu(tester);
+    await tapMenuRow(tester, Icons.history);
     await settle(tester);
-    await tester.tap(find.byType(ListTile).first);
+    await tester.tap(sessionRow(tester));
     await settle(tester);
 
     expect(viewModel.resumingSession, isFalse,
@@ -184,11 +194,9 @@ void main() {
             'app stays "restoring" forever');
     expect(find.text('Restoring session…'), findsNothing);
     expect(viewModel.error, contains('Failed to resume session'));
-    expect(
-        tester
-            .widget<IconButton>(find.widgetWithIcon(IconButton, Icons.history))
-            .onPressed,
-        isNotNull);
+
+    await openAppMenu(tester);
+    expect(tester.widget<ListTile>(menuRow(Icons.history)).onTap, isNotNull);
 
     viewModel.dispose();
   });
