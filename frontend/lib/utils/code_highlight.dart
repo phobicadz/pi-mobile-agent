@@ -27,8 +27,9 @@ import 'package:highlight/languages/rust.dart' show rust;
 import 'package:highlight/languages/shell.dart' show shell;
 import 'package:highlight/languages/sql.dart' show sql;
 import 'package:highlight/languages/typescript.dart' show typescript;
-import 'package:highlight/languages/xml.dart' show xml;
 import 'package:highlight/languages/yaml.dart' show yaml;
+
+import 'xml_grammar.dart' show xml;
 
 /// Syntax highlighting for chat bubbles.
 ///
@@ -47,14 +48,13 @@ import 'package:highlight/languages/yaml.dart' show yaml;
 /// Languages offered to the highlighter. Aliases declared by each grammar
 /// (`sh`/`zsh`, `ts`, `py`, `c++`, …) are registered along with the name.
 ///
-/// The list is also a constraint on the grammars themselves: `xml` delegates the
-/// body of a `<style>` block to `subLanguage: ["css", "xml"]` and a `<script>`
-/// body to `["actionscript", "javascript", "handlebars", "xml"]`, and a
-/// sub-language that is not registered leaves the *whole* document uncoloured -
-/// which is exactly why an HTML page with a stylesheet in it looked like the
-/// colouring worked sometimes and not others. `css` is here because `xml`
-/// asks for it; `actionscript` and `handlebars` are not, and a page whose
-/// script is in one of those falls back to `xml` for that body.
+/// The list is also a constraint on the grammars themselves: the HTML grammar
+/// hands the body of a `<style>` block to `css` and the body of a `<script>`
+/// block to `javascript`, so both are here for the markup grammar to reach as
+/// well as for their own files. A sub-language a grammar asks for that this map
+/// does not contain colours nothing - which is what "HTML colouring works
+/// sometimes" looked like from the phone. The grammar registered as `xml` is a
+/// corrected copy of the shipped one: see `xml_grammar.dart`.
 final Highlight _highlighter = Highlight()
   ..registerLanguages({
     'bash': bash,

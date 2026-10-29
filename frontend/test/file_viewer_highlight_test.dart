@@ -212,6 +212,41 @@ Set<int> _paintedColours(WidgetTester tester) {
   return colours;
 }
 
+/// The colours a span tree paints, once styles are inherited down the tree.
+Set<int> _spanColours(List<TextSpan> spans) {
+  final colours = <int>{};
+  void collect(TextSpan span, TextStyle? inherited) {
+    final effective =
+        inherited == null ? span.style : inherited.merge(span.style);
+    if (span.text != null && effective?.color != null) {
+      colours.add(effective!.color!.toARGB32());
+    }
+    for (final child in span.children ?? const <InlineSpan>[]) {
+      if (child is TextSpan) collect(child, effective);
+    }
+  }
+  for (final s in spans) {
+    collect(s, null);
+  }
+  return colours;
+}
+
+/// The text a span tree renders, so a parse that swallows part of a file shows
+/// up as a difference rather than as a page that merely looks a bit short.
+String _spanText(List<TextSpan> spans) {
+  final out = StringBuffer();
+  void collect(TextSpan span) {
+    if (span.text != null) out.write(span.text);
+    for (final child in span.children ?? const <InlineSpan>[]) {
+      if (child is TextSpan) collect(child);
+    }
+  }
+  for (final s in spans) {
+    collect(s);
+  }
+  return out.toString();
+}
+
 /// The line numbers the viewer drew, in order.
 List<String> _gutterNumbers(WidgetTester tester) => tester
     .widgetList<Text>(find.byType(Text))
@@ -330,6 +365,8 @@ void main() {
       'with a comparison in a script': '<!DOCTYPE html>\n<html><body><h1>Hi</h1>\n<script>if (a < b && c > d) { console.log("<div>"); }</script></body></html>\n',
       'with unquoted attributes': '<!DOCTYPE html>\n<html><body><a href=/x data-id=2 onclick="go()">link</a></body></html>\n',
       'script and style together': '<!DOCTYPE html>\n<html><head><style>.a{color:red}</style></head>\n<body><script>var n = 1;</script></body></html>\n',
+      'a comparison in a for loop': '<!DOCTYPE html>\n<html><body>\n<script>for (let i = 0; i <= n; i++) { draw("<b>"); }</script></body></html>\n',
+      'a style block with a child selector': '<!DOCTYPE html>\n<html><head><style>.a > .b { color: red; }</style></head><body><p>x</p></body></html>\n',
     };
 
     shapes.forEach((label, source) {
@@ -372,6 +409,48 @@ void main() {
         collect(s, null);
       }
       expect(colours.length, greaterThan(2));
+    });
+
+    test('a script body is coloured as code, not as markup', () {
+      // Several colours do not prove this: markup is coloured too. The shipped
+      // grammar handed <script> to the generic tag mode, so the body was read
+      // as HTML - which is also why a `<` in `i <= n` answered with nothing
+      // coloured at all, the parser treating it as an illegal tag.
+      const script =
+          'for (let i = 0; i <= items.length; i++) { f("<b>" + i); }';
+      const page =
+          '<!DOCTYPE html>\n<html><body>\n<script>$script</script>\n</body></html>\n';
+
+      final insidePage =
+          _spanColours(highlightedSpans(page, language: 'xml', isDark: true));
+      final onItsOwn = _spanColours(
+          highlightedSpans(script, language: 'javascript', isDark: true));
+
+      expect(onItsOwn.difference(insidePage), isEmpty,
+          reason: 'the same code has to be coloured the same way inside a page '
+              'as it is on its own');
+    });
+
+    test('a style body is coloured as CSS, not as markup', () {
+      const style = '.a > .b { color: #3fb; width: 10px; }';
+      const page =
+          '<!DOCTYPE html>\n<html><head><style>$style</style></head><body><p>x</p></body></html>\n';
+
+      final insidePage =
+          _spanColours(highlightedSpans(page, language: 'xml', isDark: true));
+      final onItsOwn =
+          _spanColours(highlightedSpans(style, language: 'css', isDark: true));
+
+      expect(onItsOwn.difference(insidePage), isEmpty,
+          reason: 'a stylesheet inside a page has to be coloured like that '
+              'stylesheet on its own');
+    });
+
+    test('reading a page as HTML loses none of it', () {
+      expect(_spanText(highlightedSpans(htmlPage, language: 'xml', isDark: true)),
+          htmlPage,
+          reason: 'colouring is only worth having if the file still says the '
+              'same thing afterwards');
     });
 
     testWidgets('an HTML page is rendered with several colours',
