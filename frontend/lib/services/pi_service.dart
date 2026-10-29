@@ -183,6 +183,21 @@ class PiService {
     return DirListing.fromJson(unwrapData(response, command: 'list_dir'));
   }
 
+  /// List all files and directories in a path. Omit [path] to list the
+  /// current working directory.
+  Future<FileListing> listFiles({String? path}) async {
+    final response = await _sendCommand('list_files', params: {
+      if (path != null) 'path': path,
+    });
+    return FileListing.fromJson(unwrapData(response, command: 'list_files'));
+  }
+
+  /// Read the contents of a text file.
+  Future<FileContent> readFile(String path) async {
+    final response = await _sendCommand('read_file', params: {'path': path});
+    return FileContent.fromJson(unwrapData(response, command: 'read_file'));
+  }
+
   /// Point Pi at a new working directory. Pi restarts with a fresh session, so
   /// the current chat history no longer applies.
   Future<String> setWorkingDirectory(String path) async {

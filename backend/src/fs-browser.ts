@@ -1,13 +1,22 @@
-import { existsSync, readdirSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 
 export interface DirEntry {
   name: string;
   path: string;
+  isDirectory?: boolean;
+  size?: number;
 }
 
 export interface DirListing {
+  path: string;
+  parent: string | null;
+  roots: DirEntry[];
+  entries: DirEntry[];
+}
+
+export interface FileListing {
   path: string;
   parent: string | null;
   roots: DirEntry[];
@@ -24,8 +33,32 @@ const HIDDEN_DIRS = new Set([
   "Recovery",
 ]);
 
+/** Files/patterns we hide from the file listing. */
+const HIDDEN_FILES = new Set([
+  ".DS_Store",
+  "Thumbs.db",
+  "$RECYCLE.BIN",
+]);
+
+/** Maximum file size we'll read (10 MB) */
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
+
+/** Text file extensions we can safely read */
+const TEXT_EXTENSIONS = new Set([
+  "txt", "md", "json", "js", "ts", "tsx", "jsx", "py", "java", "cpp", "c", "h",
+  "html", "css", "scss", "xml", "yaml", "yml", "toml", "ini", "conf", "sh",
+  "bash", "zsh", "fish", "dart", "go", "rs", "rb", "php", "sql", "sql",
+  "dockerfile", "Dockerfile", "makefile", "Makefile", "gradle", "maven",
+  "package.json", "package-lock.json", "tsconfig.json", "eslintrc",
+  "prettierrc", "gitignore", "env", "log", "csv", "sql", "dockerfile"
+]);
+
 function isHiddenDir(name: string): boolean {
   return name.startsWith(".") || HIDDEN_DIRS.has(name);
+}
+
+function isHiddenFile(name: string): boolean {
+  return name.startsWith(".") || HIDDEN_FILES.has(name);
 }
 
 function isDirectory(p: string): boolean {
@@ -34,6 +67,20 @@ function isDirectory(p: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Check if a file is likely a text file based on extension */
+function isTextFile(filePath: string): boolean {
+  const ext = path.extname(filePath).toLowerCase().slice(1);
+  if (TEXT_EXTENSIONS.has(ext)) return true;
+  
+  // Check if file has no extension (could be text)
+  if (!ext) {
+    const name = path.basename(filePath).toLowerCase();
+    return TEXT_EXTENSIONS.has(name);
+  }
+  
+  return false;
 }
 
 /** All filesystem roots: drive letters on Windows, "/" elsewhere. */
@@ -87,7 +134,8 @@ export function resolveExistingDir(input: string): string | null {
   }
 }
 
-/** List subdirectories of a directory, with parent navigation and roots. */export function listDirectory(dirPath: string): DirListing {
+/** List subdirectories of a directory, with parent navigation and roots. */
+export function listDirectory(dirPath: string): DirListing {
   const resolved = expandUserPath(dirPath);
   const entries: DirEntry[] = [];
   try {
@@ -98,7 +146,7 @@ export function resolveExistingDir(input: string): string | null {
       const fullPath = path.join(resolved, entry.name);
       if (!entry.isDirectory() && !isDirectory(fullPath)) continue;
       if (isHiddenDir(entry.name)) continue;
-      entries.push({ name: entry.name, path: fullPath });
+      entries.push({ name: entry.name, path: fullPath, isDirectory: true });
     }
   } catch {
     // Directory unreadable (permissions) - return empty listing.
@@ -114,4 +162,96 @@ export function resolveExistingDir(input: string): string | null {
     roots: listRoots(),
     entries,
   };
+}
+
+/** List files and directories in a directory. */
+export function listFiles(dirPath: string): FileListing {
+  const resolved = expandUserPath(dirPath);
+  const entries: DirEntry[] = [];
+  try {
+    for (const entry of readdirSync(resolved, { withFileTypes: true })) {
+      if (isHiddenFile(entry.name) && isHiddenDir(entry.name)) continue;
+
+      const fullPath = path.join(resolved, entry.name);
+      let isDir = entry.isDirectory();
+
+      try {
+        const stat = statSync(fullPath);
+        isDir = stat.isDirectory();
+        
+        entries.push({
+          name: entry.name,
+          path: fullPath,
+          isDirectory: isDir,
+          size: isDir ? undefined : stat.size,
+        });
+      } catch {
+        // Skip files we can't stat
+        continue;
+      }
+    }
+  } catch {
+    // Directory unreadable (permissions) - return empty listing.
+  }
+
+  // Sort: directories first, then files
+  entries.sort((a, b) => {
+    const aIsDir = a.isDirectory || false;
+    const bIsDir = b.isDirectory || false;
+    if (aIsDir !== bIsDir) return aIsDir ? -1 : 1;
+    return a.name.localeCompare(b.name);
+  });
+
+  const parent = path.dirname(resolved);
+  const atRoot = parent === resolved;
+
+  return {
+    path: resolved,
+    parent: atRoot ? null : parent,
+    roots: listRoots(),
+    entries,
+  };
+}
+
+/** Read the contents of a text file. */
+export function readFile(
+  filePath: string
+): {
+  content: string;
+  size: number;
+  isText: boolean;
+  encoding: string;
+} {
+  const resolved = expandUserPath(filePath);
+
+  // Security: prevent reading outside allowed areas (optional, depends on security requirements)
+  if (!existsSync(resolved)) {
+    throw new Error(`File not found: ${resolved}`);
+  }
+
+  try {
+    const stat = statSync(resolved);
+    if (stat.isDirectory()) {
+      throw new Error(`Path is a directory, not a file: ${resolved}`);
+    }
+
+    if (stat.size > MAX_FILE_SIZE) {
+      throw new Error(`File too large (>${MAX_FILE_SIZE / 1024 / 1024}MB): ${resolved}`);
+    }
+
+    const isText = isTextFile(resolved);
+    const content = readFileSync(resolved, isText ? "utf-8" : "latin1");
+
+    return {
+      content,
+      size: stat.size,
+      isText,
+      encoding: isText ? "utf-8" : "binary",
+    };
+  } catch (err) {
+    if ((err as Error).message.includes("EACCES")) {
+      throw new Error(`Permission denied: ${resolved}`);
+    }
+    throw err;
+  }
 }

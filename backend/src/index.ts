@@ -8,7 +8,7 @@ import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
 import { listPiSessions, sessionCwdOf } from "./session-store.js";
-import { listDirectory, resolveExistingDir, shrinkHome } from "./fs-browser.js";
+import { listDirectory, listFiles, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
 const app = express();
 const server = createServer(app);
@@ -164,6 +164,88 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             cwdDisplay: shrinkHome(currentCwd),
             recent: recentDirectories(),
           },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "list_files") {
+    try {
+      const requested = params.path
+        ? resolveExistingDir(params.path)
+        : resolveExistingDir(currentCwd) ?? os.homedir();
+      if (!requested) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      const listing = listFiles(requested);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: {
+            ...listing,
+            current: currentCwd,
+            cwdDisplay: shrinkHome(currentCwd),
+            recent: recentDirectories(),
+          },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "read_file") {
+    try {
+      if (!params.path) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: "Missing path parameter",
+          })
+        );
+        return;
+      }
+      const result = readFile(params.path);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: result,
         })
       );
     } catch (err) {

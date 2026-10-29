@@ -7,6 +7,7 @@ import 'package:highlight/highlight_core.dart' show Highlight, Node;
 import 'package:highlight/languages/bash.dart' show bash;
 import 'package:highlight/languages/cpp.dart' show cpp;
 import 'package:highlight/languages/cs.dart' show cs;
+import 'package:highlight/languages/css.dart' show css;
 import 'package:highlight/languages/dart.dart' show dart;
 import 'package:highlight/languages/diff.dart' show diff;
 import 'package:highlight/languages/dockerfile.dart' show dockerfile;
@@ -45,12 +46,22 @@ import 'package:highlight/languages/yaml.dart' show yaml;
 
 /// Languages offered to the highlighter. Aliases declared by each grammar
 /// (`sh`/`zsh`, `ts`, `py`, `c++`, …) are registered along with the name.
+///
+/// The list is also a constraint on the grammars themselves: `xml` delegates the
+/// body of a `<style>` block to `subLanguage: ["css", "xml"]` and a `<script>`
+/// body to `["actionscript", "javascript", "handlebars", "xml"]`, and a
+/// sub-language that is not registered leaves the *whole* document uncoloured -
+/// which is exactly why an HTML page with a stylesheet in it looked like the
+/// colouring worked sometimes and not others. `css` is here because `xml`
+/// asks for it; `actionscript` and `handlebars` are not, and a page whose
+/// script is in one of those falls back to `xml` for that body.
 final Highlight _highlighter = Highlight()
   ..registerLanguages({
     'bash': bash,
     'shell': shell,
     'c++': cpp,
     'csharp': cs,
+    'css': css,
     'dart': dart,
     'diff': diff,
     'dockerfile': dockerfile,
@@ -132,6 +143,203 @@ TextSpan _toTextSpan(Node node, Map<String, TextStyle> theme) {
 /// Drop cached highlight results (e.g. after the chat is cleared).
 void clearHighlightCache() => _spanCache.clear();
 
+/// File extension (or file name, for extension-less files like `Dockerfile`) to
+/// a language registered above. Used by the file viewer to colour a file it has
+/// no fence info for - a chat fence states its language, a file only has a name.
+///
+/// Values are deliberately restricted to keys in [_highlighter]: `highlight`
+/// answers an unknown language by falling back to plain text, so an unmapped
+/// name here would silently colour nothing.
+const Map<String, String> _languageByExtension = {
+  'js': 'javascript',
+  'mjs': 'javascript',
+  'cjs': 'javascript',
+  'jsx': 'javascript',
+  'ts': 'typescript',
+  'tsx': 'typescript',
+  'dart': 'dart',
+  'py': 'python',
+  'pyw': 'python',
+  'go': 'go',
+  'rs': 'rust',
+  'java': 'java',
+  'kt': 'java',
+  'groovy': 'java',
+  'c': 'c++',
+  'h': 'c++',
+  'cpp': 'c++',
+  'cc': 'c++',
+  'cxx': 'c++',
+  'hpp': 'c++',
+  'hh': 'c++',
+  'cs': 'csharp',
+  'cshtml': 'xml',
+  'csproj': 'xml',
+  'php': 'php',
+  'rb': 'ruby',
+  'sh': 'shell',
+  'bash': 'shell',
+  'zsh': 'shell',
+  'fish': 'shell',
+  'json': 'json',
+  'jsonc': 'json',
+  'yaml': 'yaml',
+  'yml': 'yaml',
+  'xml': 'xml',
+  'xsl': 'xml',
+  'svg': 'xml',
+  'plist': 'xml',
+  'html': 'xml',
+  'htm': 'xml',
+  'xhtml': 'xml',
+  'css': 'css',
+  'scss': 'css',
+  'sass': 'css',
+  'less': 'css',
+  'sql': 'sql',
+  'ini': 'ini',
+  'toml': 'ini',
+  'conf': 'ini',
+  'env': 'properties',
+  'properties': 'properties',
+  'diff': 'diff',
+  'patch': 'diff',
+};
+
+/// Names of extension-less files the highlighter has a grammar for.
+const Map<String, String> _languageByFileName = {
+  'dockerfile': 'dockerfile',
+  'makefile': 'makefile',
+  'gnumakefile': 'makefile',
+  'justfile': 'makefile',
+  '.bashrc': 'shell',
+  '.bashprofile': 'shell',
+  '.bashlogout': 'shell',
+  '.zshrc': 'shell',
+  '.profile': 'shell',
+  '.gitignore': 'plaintext',
+  '.env': 'properties',
+  'properties.ini': 'ini',
+};
+
+/// Extensions whose content is prose rather than code. These stay plain even
+/// when the highlighter could guess a grammar for them - colouring a README
+/// because something in it looked like a Python comment is worse than leaving
+/// it alone.
+const Set<String> _proseExtensions = {
+  'txt', 'md', 'markdown', 'rst', 'adoc', 'log', 'csv', 'tsv', 'text',
+};
+
+/// True when [path] is a document rather than something to colour.
+bool isProsePath(String path) {
+  final name = _baseName(path);
+  if (name == 'readme' || name == 'changelog' || name == 'license') return true;
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return _proseExtensions.contains(name.substring(dot + 1));
+}
+
+String _baseName(String path) =>
+    path.split(RegExp(r'[\\/]')).last.toLowerCase();
+
+/// The registered language name to highlight [path] with, or null when there is
+/// no grammar for it (markdown, plain text, binary, …) and the caller should
+/// render it as plain monospace instead.
+String? languageForPath(String path) {
+  final name = _baseName(path);
+
+  final byName = _languageByFileName[name];
+  if (byName != null) return byName;
+
+  // `Dockerfile.dev`, `Makefile.am`, `.dockerignore` etc.
+  for (final special in _languageByFileName.keys) {
+    if (name == special || name.startsWith('$special.')) {
+      return _languageByFileName[special];
+    }
+  }
+
+  final dot = name.lastIndexOf('.');
+  if (dot <= 0) return null;
+  return _languageByExtension[name.substring(dot + 1)];
+}
+
+/// Human-readable name for the detected language, for the file viewer header.
+const Map<String, String> languageDisplayNames = {
+  'c++': 'C/C++',
+  'csharp': 'C#',
+  'css': 'CSS',
+  'javascript': 'JavaScript',
+  'plaintext': 'Plain text',
+  'properties': 'Properties',
+  'typescript': 'TypeScript',
+  'xml': 'XML/HTML',
+};
+
+String languageDisplayName(String language) =>
+    languageDisplayNames[language] ??
+    (language.isEmpty ? 'Plain text' : language[0].toUpperCase() + language.substring(1));
+
+/// Split a rendered span tree into one list of spans per line.
+///
+/// The highlighter produces a single tree for the whole file, which is what
+/// makes a multi-line string or a block comment keep its colouring across line
+/// breaks; a line-number gutter needs the same content cut up per line. The
+/// style a token gets from its ancestors is resolved into each emitted span, so
+/// a line rendered on its own looks exactly like it did inside the whole-file
+/// tree.
+List<List<TextSpan>> splitSpansByLine(List<TextSpan> spans) {
+  final lines = <List<TextSpan>>[<TextSpan>[]];
+
+  void walk(TextSpan span, TextStyle? inherited) {
+    final effective =
+        inherited == null ? span.style : inherited.merge(span.style);
+    final text = span.text;
+    if (text != null) {
+      final parts = text.split('\n');
+      for (var i = 0; i < parts.length; i++) {
+        if (i > 0) lines.add(<TextSpan>[]);
+        if (parts[i].isNotEmpty) {
+          lines.last.add(TextSpan(text: parts[i], style: effective));
+        }
+      }
+    }
+    for (final child in span.children ?? const <InlineSpan>[]) {
+      if (child is TextSpan) walk(child, effective);
+    }
+  }
+
+  for (final s in spans) {
+    walk(s, null);
+  }
+  return lines;
+}
+
+/// Plain text cut into lines in the shape [splitSpansByLine] returns, so the
+/// viewer renders a coloured file and a plain one through the same code.
+List<List<TextSpan>> plainLines(String source, TextStyle style) => [
+    for (final line in source.split('\n'))
+      line.isEmpty ? <TextSpan>[] : [TextSpan(text: line, style: style)],
+  ];
+
+/// The colours the highlight palette expects to be painted with: its own
+/// foreground and its own background.
+///
+/// A palette is a set of colours for one surface, not colours for any surface.
+/// The token colours above are chosen against `root.backgroundColor`; show them
+/// on some other background - the app's own, a dialog's - and they are the
+/// wrong colours for it, which is what "the colouring is wrong, and it does not
+/// follow dark mode" looks like. Anything that renders highlighted text takes
+/// both halves from here instead of picking its own background.
+({Color foreground, Color background}) codePalette(bool isDark) {
+  final theme = isDark ? _darkTheme : _lightTheme;
+  return (
+    foreground: theme['root']?.color ??
+        (isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42)),
+    background: theme['root']?.backgroundColor ??
+        (isDark ? const Color(0xFF282C34) : const Color(0xFFFAFAFA)),
+  );
+}
+
 /// A block of highlighted code. Same visual result as `HighlightView`, but the
 /// parse happens once and the theme/font defaults are the app's own.
 class HighlightedCode extends StatelessWidget {
@@ -156,18 +364,16 @@ class HighlightedCode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = isDark ? _darkTheme : _lightTheme;
+    final palette = codePalette(isDark);
     final base = TextStyle(
       fontFamily: 'JetBrainsMono',
       fontSize: 13,
-      color: theme['root']?.color ?? (isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42)),
+      color: palette.foreground,
     ).merge(textStyle);
 
     return Container(
       decoration: BoxDecoration(
-        color: background ??
-            theme['root']?.backgroundColor ??
-            (isDark ? const Color(0xFF282C34) : const Color(0xFFFAFAFA)),
+        color: background ?? palette.background,
         borderRadius: borderRadius ?? BorderRadius.circular(6),
       ),
       padding: padding,

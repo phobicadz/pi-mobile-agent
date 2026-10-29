@@ -358,13 +358,85 @@ class PiSessionInfo {
 class DirEntry {
   final String name;
   final String path;
+  final bool? isDirectory;
+  final int? size;
 
-  DirEntry({required this.name, required this.path});
+  DirEntry({
+    required this.name,
+    required this.path,
+    this.isDirectory,
+    this.size,
+  });
 
   factory DirEntry.fromJson(Map<String, dynamic> json) {
     return DirEntry(
       name: json['name'] as String? ?? '',
       path: json['path'] as String? ?? '',
+      isDirectory: json['isDirectory'] as bool?,
+      size: json['size'] as int?,
+    );
+  }
+}
+
+class FileListing {
+  final String path;
+  final String? parent;
+  final List<DirEntry> roots;
+  final List<DirEntry> entries;
+  final String? current;
+
+  /// [current] shortened to "~" / "~/..." for display.
+  final String? cwdDisplay;
+  final List<String> recent;
+
+  FileListing({
+    required this.path,
+    this.parent,
+    required this.roots,
+    required this.entries,
+    this.current,
+    this.cwdDisplay,
+    required this.recent,
+  });
+
+  factory FileListing.fromJson(Map<String, dynamic> json) {
+    return FileListing(
+      path: json['path'] as String? ?? '',
+      parent: json['parent'] as String?,
+      roots: (json['roots'] as List<dynamic>? ?? [])
+          .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      entries: (json['entries'] as List<dynamic>? ?? [])
+          .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      current: json['current'] as String?,
+      cwdDisplay: json['cwdDisplay'] as String?,
+      recent: (json['recent'] as List<dynamic>? ?? [])
+          .map((e) => e as String)
+          .toList(),
+    );
+  }
+}
+
+class FileContent {
+  final String content;
+  final int size;
+  final bool isText;
+  final String encoding;
+
+  FileContent({
+    required this.content,
+    required this.size,
+    required this.isText,
+    required this.encoding,
+  });
+
+  factory FileContent.fromJson(Map<String, dynamic> json) {
+    return FileContent(
+      content: json['content'] as String? ?? '',
+      size: json['size'] as int? ?? 0,
+      isText: json['isText'] as bool? ?? true,
+      encoding: json['encoding'] as String? ?? 'utf-8',
     );
   }
 }

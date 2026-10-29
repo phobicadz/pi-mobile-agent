@@ -772,6 +772,32 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// List all files and directories in a path.
+  Future<FileListing?> listFiles({String? path}) async {
+    _error = null;
+    try {
+      final listing = await piService.listFiles(path: path);
+      return listing;
+    } catch (e) {
+      _error = 'Failed to list files: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
+  /// Read the contents of a text file.
+  Future<FileContent?> readFile(String path) async {
+    _error = null;
+    try {
+      final content = await piService.readFile(path);
+      return content;
+    } catch (e) {
+      _error = 'Failed to read file: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
   /// Rebuild the chat from messages returned by Pi after a session switch.
   void _loadHistory(List<Map<String, dynamic>> history) {
     _messages.clear();
