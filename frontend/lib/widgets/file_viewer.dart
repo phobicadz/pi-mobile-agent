@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
 import '../providers/pi_view_model.dart';
+import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
+import '../utils/toast.dart';
 
 /// A modal that displays the contents of a file: line numbers down the left,
 /// the file's own colours on the right.
@@ -132,8 +133,7 @@ class _FileViewerState extends State<FileViewer> {
     // extension is code, and guessing is better than showing it uncoloured.
     // Prose is excluded - colouring a README because a line looked like a
     // comment is worse than leaving it plain.
-    final bool tryHighlight =
-        content.isText && !tooLarge && !prose;
+    final bool tryHighlight = content.isText && !tooLarge && !prose;
 
     String? language;
     List<TextSpan>? spans;
@@ -147,9 +147,8 @@ class _FileViewerState extends State<FileViewer> {
     }
 
     if (spans == null || spans.isEmpty) {
-      _languageLabel = prose
-          ? 'plain text'
-          : (tooLarge ? 'not coloured (too large)' : null);
+      _languageLabel =
+          prose ? 'plain text' : (tooLarge ? 'not coloured (too large)' : null);
       _lines = plainLines(content.content, baseStyle);
       return;
     }
@@ -191,7 +190,8 @@ class _FileViewerState extends State<FileViewer> {
     // The palette's own surface, because its token colours were chosen against
     // it. Painting them on the dialog's background instead is what made the
     // colouring look wrong, and look wrong differently in light and in dark.
-    final palette = _palette ?? codePalette(theme.brightness == Brightness.dark);
+    final palette =
+        _palette ?? codePalette(theme.brightness == Brightness.dark);
     final baseStyle = _baseStyle(palette.foreground);
     final gutter = _gutterWidth(lines.length, palette.foreground);
     final numberStyle = TextStyle(
@@ -248,6 +248,26 @@ class _FileViewerState extends State<FileViewer> {
     );
   }
 
+  /// Copy the file, and say whether it worked - in the same words and the same
+  /// place the chat's copy buttons do.
+  ///
+  /// `Clipboard.setData` on its own is the one that does nothing here: this app
+  /// runs on a plain `http://<lan-ip>:3000` origin, where the browser has no
+  /// Clipboard API, and the engine turns that into an exception nobody reports.
+  /// `copyToClipboard` is the path that survives it, and it answers with an
+  /// outcome instead of an exception so the button can say which happened.
+  Future<void> _copyFile(BuildContext insideDialog, String text) async {
+    final outcome = await copyToClipboard(text);
+    if (!mounted) return;
+    showToast(
+      insideDialog,
+      outcome == CopyOutcome.copied
+          ? 'Copied file'
+          : 'Copy failed - this browser blocked it',
+      isError: outcome != CopyOutcome.copied,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -256,106 +276,116 @@ class _FileViewerState extends State<FileViewer> {
     return Dialog(
       backgroundColor: theme.colorScheme.surface,
       insetPadding: const EdgeInsets.all(8),
-      child: Column(
-        children: [
-          Container(
-            // The header belongs to the dialog, so it is painted with the
-            // dialog's own colours and reads in both appearances. A fixed
-            // white-on-primary is only correct in one of them: in a dark
-            // Material 3 scheme `primary` is a light blue, and white text on it
-            // is the part of this screen that looked wrong.
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surface,
-              border: Border(
-                bottom: BorderSide(color: theme.colorScheme.outlineVariant),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.fileName ?? 'File Viewer',
-                        style: theme.textTheme.titleMedium
-                            ?.copyWith(color: theme.colorScheme.onSurface),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+      // The confirmation belongs inside this dialog. A SnackBar normally goes to
+      // the app's own Scaffold, which sits *behind* this dialog route - on a
+      // phone, where the dialog reaches the bottom of the screen, that is a
+      // confirmation nobody can see. This messenger and this scaffold are the
+      // ones inside the dialog, so the toast lands on top of it.
+      child: ScaffoldMessenger(
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          resizeToAvoidBottomInset: false,
+          body: Column(
+            children: [
+              Container(
+                // The header belongs to the dialog, so it is painted with the
+                // dialog's own colours and reads in both appearances. A fixed
+                // white-on-primary is only correct in one of them: in a dark
+                // Material 3 scheme `primary` is a light blue, and white text on it
+                // is the part of this screen that looked wrong.
+                decoration: BoxDecoration(
+                  color: theme.colorScheme.surface,
+                  border: Border(
+                    bottom: BorderSide(color: theme.colorScheme.outlineVariant),
+                  ),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.fileName ?? 'File Viewer',
+                            style: theme.textTheme.titleMedium
+                                ?.copyWith(color: theme.colorScheme.onSurface),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          if (content != null)
+                            Text(
+                              [
+                                _formatFileSize(content.size),
+                                if (_lines != null) '${_lines!.length} lines',
+                                if (_languageLabel != null) _languageLabel!,
+                                if (!content.isText) 'binary',
+                              ].join(' • '),
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                  color: theme.colorScheme.onSurfaceVariant),
+                            ),
+                        ],
                       ),
-                      if (content != null)
-                        Text(
-                          [
-                            _formatFileSize(content.size),
-                            if (_lines != null) '${_lines!.length} lines',
-                            if (_languageLabel != null) _languageLabel!,
-                            if (!content.isText) 'binary',
-                          ].join(' • '),
-                          style: theme.textTheme.bodySmall
-                              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                    ),
+                    if (content != null)
+                      // A Builder, so the copy is reported through the messenger
+                      // inside this dialog. An inherited lookup starts above the
+                      // widget that does it: asking from the viewer's own context
+                      // reaches the app's Scaffold, which is behind the dialog.
+                      Builder(
+                        builder: (inside) => IconButton(
+                          icon: Icon(Icons.copy,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          tooltip: 'Copy file',
+                          onPressed: () => _copyFile(inside, content.content),
                         ),
-                    ],
-                  ),
+                      ),
+                    IconButton(
+                      icon: Icon(Icons.close,
+                          color: theme.colorScheme.onSurfaceVariant),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
+                  ],
                 ),
-                if (content != null)
-                  IconButton(
-                    icon: Icon(Icons.copy, color: theme.colorScheme.onSurfaceVariant),
-                    tooltip: 'Copy file',
-                    onPressed: () async {
-                      final messenger = ScaffoldMessenger.of(context);
-                      await Clipboard.setData(ClipboardData(text: content.content));
-                      if (!mounted) return;
-                      messenger.showSnackBar(
-                        const SnackBar(
-                          content: Text('File copied'),
-                          duration: Duration(seconds: 1),
-                        ),
-                      );
-                    },
-                  ),
-                IconButton(
-                  icon: Icon(Icons.close, color: theme.colorScheme.onSurfaceVariant),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator())
-                : _error != null
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.error_outline,
-                                  size: 48, color: theme.colorScheme.error),
-                              const SizedBox(height: 16),
-                              Text(
-                                'Error loading file',
-                                style: theme.textTheme.titleMedium,
+              ),
+              Expanded(
+                child: _loading
+                    ? const Center(child: CircularProgressIndicator())
+                    : _error != null
+                        ? Center(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(Icons.error_outline,
+                                      size: 48, color: theme.colorScheme.error),
+                                  const SizedBox(height: 16),
+                                  Text(
+                                    'Error loading file',
+                                    style: theme.textTheme.titleMedium,
+                                  ),
+                                  const SizedBox(height: 8),
+                                  SelectableText(
+                                    _error!,
+                                    style: theme.textTheme.bodySmall,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ],
                               ),
-                              const SizedBox(height: 8),
-                              SelectableText(
-                                _error!,
-                                style: theme.textTheme.bodySmall,
-                                textAlign: TextAlign.center,
+                            ),
+                          )
+                        : content == null
+                            ? const Center(child: Text('No content'))
+                            : Scrollbar(
+                                controller: _scrollController,
+                                child: _buildBody(context, theme),
                               ),
-                            ],
-                          ),
-                        ),
-                      )
-                    : content == null
-                        ? const Center(child: Text('No content'))
-                        : Scrollbar(
-                            controller: _scrollController,
-                            child: _buildBody(context, theme),
-                          ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }

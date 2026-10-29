@@ -45,11 +45,6 @@ class ChatBubble extends StatelessWidget {
     this.fontScale = 1.0,
   });
 
-  /// Deprecated: Use ResponsiveSizes.getScreenSize() instead for better
-  /// multi-screen support. Kept for backwards compatibility.
-  @Deprecated('Use ResponsiveSizes instead')
-  static const _fullColumnBelowWidth = 600.0;
-
   /// One size in this bubble, scaled.
   ///
   /// The sizes stay written as the values the chat was designed at, so the
@@ -131,14 +126,11 @@ class ChatBubble extends StatelessWidget {
     // out of the cache as the same widget instances and re-lays out in the
     // wider box.
     final screenWidth = MediaQuery.sizeOf(context).width;
-    final screenSize = ResponsiveSizes.getScreenSize(screenWidth);
-    
-    double getMaxWidth() {
-      if (expanded) return screenWidth * 0.95;
-      return ResponsiveSizes.getChatMaxWidth(screenWidth, expanded: false);
-    }
-    
-    final maxWidth = getMaxWidth();
+    // On a phone there is nothing wider to go to: the reply already takes the
+    // column, so the double-tap would be a gesture that does nothing.
+    final phone = ResponsiveSizes.isPhone(screenWidth);
+    final maxWidth =
+        ResponsiveSizes.getChatMaxWidth(screenWidth, expanded: expanded);
 
     // A bubble with nothing to say has nothing to copy: no button then.
     final copyText = message.copyableText;

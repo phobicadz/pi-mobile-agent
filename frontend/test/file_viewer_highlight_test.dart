@@ -26,8 +26,11 @@ class FakeFileService extends PiService {
   @override
   Future<FileListing> listFiles({String? path}) async =>
       listing ??
-          FileListing(
-              path: path ?? '/', roots: const [], entries: const [], recent: const []);
+      FileListing(
+          path: path ?? '/',
+          roots: const [],
+          entries: const [],
+          recent: const []);
 
   @override
   Stream<PiEvent> get events => _events.stream;
@@ -98,13 +101,28 @@ Future<void> _openViewer(
       create: (_) => viewModel,
       child: MaterialApp(
         theme: ThemeData(brightness: brightness),
+        // Opened the way the file browser opens it - through a dialog route -
+        // because where the viewer sits in the route stack is part of what is
+        // being tested here.
         home: Scaffold(
-          body: FileViewer(filePath: path, fileName: path.split('/').last),
+          body: Builder(
+            builder: (context) => ElevatedButton(
+              onPressed: () => showDialog(
+                context: context,
+                builder: (_) => FileViewer(
+                  filePath: path,
+                  fileName: path.split('/').last,
+                ),
+              ),
+              child: const Text('open file'),
+            ),
+          ),
         ),
       ),
     ),
   );
 
+  await tester.tap(find.text('open file'));
   await tester.pumpAndSettle();
 }
 
@@ -184,7 +202,8 @@ class _FlipThemeState extends State<_FlipTheme> {
 
 /// The language label the viewer shows in its header.
 String _headerLabel(WidgetTester tester) {
-  final header = tester.widgetList<Text>(find.byType(Text))
+  final header = tester
+      .widgetList<Text>(find.byType(Text))
       .firstWhere((t) => (t.data ?? '').contains(' • '));
   return (header.data ?? '').split(' • ').last;
 }
@@ -225,6 +244,7 @@ Set<int> _spanColours(List<TextSpan> spans) {
       if (child is TextSpan) collect(child, effective);
     }
   }
+
   for (final s in spans) {
     collect(s, null);
   }
@@ -241,6 +261,7 @@ String _spanText(List<TextSpan> spans) {
       if (child is TextSpan) collect(child);
     }
   }
+
   for (final s in spans) {
     collect(s);
   }
@@ -335,9 +356,29 @@ void main() {
       // `highlight` answers an unknown grammar by colouring nothing, so a typo
       // in the mapping would look like highlighting silently not working.
       for (final path in const [
-        'a.ts', 'b.js', 'c.dart', 'd.py', 'e.go', 'f.rs', 'g.java', 'h.cpp',
-        'i.cs', 'j.php', 'k.rb', 'l.sh', 'm.json', 'n.yaml', 'o.html', 'p.css',
-        'q.sql', 'r.ini', 's.env', 't.diff', 'u.xml', 'Dockerfile', 'Makefile',
+        'a.ts',
+        'b.js',
+        'c.dart',
+        'd.py',
+        'e.go',
+        'f.rs',
+        'g.java',
+        'h.cpp',
+        'i.cs',
+        'j.php',
+        'k.rb',
+        'l.sh',
+        'm.json',
+        'n.yaml',
+        'o.html',
+        'p.css',
+        'q.sql',
+        'r.ini',
+        's.env',
+        't.diff',
+        'u.xml',
+        'Dockerfile',
+        'Makefile',
       ]) {
         final language = languageForPath(path);
         expect(language, isNotNull, reason: 'for $path');
@@ -360,13 +401,20 @@ void main() {
     // nothing coloured at all while a page without one was fine - which is what
     // "it works sometimes" looked like from the phone.
     const shapes = {
-      'no script or style': '<!DOCTYPE html>\n<html><body class="page"><h1>Hi</h1></body></html>\n',
-      'with a style block': '<!DOCTYPE html>\n<html><body class="page"><h1>Hi</h1>\n<style>.a { color: red; }</style></body></html>\n',
-      'with a comparison in a script': '<!DOCTYPE html>\n<html><body><h1>Hi</h1>\n<script>if (a < b && c > d) { console.log("<div>"); }</script></body></html>\n',
-      'with unquoted attributes': '<!DOCTYPE html>\n<html><body><a href=/x data-id=2 onclick="go()">link</a></body></html>\n',
-      'script and style together': '<!DOCTYPE html>\n<html><head><style>.a{color:red}</style></head>\n<body><script>var n = 1;</script></body></html>\n',
-      'a comparison in a for loop': '<!DOCTYPE html>\n<html><body>\n<script>for (let i = 0; i <= n; i++) { draw("<b>"); }</script></body></html>\n',
-      'a style block with a child selector': '<!DOCTYPE html>\n<html><head><style>.a > .b { color: red; }</style></head><body><p>x</p></body></html>\n',
+      'no script or style':
+          '<!DOCTYPE html>\n<html><body class="page"><h1>Hi</h1></body></html>\n',
+      'with a style block':
+          '<!DOCTYPE html>\n<html><body class="page"><h1>Hi</h1>\n<style>.a { color: red; }</style></body></html>\n',
+      'with a comparison in a script':
+          '<!DOCTYPE html>\n<html><body><h1>Hi</h1>\n<script>if (a < b && c > d) { console.log("<div>"); }</script></body></html>\n',
+      'with unquoted attributes':
+          '<!DOCTYPE html>\n<html><body><a href=/x data-id=2 onclick="go()">link</a></body></html>\n',
+      'script and style together':
+          '<!DOCTYPE html>\n<html><head><style>.a{color:red}</style></head>\n<body><script>var n = 1;</script></body></html>\n',
+      'a comparison in a for loop':
+          '<!DOCTYPE html>\n<html><body>\n<script>for (let i = 0; i <= n; i++) { draw("<b>"); }</script></body></html>\n',
+      'a style block with a child selector':
+          '<!DOCTYPE html>\n<html><head><style>.a > .b { color: red; }</style></head><body><p>x</p></body></html>\n',
     };
 
     shapes.forEach((label, source) {
@@ -399,7 +447,8 @@ void main() {
       final colours = <int>{};
       void collect(TextSpan t, TextStyle? inh) {
         final e = inh == null ? t.style : inh.merge(t.style);
-        if (t.text != null && e?.color != null) colours.add(e!.color!.toARGB32());
+        if (t.text != null && e?.color != null)
+          colours.add(e!.color!.toARGB32());
         for (final c in t.children ?? const <InlineSpan>[]) {
           if (c is TextSpan) collect(c, e);
         }
@@ -447,7 +496,8 @@ void main() {
     });
 
     test('reading a page as HTML loses none of it', () {
-      expect(_spanText(highlightedSpans(htmlPage, language: 'xml', isDark: true)),
+      expect(
+          _spanText(highlightedSpans(htmlPage, language: 'xml', isDark: true)),
           htmlPage,
           reason: 'colouring is only worth having if the file still says the '
               'same thing afterwards');
@@ -500,7 +550,8 @@ void main() {
       final colours = <int>{};
       void collect(TextSpan t, TextStyle? inh) {
         final e = inh == null ? t.style : inh.merge(t.style);
-        if (t.text != null && e?.color != null) colours.add(e!.color!.toARGB32());
+        if (t.text != null && e?.color != null)
+          colours.add(e!.color!.toARGB32());
         for (final c in t.children ?? const <InlineSpan>[]) {
           if (c is TextSpan) collect(c, e);
         }
@@ -514,7 +565,8 @@ void main() {
   });
 
   group('line numbers', () {
-    testWidgets('every line is numbered, in order', (WidgetTester tester) async {
+    testWidgets('every line is numbered, in order',
+        (WidgetTester tester) async {
       const source = '''
 using System;
 
@@ -560,13 +612,13 @@ public class Greeter {
         // Each row is a gutter RichText followed by the line's RichText; the
         // last one is the file text.
         codeLefts.add(tester
-            .getRect(find
-                .descendant(of: row, matching: find.byType(RichText))
-                .last)
+            .getRect(
+                find.descendant(of: row, matching: find.byType(RichText)).last)
             .left);
       }
       expect(codeLefts.length, 1,
-          reason: 'digits of different widths must not shift the file sideways');
+          reason:
+              'digits of different widths must not shift the file sideways');
 
       // And the gutter is measured in the code font, so the widest number fits
       // the column it was given instead of overflowing it.
@@ -610,6 +662,7 @@ public class Greeter {
         }
         return sb.toString();
       }
+
       for (var i = 0; i < lines.length; i++) {
         expect(joined(i), source.split('\n')[i], reason: 'line ${i + 1}');
       }
@@ -630,6 +683,18 @@ public class Greeter {
   });
 
   group('copying', () {
+    /// Records what the app tried to put on the clipboard, and can be made to
+    /// refuse - which is what the browser does on a plain http origin.
+    void fakeClipboard(void Function(String text) handle) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') {
+          handle((call.arguments as Map)['text'] as String? ?? '');
+        }
+        return null;
+      });
+    }
+
     testWidgets('copying a file gives the file, without line numbers',
         (WidgetTester tester) async {
       const source = 'let a = 1;\nlet b = 2;\n';
@@ -640,25 +705,56 @@ public class Greeter {
       );
 
       String? copied;
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied = (call.arguments as Map)['text'] as String?;
-        }
-        return null;
-      });
+      fakeClipboard((text) => copied = text);
 
       await tester.tap(find.byIcon(Icons.copy));
       await tester.pump();
 
       expect(copied, source);
       expect(copied, isNot(contains('1 let')));
+
+      expect(find.text('Copied file'), findsOneWidget,
+          reason: 'a button that copies in silence is a button nobody trusts');
+      // And it has to be inside the dialog. A SnackBar handed to the app's own
+      // Scaffold is painted behind this route, which on a phone is behind the
+      // dialog itself - a confirmation that exists and cannot be seen.
+      expect(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.text('Copied file'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('a copy the browser refuses says so',
+        (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: 'src/app.js',
+        content: _file('let a = 1;\n'),
+      );
+
+      // Exactly what the engine raises when the browser has no Clipboard API -
+      // a plain http origin, which is where this app runs.
+      fakeClipboard((_) => throw PlatformException(code: 'copy_fail'));
+
+      await tester.tap(find.byIcon(Icons.copy));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull,
+          reason:
+              'a refused copy is an expected outcome, not an exception left '
+              'lying around');
+      expect(find.textContaining('Copy failed'), findsOneWidget);
     });
   });
 
   group('fallbacks', () {
-    testWidgets('a file with an unknown extension is still offered to the '
-        'highlighter instead of being shown plain', (WidgetTester tester) async {
+    testWidgets(
+        'a file with an unknown extension is still offered to the '
+        'highlighter instead of being shown plain',
+        (WidgetTester tester) async {
       await _openViewer(
         tester,
         path: 'misc/mysteryfile',
@@ -673,7 +769,8 @@ public class Greeter {
         (WidgetTester tester) async {
       // Highlighting parses on the UI thread; a whole source file of this size
       // would freeze the dialog, so it must fall back rather than try.
-      final huge = List.generate(20000, (i) => 'const value$i = $i;').join('\n');
+      final huge =
+          List.generate(20000, (i) => 'const value$i = $i;').join('\n');
       expect(huge.length, greaterThan(120 * 1024));
 
       await _openViewer(
@@ -683,7 +780,8 @@ public class Greeter {
       );
 
       expect(tester.takeException(), isNull);
-      expect(find.textContaining(RegExp(r'not coloured \(too large\)')), findsOneWidget);
+      expect(find.textContaining(RegExp(r'not coloured \(too large\)')),
+          findsOneWidget);
       expect(_gutterNumbers(tester).take(3), ['1', '2', '3']);
     });
 
@@ -805,11 +903,13 @@ public class Greeter {
         final surface = _codeSurface(tester);
         final text = _codeRowColour(tester);
         expect(_contrast(text, surface), greaterThanOrEqualTo(4.5),
-            reason: '$brightness: the file text must read on its own background');
+            reason:
+                '$brightness: the file text must read on its own background');
 
         final numbers = _gutterNumberColour(tester);
         expect(_contrast(numbers, surface), greaterThanOrEqualTo(2.0),
-            reason: '$brightness: line numbers are secondary, but not invisible');
+            reason:
+                '$brightness: line numbers are secondary, but not invisible');
       }
     });
 
@@ -832,16 +932,19 @@ public class Greeter {
       final light = _codeSurface(tester);
 
       expect(dark, isNot(light),
-          reason: 'a viewer that paints the same surface in both appearances is '
+          reason:
+              'a viewer that paints the same surface in both appearances is '
               'following its own palette, not the app');
     });
 
-    testWidgets('a file already open re-colours when the app changes appearance',
+    testWidgets(
+        'a file already open re-colours when the app changes appearance',
         (WidgetTester tester) async {
       final key = GlobalKey<_FlipThemeState>();
       await tester.pumpWidget(_FlipTheme(
         key: key,
-        service: FakeFileService(files: {'src/app.ts': _file('const n = 1;\n')}),
+        service:
+            FakeFileService(files: {'src/app.ts': _file('const n = 1;\n')}),
         path: 'src/app.ts',
       ));
       await tester.pumpAndSettle();
@@ -853,7 +956,8 @@ public class Greeter {
       await tester.pumpAndSettle();
 
       expect(_codeSurface(tester), isNot(before),
-          reason: 'the surface was chosen once, at load, and kept after the switch');
+          reason:
+              'the surface was chosen once, at load, and kept after the switch');
       expect(_codeRowColour(tester), isNot(beforeText));
       expect(_contrast(_codeRowColour(tester), _codeSurface(tester)),
           greaterThanOrEqualTo(4.5));
@@ -873,7 +977,8 @@ public class Greeter {
         expect(_contrast(title, background), greaterThanOrEqualTo(4.5),
             reason: '$brightness: the file name is the first thing read here');
         expect(_contrast(meta, background), greaterThanOrEqualTo(3.0),
-            reason: '$brightness: the size and language line is not decoration');
+            reason:
+                '$brightness: the size and language line is not decoration');
       }
     });
   });

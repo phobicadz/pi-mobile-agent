@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// Screen size categories for responsive design
@@ -112,6 +114,28 @@ class ResponsiveSizes {
   // Input Area Sizing
   // ============================================================================
 
+  /// How far the prompt field reaches into the home-indicator band.
+  ///
+  /// The band is a swipe zone, not a dead zone, so the field reaches 12px into
+  /// it instead of being pushed a whole inset above it.
+  static const double inputBottomDip = 12.0;
+
+  /// How clear of the very bottom the prompt field stays, where a tap would
+  /// compete with the home gesture.
+  static const double inputBottomFloor = 10.0;
+
+  /// The bottom padding under the prompt field, from the inset the browser
+  /// reported.
+  ///
+  /// This one is about the device, not the width: a phone in landscape is as
+  /// wide as a tablet and still has a home indicator to keep clear of, so it is
+  /// applied on every branch of [getInputAreaPadding]. With no inset reported
+  /// there is nothing to dip into, and the floor is the whole margin.
+  static double inputBottomInset(double reported) {
+    if (reported <= 0) return inputBottomFloor;
+    return math.max(inputBottomFloor, reported - inputBottomDip);
+  }
+
   /// Calculates centered padding for the input area to center it on wide screens
   static EdgeInsets getInputAreaPadding(
     double screenWidth, {
@@ -125,7 +149,7 @@ class ResponsiveSizes {
         left: insets.left > 0 ? insets.left : paddingLarge,
         right: insets.right > 0 ? insets.right : paddingLarge,
         top: paddingMedium,
-        bottom: insets.bottom > 0 ? (insets.bottom - 12) : paddingSmall,
+        bottom: inputBottomInset(insets.bottom),
       );
     }
 
@@ -141,7 +165,7 @@ class ResponsiveSizes {
         left: sidePadding,
         right: sidePadding,
         top: paddingLarge,
-        bottom: insets.bottom > 0 ? insets.bottom : paddingLarge,
+        bottom: inputBottomInset(insets.bottom),
       );
     } else {
       // Screen is narrower than max width - use all available space
@@ -149,7 +173,7 @@ class ResponsiveSizes {
         left: horizontalInset + paddingLarge,
         right: (insets.right > 0 ? insets.right : 0) + paddingLarge,
         top: paddingLarge,
-        bottom: insets.bottom > 0 ? insets.bottom : paddingLarge,
+        bottom: inputBottomInset(insets.bottom),
       );
     }
   }

@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -290,8 +288,9 @@ class _HomeScreenState extends State<HomeScreen> {
         // the two agree, but once a choice has been made the platform still
         // reports what the phone is set to, which is not what is on the screen.
         final showingDark = theme.brightness == Brightness.dark;
-        final directory =
-            viewModel.workingDirectoryDisplay ?? viewModel.workingDirectory ?? '';
+        final directory = viewModel.workingDirectoryDisplay ??
+            viewModel.workingDirectory ??
+            '';
         // Said in full: the bar shortened a path because it had no room for one,
         // and this menu has. Which directory a session works in is not something
         // to guess at from the last two segments of it.
@@ -318,8 +317,8 @@ class _HomeScreenState extends State<HomeScreen> {
                               color: theme.colorScheme.onSurfaceVariant),
                           const SizedBox(width: 8),
                           Text('Pi Agent',
-                              style: theme.textTheme.titleMedium
-                                  ?.copyWith(color: theme.colorScheme.onSurface)),
+                              style: theme.textTheme.titleMedium?.copyWith(
+                                  color: theme.colorScheme.onSurface)),
                         ],
                       ),
                       const Spacer(),
@@ -337,7 +336,9 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           const SizedBox(width: 8),
                           Text(
-                            viewModel.isConnected ? 'Connected' : 'Disconnected',
+                            viewModel.isConnected
+                                ? 'Connected'
+                                : 'Disconnected',
                             style: theme.textTheme.bodySmall,
                           ),
                         ],
@@ -349,9 +350,8 @@ class _HomeScreenState extends State<HomeScreen> {
                             directoryLabel,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: theme.textTheme.bodySmall
-                                ?.copyWith(
-                                    color: theme.colorScheme.onSurfaceVariant),
+                            style: theme.textTheme.bodySmall?.copyWith(
+                                color: theme.colorScheme.onSurfaceVariant),
                           ),
                         ),
                     ],
@@ -405,14 +405,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
                   child: Text('Appearance',
-                      style: theme.textTheme.labelSmall
-                          ?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
                 ),
                 ListTile(
                   // The icon shows what is on the screen, because that is the
                   // only thing this control can truthfully act on: it moves away
                   // from whatever is currently being rendered.
-                  leading: Icon(showingDark ? Icons.light_mode : Icons.dark_mode),
+                  leading:
+                      Icon(showingDark ? Icons.light_mode : Icons.dark_mode),
                   title: Text(showingDark
                       ? 'Switch to light mode'
                       : 'Switch to dark mode'),
@@ -437,8 +438,7 @@ class _HomeScreenState extends State<HomeScreen> {
                             ? 'Smaller chat text'
                             : 'This is the smallest chat text',
                         onPressed: appearance.canDecreaseFont
-                            ? () =>
-                                appearance.changeFont(larger: false)
+                            ? () => appearance.changeFont(larger: false)
                             : null,
                       ),
                       IconButton(

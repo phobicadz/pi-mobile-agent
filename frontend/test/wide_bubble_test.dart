@@ -124,15 +124,15 @@ void main() {
     final viewModel = await pumpReply(tester);
 
     final normal = bubbleWidth(tester);
-    // 80% of the 800px test window: the limit a reply is under by default.
-    expect(normal, closeTo(640, 1),
+    // A tablet-sized window (600-900dp) gets the tablet measure: 700px.
+    expect(normal, closeTo(700, 1),
         reason: 'the fixture must really be hitting the normal limit');
 
     await doubleTap(tester);
 
-    // Full width means as wide as the list allows. The list's own 16px padding
-    // still bounds it, so 800 - 32 rather than 800.
-    expect(bubbleWidth(tester), closeTo(768, 1),
+    // Widening means 95% of the window. The list's own 16px padding on each
+    // side still bounds it, so 760 rather than 800.
+    expect(bubbleWidth(tester), closeTo(760, 1),
         reason: 'the reply must fill the column, not just grow a little');
 
     viewModel.dispose();
@@ -170,15 +170,16 @@ void main() {
     viewModel.dispose();
   });
 
-  testWidgets('a wide window keeps the reading measure and the zoom',
+  testWidgets('a desktop window keeps the reading measure and the zoom',
       (tester) async {
     final viewModel = await pumpReply(tester, width: 1200);
 
-    expect(bubbleWidth(tester), closeTo(960, 1),
-        reason: 'on a desktop 80% is a measure, not a mistake');
+    expect(bubbleWidth(tester), closeTo(800, 1),
+        reason: 'on a desktop the measure is a fixed readable column, not the '
+            'whole window');
 
     await doubleTap(tester);
-    expect(bubbleWidth(tester), closeTo(1168, 1),
+    expect(bubbleWidth(tester), closeTo(1140, 1),
         reason: 'and widening into the rest of the window is still a choice');
 
     viewModel.dispose();
