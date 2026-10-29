@@ -43,6 +43,13 @@ class ChatBubble extends StatelessWidget {
     this.fontScale = 1.0,
   });
 
+  /// Below this width the screen is a phone: replies take the whole column
+  /// instead of a narrower measure, and there is no zoom left to do.
+  ///
+  /// Width rather than the platform, because this app runs in a browser on the
+  /// phone - what matters is how wide the column actually is.
+  static const _fullColumnBelowWidth = 600.0;
+
   /// One size in this bubble, scaled.
   ///
   /// The sizes stay written as the values the chat was designed at, so the
@@ -120,7 +127,15 @@ class ChatBubble extends StatelessWidget {
     // wider box. The screen width is deliberately not the real limit here - the
     // list's own padding bounds the bubble, and a maxWidth above what the parent
     // allows simply means "as wide as it can be".
-    final maxWidth = MediaQuery.sizeOf(context).width * (expanded ? 1.0 : 0.8);
+    // On a phone the narrower column is not a choice anybody made: 80% of a
+    // phone is a narrow bubble with a fifth of the screen left unused, and the
+    // way to get that width back is a double-tap a person has to already know
+    // about. So a narrow screen replies at the full column by default, and the
+    // gesture stays where it still means something - a wide window, where a
+    // reading measure is a real setting and widening into it is a real change.
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final phone = screenWidth < _fullColumnBelowWidth;
+    final maxWidth = screenWidth * (phone || expanded ? 1.0 : 0.8);
 
     // A bubble with nothing to say has nothing to copy: no button then.
     final copyText = message.copyableText;
@@ -132,7 +147,7 @@ class ChatBubble extends StatelessWidget {
       // the empty stretch of row beside a short one.
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
-        onDoubleTap: onToggleExpanded,
+        onDoubleTap: phone ? null : onToggleExpanded,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
           curve: Curves.easeOutCubic,

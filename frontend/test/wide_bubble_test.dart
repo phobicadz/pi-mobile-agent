@@ -93,7 +93,12 @@ Future<void> doubleTap(WidgetTester tester, [Finder? which]) async {
 }
 
 void main() {
-  Future<PiViewModel> pumpReply(WidgetTester tester) async {
+  Future<PiViewModel> pumpReply(WidgetTester tester,
+      {double width = 800}) async {
+    tester.view.physicalSize = Size(width, 600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+
     final service = _WideBubbleService();
     final viewModel = PiViewModel(piService: service);
 
@@ -143,6 +148,38 @@ void main() {
     await doubleTap(tester);
     expect(bubbleWidth(tester), closeTo(normal, 1),
         reason: 'the second double-click is a toggle, not a one-way zoom');
+
+    viewModel.dispose();
+  });
+
+  testWidgets('on a phone a reply takes the whole column without being asked',
+      (tester) async {
+    // 390 logical px: a phone. The list bounds a bubble at its own 16px of
+    // padding on each side, so the column is 358 and that is what a reply gets.
+    final viewModel = await pumpReply(tester, width: 390);
+
+    expect(bubbleWidth(tester), closeTo(358, 1),
+        reason: 'a narrow bubble with a fifth of the screen left over is not a '
+            'design choice on a phone, it is the width nobody asked for');
+
+    // The gesture is not offered there: there is nothing wider to go to.
+    await doubleTap(tester);
+    expect(bubbleWidth(tester), closeTo(358, 1),
+        reason: 'a zoom that cannot zoom is a gesture with no meaning');
+
+    viewModel.dispose();
+  });
+
+  testWidgets('a wide window keeps the reading measure and the zoom',
+      (tester) async {
+    final viewModel = await pumpReply(tester, width: 1200);
+
+    expect(bubbleWidth(tester), closeTo(960, 1),
+        reason: 'on a desktop 80% is a measure, not a mistake');
+
+    await doubleTap(tester);
+    expect(bubbleWidth(tester), closeTo(1168, 1),
+        reason: 'and widening into the rest of the window is still a choice');
 
     viewModel.dispose();
   });
