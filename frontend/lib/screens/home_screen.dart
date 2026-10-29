@@ -302,7 +302,14 @@ class _HomeScreenState extends State<HomeScreen> {
             );
           },
         ),
-        title: const Text('Pi Agent'),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.smart_toy, size: 24),
+            const SizedBox(width: 8),
+            const Text('Pi Agent'),
+          ],
+        ),
         centerTitle: true,
         elevation: 0,
         actions: [
