@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
+import '../utils/responsive.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/directory_browser.dart';
 import '../widgets/file_browser.dart';
@@ -548,11 +549,9 @@ class _HomeScreenState extends State<HomeScreen> {
           // bottom of the screen, where a tap would compete with the home
           // gesture, but it is not pushed a whole band above it.
           final insets = MediaQuery.of(context).padding;
-          final panelPadding = EdgeInsets.only(
-            left: math.max(16.0, insets.left),
-            right: math.max(16.0, insets.right),
-            top: 16,
-            bottom: math.max(10.0, insets.bottom - 12),
+          final panelPadding = ResponsiveSizes.getInputAreaPadding(
+            MediaQuery.of(context).size.width,
+            insets: insets,
           );
 
           // The body is already a Consumer, so this builder runs on every
@@ -575,22 +574,32 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               // Error message
               if (viewModel.error != null)
-                Container(
-                  color: Colors.red.shade100,
-                  padding: const EdgeInsets.all(12),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          viewModel.error!,
-                          style: TextStyle(color: Colors.red.shade900),
-                        ),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(
+                      maxWidth: ResponsiveSizes.inputAreaMaxWidth,
+                    ),
+                    child: Container(
+                      color: Colors.red.shade100,
+                      padding: const EdgeInsets.all(12),
+                      margin: EdgeInsets.symmetric(
+                        horizontal: ResponsiveSizes.paddingLarge,
                       ),
-                      IconButton(
-                        icon: Icon(Icons.close, color: Colors.red.shade900),
-                        onPressed: viewModel.clearError,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              viewModel.error!,
+                              style: TextStyle(color: Colors.red.shade900),
+                            ),
+                          ),
+                          IconButton(
+                            icon: Icon(Icons.close, color: Colors.red.shade900),
+                            onPressed: viewModel.clearError,
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
 

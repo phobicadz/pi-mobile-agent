@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
 import '../providers/pi_view_model.dart';
+import '../utils/responsive.dart';
 
 class ModelSelector extends StatefulWidget {
   const ModelSelector({super.key});
@@ -65,8 +66,6 @@ class _ModelSelectorState extends State<ModelSelector> {
           );
         }
 
-        // A remembered choice that is no longer a choice falls back to what Pi
-        // is actually using.
         final remembered = _selectedModel;
         final value =
             remembered != null && listed.any((model) => model.id == remembered)
@@ -75,6 +74,12 @@ class _ModelSelectorState extends State<ModelSelector> {
                         listed.any((model) => model.id == currentModel)
                     ? currentModel
                     : null);
+
+        // Responsive sizing: more compact on phones, more spacious on tablets/desktops
+        final screenSize = ResponsiveSizes.getScreenSize(
+            MediaQuery.of(context).size.width);
+        final isCompactMode = screenSize == ScreenSize.phone;
+        final menuMaxHeight = isCompactMode ? 300.0 : 400.0;
 
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -87,6 +92,7 @@ class _ModelSelectorState extends State<ModelSelector> {
             underline: const SizedBox(),
             hint: const Text('Select a model'),
             value: value,
+            menuMaxHeight: menuMaxHeight,
             items: listed.map((model) {
               final offered = model.available;
               return DropdownMenuItem(
@@ -106,12 +112,22 @@ class _ModelSelectorState extends State<ModelSelector> {
                         children: [
                           Text(
                             model.name,
-                            maxLines: 1,
+                            maxLines: isCompactMode ? 1 : 2,
                             overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: isCompactMode ? 13 : 14,
+                            ),
                           ),
                           Text(
                             model.provider,
-                            style: Theme.of(context).textTheme.bodySmall,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodySmall
+                                ?.copyWith(
+                                  fontSize: isCompactMode ? 11 : 12,
+                                ),
                           ),
                         ],
                       ),
