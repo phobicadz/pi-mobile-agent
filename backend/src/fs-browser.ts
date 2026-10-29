@@ -43,15 +43,35 @@ const HIDDEN_FILES = new Set([
 /** Maximum file size we'll read (10 MB) */
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-/** Text file extensions we can safely read */
-const TEXT_EXTENSIONS = new Set([
-  "txt", "md", "json", "js", "ts", "tsx", "jsx", "py", "java", "cpp", "c", "h",
-  "html", "css", "scss", "xml", "yaml", "yml", "toml", "ini", "conf", "sh",
-  "bash", "zsh", "fish", "dart", "go", "rs", "rb", "php", "sql", "sql",
-  "dockerfile", "Dockerfile", "makefile", "Makefile", "gradle", "maven",
-  "package.json", "package-lock.json", "tsconfig.json", "eslintrc",
-  "prettierrc", "gitignore", "env", "log", "csv", "sql", "dockerfile"
-]);
+/** How many leading bytes decide whether a file reads as text. */
+const TEXT_SNIFF_BYTES = 8192;
+
+/**
+ * Whether a file's bytes are text - decided from the bytes, not the name.
+ *
+ * An extension says what a file claims to be; the bytes say what it is. The
+ * extension whitelist this replaces called a .cs file binary, which reached the
+ * phone as an uncoloured file labelled "binary" while the app had a C# grammar
+ * sitting there unused - the only thing in between was a name nobody had added
+ * to a list. A file the app has never heard of (.cshtml, .svelte, a Makefile,
+ * no extension at all) is still text if its bytes are.
+ */
+function looksLikeText(bytes: Buffer): boolean {
+  const sample = bytes.subarray(0, Math.min(bytes.length, TEXT_SNIFF_BYTES));
+  if (sample.length === 0) return true;
+
+  // A NUL byte is the classic marker: text files do not contain one.
+  if (sample.includes(0)) return false;
+
+  let control = 0;
+  for (const byte of sample) {
+    if (byte === 9 || byte === 10 || byte === 13) continue; // tab, LF, CR
+    if (byte < 32) control++;
+  }
+  // A stray escape or two is a text file with something odd in it; a file made
+  // mostly of control bytes is not.
+  return control / sample.length < 0.01;
+}
 
 function isHiddenDir(name: string): boolean {
   return name.startsWith(".") || HIDDEN_DIRS.has(name);
@@ -69,20 +89,7 @@ function isDirectory(p: string): boolean {
   }
 }
 
-/** Check if a file is likely a text file based on extension */
-function isTextFile(filePath: string): boolean {
-  const ext = path.extname(filePath).toLowerCase().slice(1);
-  if (TEXT_EXTENSIONS.has(ext)) return true;
-  
-  // Check if file has no extension (could be text)
-  if (!ext) {
-    const name = path.basename(filePath).toLowerCase();
-    return TEXT_EXTENSIONS.has(name);
-  }
-  
-  return false;
-}
-
+/** Whether a file reads as text, from what its first bytes actually contain. */
 /** All filesystem roots: drive letters on Windows, "/" elsewhere. */
 export function listRoots(): DirEntry[] {
   if (process.platform === "win32") {
@@ -239,11 +246,13 @@ export function readFile(
       throw new Error(`File too large (>${MAX_FILE_SIZE / 1024 / 1024}MB): ${resolved}`);
     }
 
-    const isText = isTextFile(resolved);
-    const content = readFileSync(resolved, isText ? "utf-8" : "latin1");
+    // Read the bytes, then decide what they are. Deciding from the extension
+    // first is what made a source file the app could colour arrive as binary.
+    const bytes = readFileSync(resolved);
+    const isText = looksLikeText(bytes);
 
     return {
-      content,
+      content: bytes.toString(isText ? "utf-8" : "latin1"),
       size: stat.size,
       isText,
       encoding: isText ? "utf-8" : "binary",

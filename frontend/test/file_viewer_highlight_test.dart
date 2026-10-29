@@ -8,6 +8,7 @@ import 'package:pi_mobile_agent/models/pi_models.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:pi_mobile_agent/utils/code_highlight.dart';
+import 'package:pi_mobile_agent/widgets/file_browser.dart';
 import 'package:pi_mobile_agent/widgets/file_viewer.dart';
 import 'package:provider/provider.dart';
 
@@ -18,8 +19,15 @@ class FakeFileService extends PiService {
 
   String? lastReadPath;
   int readCalls = 0;
+  FileListing? listing;
 
   FakeFileService({required this.files});
+
+  @override
+  Future<FileListing> listFiles({String? path}) async =>
+      listing ??
+          FileListing(
+              path: path ?? '/', roots: const [], entries: const [], recent: const []);
 
   @override
   Stream<PiEvent> get events => _events.stream;
@@ -661,6 +669,46 @@ public class Greeter {
 
       expect(find.text('Error loading file'), findsOneWidget);
       expect(find.textContaining('gone.txt'), findsWidgets);
+    });
+  });
+
+  group('opening a file from the browser', () {
+    testWidgets('the file it opens is coloured', (WidgetTester tester) async {
+      // The path a person actually takes: the list, a tap on a file, the viewer
+      // that comes back. Testing the viewer on its own leaves that path untested
+      // - and the path is where a wrong path or a wrong name would show up.
+      const source = 'export const greet = (name: string) => "hi " + name;\n'
+          '// a comment\nfunction id(x: number): number { return x; }\n';
+      final service = FakeFileService(files: {'/src/app.ts': _file(source)})
+        ..listing = FileListing(
+          path: '/src',
+          roots: const [],
+          entries: [
+            DirEntry(
+                name: 'app.ts',
+                path: '/src/app.ts',
+                isDirectory: false,
+                size: source.length),
+          ],
+          recent: const [],
+        );
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider<PiViewModel>(
+          create: (_) => PiViewModel(piService: service),
+          child: const MaterialApp(home: Scaffold(body: FileBrowser())),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('app.ts'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(FileViewer), findsOneWidget);
+      expect(tester.takeException(), isNull);
+      expect(_paintedColours(tester).length, greaterThan(2),
+          reason: 'a file opened by tapping it in the list has to be coloured '
+              'like one opened any other way');
     });
   });
 
