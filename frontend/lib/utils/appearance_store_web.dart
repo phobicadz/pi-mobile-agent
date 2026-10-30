@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 const _themeKey = 'pi-mobile-agent.theme';
 const _fontKey = 'pi-mobile-agent.fontScale';
+const _fileFontKey = 'pi-mobile-agent.fileFontScale';
 
 /// Read back the stored theme, or null when there is none - which is the app
 /// following the system, not the app having forgotten.
@@ -29,6 +30,14 @@ void saveThemeMode(ThemeMode mode) => _write(
 Future<double?> loadFontScale() async => double.tryParse(_read(_fontKey) ?? '');
 
 void saveFontScale(double scale) => _write(_fontKey, scale.toString());
+
+/// The file viewer's text size, stored separately from the chat's: 12px
+/// monospace code and chat prose are two different things to read, and a phone
+/// usually wants them at different sizes. See `AppearanceController`.
+Future<double?> loadFileFontScale() async =>
+    double.tryParse(_read(_fileFontKey) ?? '');
+
+void saveFileFontScale(double scale) => _write(_fileFontKey, scale.toString());
 
 /// Storage can be refused outright (private mode, blocked cookies), and an app
 /// that throws on startup over its text size is not an app - one that falls back

@@ -25,6 +25,7 @@ class AppearanceController extends ChangeNotifier {
 
   ThemeMode _themeMode = ThemeMode.system;
   int _fontLevel = 0;
+  int _fileFontLevel = 0;
 
   ThemeMode get themeMode => _themeMode;
 
@@ -36,6 +37,25 @@ class AppearanceController extends ChangeNotifier {
   /// watching nothing happen at the end of the range.
   bool get canIncreaseFont => _fontLevel < _maxLevel;
   bool get canDecreaseFont => _fontLevel > _minLevel;
+
+  /// The file viewer's text size, counted the same way.
+  ///
+  /// Separate from the chat's on purpose: a file is 12px monospace code, which
+  /// is a different thing to read from chat prose at a different size, and a
+  /// phone usually wants them apart. Making one button change both is how a
+  /// "make it bigger" request ends up making the wrong thing bigger.
+  double get fileFontScale => 1.0 + _fileFontLevel * _step;
+
+  bool get canIncreaseFileFont => _fileFontLevel < _maxLevel;
+  bool get canDecreaseFileFont => _fileFontLevel > _minLevel;
+
+  void changeFileFont({required bool larger}) {
+    final level = _fileFontLevel + (larger ? 1 : -1);
+    if (level < _minLevel || level > _maxLevel) return;
+    _fileFontLevel = level;
+    saveFileFontScale(fileFontScale);
+    notifyListeners();
+  }
 
   /// Flip away from whatever is on screen right now.
   ///
@@ -66,7 +86,12 @@ class AppearanceController extends ChangeNotifier {
     final storedScale = await loadFontScale();
     if (storedScale != null) _fontLevel = _levelFor(storedScale);
 
-    if (storedTheme != null || storedScale != null) notifyListeners();
+    final storedFileScale = await loadFileFontScale();
+    if (storedFileScale != null) _fileFontLevel = _levelFor(storedFileScale);
+
+    if (storedTheme != null || storedScale != null || storedFileScale != null) {
+      notifyListeners();
+    }
   }
 
   int _levelFor(double scale) {

@@ -1,6 +1,9 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
+import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
@@ -53,6 +56,13 @@ class _FileViewerState extends State<FileViewer> {
   static const _monoFamily = 'JetBrainsMono';
   static const _fontSize = 12.0;
   static const _lineHeight = 1.5;
+
+  /// The lines the user has pointed at by tapping their numbers, and the line
+  /// the current selection was anchored to. A reference to a file is a path and
+  /// a line range, and the line is the part you can only point at on screen.
+  int? _anchorLine;
+  int? _selectedStart;
+  int? _selectedEnd;
 
   @override
   void initState() {
@@ -166,15 +176,15 @@ class _FileViewerState extends State<FileViewer> {
   }
 
   /// Width of the gutter: wide enough for the largest line number, measured in
-  /// the same monospace font the code is drawn in.
-  double _gutterWidth(int lineCount, Color colour) {
+  /// the same monospace font the code is drawn in, at the size it is drawn in.
+  double _gutterWidth(int lineCount, Color colour, double numberSize) {
     final digits = lineCount.toString().length;
     final painter = TextPainter(
       text: TextSpan(
         text: '9' * digits,
         style: TextStyle(
           fontFamily: _monoFamily,
-          fontSize: _fontSize - 1,
+          fontSize: numberSize,
           color: colour,
         ),
       ),
@@ -183,7 +193,81 @@ class _FileViewerState extends State<FileViewer> {
     return painter.width + 16;
   }
 
-  Widget _buildBody(BuildContext context, ThemeData theme) {
+  /// Tapping a line number selects that line, tapping another extends the
+  /// selection to a range, and tapping the same one again clears it.
+  ///
+  /// Lines are numbered as they are displayed - from 1 - because that is what a
+  /// `path:line` reference means to every tool that reads one, editors included.
+  void _tapLine(int line) {
+    setState(() {
+      if (_selectedStart == null) {
+        _anchorLine = line;
+        _selectedStart = line;
+        _selectedEnd = line;
+        return;
+      }
+      if (line == _selectedStart && line == _selectedEnd) {
+        _anchorLine = null;
+        _selectedStart = null;
+        _selectedEnd = null;
+        return;
+      }
+      final anchor = _anchorLine!;
+      _selectedStart = math.min(anchor, line);
+      _selectedEnd = math.max(anchor, line);
+    });
+  }
+
+  bool get _hasSelection => _selectedStart != null;
+
+  /// The reference itself: the path the file was opened by, and the lines.
+  ///
+  /// Absolute, on purpose. The agent runs in whatever directory the session was
+  /// pointed at, and the file was browsed from wherever the user was standing;
+  /// a path that only makes sense from one of those is a path the agent cannot
+  /// open. The `:line` suffix is the form editors, `git diff` and every code
+  /// tool already agree on.
+  String _lineReference() {
+    final start = _selectedStart!;
+    final end = _selectedEnd!;
+    return start == end
+        ? '${widget.filePath}:$start'
+        : '${widget.filePath}:$start-$end';
+  }
+
+  /// The same reference as the toast says it. A 380px toast cannot show an
+  /// absolute path, and a message cut off mid-way reads as a broken one.
+  String _shortLineReference() {
+    final name = widget.filePath
+        .replaceAll(RegExp(r'[\\/]+$'), '')
+        .split(RegExp(r'[\\/]'))
+        .last;
+    final start = _selectedStart!;
+    final end = _selectedEnd!;
+    return start == end ? '$name:$start' : '$name:$start-$end';
+  }
+
+  String get _referenceLabel => _selectedStart == _selectedEnd
+      ? 'Copy reference to line $_selectedStart'
+      : 'Copy reference to lines $_selectedStart–$_selectedEnd';
+
+  /// Re-styles the spans for the size the text is being shown at.
+  ///
+  /// The spans carry the colours the palette chose; the size is ours. This runs
+  /// for the rows on screen only, which is why changing the size does not make
+  /// the viewer re-parse the file.
+  List<TextSpan> _sizedSpans(List<TextSpan> spans, TextStyle scaled) => [
+        for (final span in spans)
+          TextSpan(
+            text: span.text,
+            style: span.style == null
+                ? scaled
+                : span.style!.copyWith(
+                    fontSize: scaled.fontSize, fontFamily: _monoFamily),
+          ),
+      ];
+
+  Widget _buildBody(BuildContext context, ThemeData theme, double fontScale) {
     final lines = _lines;
     if (lines == null || lines.isEmpty) return const SizedBox.shrink();
 
@@ -192,16 +276,26 @@ class _FileViewerState extends State<FileViewer> {
     // colouring look wrong, and look wrong differently in light and in dark.
     final palette =
         _palette ?? codePalette(theme.brightness == Brightness.dark);
-    final baseStyle = _baseStyle(palette.foreground);
-    final gutter = _gutterWidth(lines.length, palette.foreground);
+    final codeSize = _fontSize * fontScale;
+    final baseStyle =
+        _baseStyle(palette.foreground).copyWith(fontSize: codeSize);
+    final gutter = _gutterWidth(lines.length, palette.foreground, codeSize - 1);
     final numberStyle = TextStyle(
       fontFamily: _monoFamily,
-      fontSize: _fontSize - 1,
+      fontSize: codeSize - 1,
       color: palette.foreground.withValues(alpha: 0.45),
     );
+    final selectedNumberStyle = numberStyle.copyWith(
+      color: theme.colorScheme.primary,
+      fontWeight: FontWeight.bold,
+    );
+    // A selected line is painted as a band across the row, so the range being
+    // referenced is visible in the file and not only in the button's label.
+    final selectionBand = theme.colorScheme.primary
+        .withValues(alpha: theme.brightness == Brightness.dark ? 0.18 : 0.10);
     // One row per line number, so a blank line still occupies a line: without
     // it the numbers drift out of step with the source they number.
-    final rowHeight = _fontSize * _lineHeight;
+    final rowHeight = codeSize * _lineHeight;
 
     return ColoredBox(
       color: palette.background,
@@ -211,34 +305,50 @@ class _FileViewerState extends State<FileViewer> {
           padding: const EdgeInsets.symmetric(vertical: 8),
           itemCount: lines.length,
           itemBuilder: (context, index) {
+            final line = index + 1;
+            final selected = _hasSelection &&
+                line >= _selectedStart! &&
+                line <= _selectedEnd!;
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(
-                      width: gutter,
-                      child: Text(
-                        '${index + 1}',
-                        textAlign: TextAlign.right,
-                        style: numberStyle,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: rowHeight),
-                        child: RichText(
-                          text: TextSpan(
-                            style: baseStyle,
-                            children: lines[index],
+              child: ColoredBox(
+                color: selected ? selectionBand : Colors.transparent,
+                child: IntrinsicHeight(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => _tapLine(line),
+                        child: Semantics(
+                          button: true,
+                          label: 'Reference line $line',
+                          child: SizedBox(
+                            width: gutter,
+                            child: Text(
+                              '$line',
+                              textAlign: TextAlign.right,
+                              style:
+                                  selected ? selectedNumberStyle : numberStyle,
+                            ),
                           ),
-                          textDirection: TextDirection.ltr,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(minHeight: rowHeight),
+                          child: RichText(
+                            text: TextSpan(
+                              style: baseStyle,
+                              children: _sizedSpans(lines[index], baseStyle),
+                            ),
+                            textDirection: TextDirection.ltr,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             );
@@ -268,9 +378,92 @@ class _FileViewerState extends State<FileViewer> {
     );
   }
 
+  /// Copy a `path:line` reference to the lines the user pointed at, so they can
+  /// paste it into a prompt and the agent lands on those lines.
+  ///
+  /// The whole file is already copyable; what a viewer cannot otherwise give is
+  /// the position you were looking at. A line number on a screen is not something
+  /// an agent can be told, and retyping a path and a number is where a reference
+  /// like this gets lost.
+  Future<void> _copyLineReference(BuildContext insideDialog) async {
+    final reference = _lineReference();
+    final outcome = await copyToClipboard(reference);
+    if (!mounted) return;
+    showToast(
+      insideDialog,
+      outcome == CopyOutcome.copied
+          ? 'Copied ${_shortLineReference()}'
+          : 'Copy failed - this browser blocked it',
+      isError: outcome != CopyOutcome.copied,
+    );
+  }
+
+  /// The viewer's controls, spelled out rather than left to icons.
+  ///
+  /// The text size lives here and not in the app's menu because it is a decision
+  /// about this file, taken while looking at it - and the chat's size is a
+  /// different size for different text, which is why the two are separate
+  /// settings. See `AppearanceController`.
+  Widget _buildToolbar(
+      BuildContext context, ThemeData theme, AppearanceController appearance) {
+    final scale = appearance.fileFontScale;
+    return Wrap(
+      spacing: 2,
+      runSpacing: 2,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        IconButton(
+          iconSize: 18,
+          visualDensity: VisualDensity.compact,
+          icon: Icon(Icons.text_decrease,
+              color: theme.colorScheme.onSurfaceVariant),
+          tooltip: 'Smaller file text',
+          onPressed: appearance.canDecreaseFileFont
+              ? () => appearance.changeFileFont(larger: false)
+              : null,
+        ),
+        Text(
+          '${(scale * 100).round()}% text size',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+        ),
+        IconButton(
+          iconSize: 18,
+          visualDensity: VisualDensity.compact,
+          icon: Icon(Icons.text_increase,
+              color: theme.colorScheme.onSurfaceVariant),
+          tooltip: 'Larger file text',
+          onPressed: appearance.canIncreaseFileFont
+              ? () => appearance.changeFileFont(larger: true)
+              : null,
+        ),
+        const SizedBox(width: 10),
+        if (_hasSelection)
+          // Inside a Builder so the confirmation goes to the messenger in this
+          // dialog, for the same reason the copy button is.
+          Builder(
+            builder: (inside) => TextButton.icon(
+              onPressed: () => _copyLineReference(inside),
+              icon: const Icon(Icons.link, size: 18),
+              label: Text(_referenceLabel),
+            ),
+          )
+        else
+          // Said out loud because "tap a line number" is not an affordance a
+          // number in the margin announces by itself.
+          Text(
+            'Tap a line number to reference it',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final appearance = context.watch<AppearanceController>();
     final content = _content;
 
     return Dialog(
@@ -301,51 +494,66 @@ class _FileViewerState extends State<FileViewer> {
                 ),
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            widget.fileName ?? 'File Viewer',
-                            style: theme.textTheme.titleMedium
-                                ?.copyWith(color: theme.colorScheme.onSurface),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                widget.fileName ?? 'File Viewer',
+                                style: theme.textTheme.titleMedium?.copyWith(
+                                    color: theme.colorScheme.onSurface),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              if (content != null)
+                                Text(
+                                  [
+                                    _formatFileSize(content.size),
+                                    if (_lines != null)
+                                      '${_lines!.length} lines',
+                                    if (_languageLabel != null) _languageLabel!,
+                                    if (!content.isText) 'binary',
+                                  ].join(' • '),
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                      color:
+                                          theme.colorScheme.onSurfaceVariant),
+                                ),
+                            ],
                           ),
-                          if (content != null)
-                            Text(
-                              [
-                                _formatFileSize(content.size),
-                                if (_lines != null) '${_lines!.length} lines',
-                                if (_languageLabel != null) _languageLabel!,
-                                if (!content.isText) 'binary',
-                              ].join(' • '),
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant),
-                            ),
-                        ],
-                      ),
-                    ),
-                    if (content != null)
-                      // A Builder, so the copy is reported through the messenger
-                      // inside this dialog. An inherited lookup starts above the
-                      // widget that does it: asking from the viewer's own context
-                      // reaches the app's Scaffold, which is behind the dialog.
-                      Builder(
-                        builder: (inside) => IconButton(
-                          icon: Icon(Icons.copy,
-                              color: theme.colorScheme.onSurfaceVariant),
-                          tooltip: 'Copy file',
-                          onPressed: () => _copyFile(inside, content.content),
                         ),
-                      ),
-                    IconButton(
-                      icon: Icon(Icons.close,
-                          color: theme.colorScheme.onSurfaceVariant),
-                      onPressed: () => Navigator.of(context).pop(),
+                        if (content != null)
+                          // A Builder, so the copy is reported through the messenger
+                          // inside this dialog. An inherited lookup starts above the
+                          // widget that does it: asking from the viewer's own context
+                          // reaches the app's Scaffold, which is behind the dialog.
+                          Builder(
+                            builder: (inside) => IconButton(
+                              icon: Icon(Icons.copy,
+                                  color: theme.colorScheme.onSurfaceVariant),
+                              tooltip: 'Copy file',
+                              onPressed: () =>
+                                  _copyFile(inside, content.content),
+                            ),
+                          ),
+                        IconButton(
+                          icon: Icon(Icons.close,
+                              color: theme.colorScheme.onSurfaceVariant),
+                          onPressed: () => Navigator.of(context).pop(),
+                        ),
+                      ],
                     ),
+                    // The controls a file needs are in the file's own header: what
+                    // size to read it at, and a reference to the part of it being
+                    // looked at.
+                    if (content != null) ...[
+                      const SizedBox(height: 6),
+                      _buildToolbar(context, theme, appearance),
+                    ],
                   ],
                 ),
               ),
@@ -380,7 +588,8 @@ class _FileViewerState extends State<FileViewer> {
                             ? const Center(child: Text('No content'))
                             : Scrollbar(
                                 controller: _scrollController,
-                                child: _buildBody(context, theme),
+                                child: _buildBody(
+                                    context, theme, appearance.fileFontScale),
                               ),
               ),
             ],

@@ -266,6 +266,8 @@ Events stream continuously as the Pi agent works:
 - ✅ Resume previous sessions (menu entry, like `/resume` in the Pi TUI)
 - ✅ Browse and set the working directory (menu entry): browse drives, folders, and recently used directories; setting a new directory restarts Pi with a fresh session in that directory
 - ✅ Browse and read files (menu entry): the directory tree beside the working directory, and a file opened with line numbers down the side and syntax colouring for the languages the app knows (C#, CSS, HTML/XML, TypeScript, Python, and the rest of them). Prose, binaries and files too large to colour are said out loud in the header instead of being guessed at, and the copy button copies the file, not the line numbers
+- ✅ File text size (in the viewer's own header): `A-` / `A+` steps the size of the file's text, with the current percentage stated, and the size stays set for the next file you open. It is separate from the chat text size on purpose — code at 12px monospace and chat prose are different things to read, and a phone usually wants them apart
+- ✅ Copy a reference to a file's lines (tap a line number): tapping one line number selects that line, tapping another extends it to a range, and copying gives `path:line` or `path:start-end` with the absolute path, which is the form editors and code tools already agree on and the one an agent can open from any directory. The line numbers in the margin are the only way to point at a line on a screen, and retyping a path and a number is where a reference like that gets lost
 - ✅ On a phone a reply takes the whole width of the screen. The narrower column and the double-tap that widens a reply are for a wide window, where a reading measure is a choice someone made
 
 ### Future Enhancements

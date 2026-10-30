@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:pi_mobile_agent/utils/code_highlight.dart';
@@ -86,35 +87,56 @@ const cssFile = ''':root { --brand: #3fb; }
 }
 ''';
 
+/// The appearance provider the app always has above its screens: the viewer
+/// reads its text size from it, so a fixture that builds a viewer has to supply
+/// one like the app does.
+Widget _withAppearance(Widget child) =>
+    ChangeNotifierProvider<AppearanceController>.value(
+      value: AppearanceController(),
+      child: child,
+    );
+
 /// Opens the viewer for [path] and lets the file load.
-Future<void> _openViewer(
+///
+/// [appearance] is the app's own appearance controller, because that is where
+/// the viewer reads its text size from - and passing one in is how a test can
+/// ask whether a size survives opening another file.
+Future<AppearanceController> _openViewer(
   WidgetTester tester, {
   required String path,
   required FileContent content,
   Brightness brightness = Brightness.dark,
+  AppearanceController? appearance,
 }) async {
   final service = FakeFileService(files: {path: content});
   final viewModel = PiViewModel(piService: service);
+  final controller = appearance ?? AppearanceController();
 
   await tester.pumpWidget(
-    ChangeNotifierProvider<PiViewModel>(
-      create: (_) => viewModel,
-      child: MaterialApp(
-        theme: ThemeData(brightness: brightness),
-        // Opened the way the file browser opens it - through a dialog route -
-        // because where the viewer sits in the route stack is part of what is
-        // being tested here.
-        home: Scaffold(
-          body: Builder(
-            builder: (context) => ElevatedButton(
-              onPressed: () => showDialog(
-                context: context,
-                builder: (_) => FileViewer(
-                  filePath: path,
-                  fileName: path.split('/').last,
+    // `.value`, not `create:`: a provider built with `create:` keeps the value it
+    // made the first time when the test pumps a second app over the same element,
+    // and the second viewer silently reads through the first file's service.
+    ChangeNotifierProvider<PiViewModel>.value(
+      value: viewModel,
+      child: ChangeNotifierProvider<AppearanceController>.value(
+        value: controller,
+        child: MaterialApp(
+          theme: ThemeData(brightness: brightness),
+          // Opened the way the file browser opens it - through a dialog route -
+          // because where the viewer sits in the route stack is part of what is
+          // being tested here.
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () => showDialog(
+                  context: context,
+                  builder: (_) => FileViewer(
+                    filePath: path,
+                    fileName: path.split('/').last,
+                  ),
                 ),
+                child: const Text('open file'),
               ),
-              child: const Text('open file'),
             ),
           ),
         ),
@@ -124,6 +146,33 @@ Future<void> _openViewer(
 
   await tester.tap(find.text('open file'));
   await tester.pumpAndSettle();
+  return controller;
+}
+
+/// Closes the viewer the way its own close button does.
+Future<void> _closeViewer(WidgetTester tester) async {
+  await tester.tap(find.byIcon(Icons.close));
+  await tester.pumpAndSettle();
+}
+
+/// Records what the app tried to put on the clipboard, and can be made to
+/// refuse - which is what the browser does on a plain http origin.
+void _captureClipboard(void Function(String text) handle) {
+  TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      .setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'Clipboard.setData') {
+      handle((call.arguments as Map)['text'] as String? ?? '');
+    }
+    return null;
+  });
+}
+
+/// The size the file's text is actually being drawn at.
+double _codeFontSize(WidgetTester tester) {
+  final row = find.ancestor(of: find.text('1'), matching: find.byType(Row));
+  final rich = tester.widget<RichText>(
+      find.descendant(of: row, matching: find.byType(RichText)).last);
+  return (rich.text.style?.fontSize)!;
 }
 
 /// The surface the file is painted on.
@@ -192,9 +241,11 @@ class _FlipThemeState extends State<_FlipTheme> {
   Widget build(BuildContext context) {
     return ChangeNotifierProvider<PiViewModel>(
       create: (_) => PiViewModel(piService: widget.service),
-      child: MaterialApp(
-        theme: ThemeData(brightness: _brightness),
-        home: Scaffold(body: FileViewer(filePath: widget.path)),
+      child: _withAppearance(
+        MaterialApp(
+          theme: ThemeData(brightness: _brightness),
+          home: Scaffold(body: FileViewer(filePath: widget.path)),
+        ),
       ),
     );
   }
@@ -683,18 +734,6 @@ public class Greeter {
   });
 
   group('copying', () {
-    /// Records what the app tried to put on the clipboard, and can be made to
-    /// refuse - which is what the browser does on a plain http origin.
-    void fakeClipboard(void Function(String text) handle) {
-      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') {
-          handle((call.arguments as Map)['text'] as String? ?? '');
-        }
-        return null;
-      });
-    }
-
     testWidgets('copying a file gives the file, without line numbers',
         (WidgetTester tester) async {
       const source = 'let a = 1;\nlet b = 2;\n';
@@ -705,7 +744,7 @@ public class Greeter {
       );
 
       String? copied;
-      fakeClipboard((text) => copied = text);
+      _captureClipboard((text) => copied = text);
 
       await tester.tap(find.byIcon(Icons.copy));
       await tester.pump();
@@ -737,7 +776,7 @@ public class Greeter {
 
       // Exactly what the engine raises when the browser has no Clipboard API -
       // a plain http origin, which is where this app runs.
-      fakeClipboard((_) => throw PlatformException(code: 'copy_fail'));
+      _captureClipboard((_) => throw PlatformException(code: 'copy_fail'));
 
       await tester.tap(find.byIcon(Icons.copy));
       await tester.pump();
@@ -746,6 +785,230 @@ public class Greeter {
           reason:
               'a refused copy is an expected outcome, not an exception left '
               'lying around');
+      expect(find.textContaining('Copy failed'), findsOneWidget);
+    });
+  });
+
+  group('text size', () {
+    testWidgets('the file can be made bigger and smaller',
+        (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: 'src/app.js',
+        content: _file('let a = 1;\nlet b = 2;\n'),
+      );
+
+      // The size the viewer was laid out for is what it opens at.
+      expect(_codeFontSize(tester), closeTo(12.0, 0.001));
+
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pumpAndSettle();
+      expect(_codeFontSize(tester), closeTo(13.2, 0.001));
+      expect(find.text('110% text size'), findsOneWidget,
+          reason: 'a size control that does not say the size is a size control '
+              'you have to guess at');
+
+      await tester.tap(find.byIcon(Icons.text_decrease));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byIcon(Icons.text_decrease));
+      await tester.pumpAndSettle();
+      expect(_codeFontSize(tester), closeTo(10.8, 0.001));
+      expect(find.text('90% text size'), findsOneWidget);
+    });
+
+    testWidgets(
+        'the line numbers and the code stay the same size as each other',
+        (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: 'src/app.js',
+        content: _file('let a = 1;\nlet b = 2;\n'),
+      );
+
+      double numberSize() =>
+          tester.widget<Text>(find.text('1')).style!.fontSize!;
+
+      expect(numberSize(), closeTo(_codeFontSize(tester) - 1, 0.001),
+          reason: 'the gutter is measured in the same text it numbers');
+
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pumpAndSettle();
+      expect(numberSize(), closeTo(_codeFontSize(tester) - 1, 0.001));
+    });
+
+    testWidgets('a size you set for one file is still set for the next',
+        (WidgetTester tester) async {
+      final appearance = await _openViewer(
+        tester,
+        path: 'src/first.js',
+        content: _file('let a = 1;\n'),
+      );
+
+      await tester.tap(find.byIcon(Icons.text_increase));
+      await tester.pumpAndSettle();
+      await _closeViewer(tester);
+
+      await _openViewer(
+        tester,
+        path: 'src/second.js',
+        content: _file('let b = 2;\n'),
+        appearance: appearance,
+      );
+
+      expect(_codeFontSize(tester), closeTo(13.2, 0.001),
+          reason:
+              'reading a file on a phone means opening several, and setting '
+              'the size out again for each one is the chore');
+    });
+
+    testWidgets(
+        'at the end of the range the button that goes no further is '
+        'the one that is disabled', (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: 'src/app.js',
+        content: _file('let a = 1;\n'),
+      );
+
+      for (var i = 0; i < 9; i++) {
+        await tester.tap(find.byIcon(Icons.text_increase));
+        await tester.pumpAndSettle();
+      }
+
+      expect(find.text('180% text size'), findsOneWidget);
+      final increase = tester.widget<IconButton>(find.ancestor(
+          of: find.byIcon(Icons.text_increase),
+          matching: find.byType(IconButton)));
+      expect(increase.onPressed, isNull,
+          reason: 'pressing and watching nothing happen is not how a control '
+              'says it has reached the end');
+    });
+  });
+
+  group('line references', () {
+    testWidgets(
+        'tapping a line number selects that line and offers the '
+        'reference', (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: '/src/app.js',
+        content: _file('alpha\nbravo\ncharlie\ndelta\necho\n'),
+      );
+
+      // Said out loud, because a number in the margin does not announce that it
+      // can be tapped.
+      expect(find.text('Tap a line number to reference it'), findsOneWidget);
+
+      await tester.tap(find.text('3'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Copy reference to line 3'), findsOneWidget);
+      expect(find.text('Tap a line number to reference it'), findsNothing);
+    });
+
+    testWidgets('a second line number extends it to a range',
+        (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: '/src/app.js',
+        content: _file('alpha\nbravo\ncharlie\ndelta\necho\n'),
+      );
+
+      await tester.tap(find.text('5'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Copy reference to lines 2\u20135'), findsOneWidget,
+          reason: 'the range runs from the first tap to the second, whichever '
+              'way down the file that goes');
+    });
+
+    testWidgets('tapping the same line again clears the selection',
+        (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: '/src/app.js',
+        content: _file('alpha\nbravo\ncharlie\n'),
+      );
+
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('Copy reference'), findsNothing);
+      expect(find.text('Tap a line number to reference it'), findsOneWidget);
+    });
+
+    testWidgets(
+        'copying a reference gives path:line, and says so inside the '
+        'dialog', (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: '/home/adam/src/app.js',
+        content: _file('alpha\nbravo\ncharlie\n'),
+      );
+
+      String? copied;
+      _captureClipboard((text) => copied = text);
+
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Copy reference to line 2'));
+      await tester.pump();
+
+      // The absolute path, because the agent is pointed at whatever directory
+      // the session chose and this file was browsed from somewhere else.
+      expect(copied, '/home/adam/src/app.js:2');
+      expect(
+        find.descendant(
+          of: find.byType(Dialog),
+          matching: find.text('Copied app.js:2'),
+        ),
+        findsOneWidget,
+        reason:
+            'a reference copied behind the dialog is a reference nobody saw',
+      );
+    });
+
+    testWidgets('a range copies as one reference', (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: '/home/adam/src/app.js',
+        content: _file('alpha\nbravo\ncharlie\ndelta\necho\n'),
+      );
+
+      String? copied;
+      _captureClipboard((text) => copied = text);
+
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('4'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Copy reference to lines 2\u20134'));
+      await tester.pump();
+
+      expect(copied, '/home/adam/src/app.js:2-4');
+      expect(find.text('Copied app.js:2-4'), findsOneWidget);
+    });
+
+    testWidgets('a reference a browser refused to take says so',
+        (WidgetTester tester) async {
+      await _openViewer(
+        tester,
+        path: '/src/app.js',
+        content: _file('alpha\nbravo\ncharlie\n'),
+      );
+
+      _captureClipboard((_) => throw PlatformException(code: 'copy_fail'));
+
+      await tester.tap(find.text('2'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Copy reference to line 2'));
+      await tester.pump();
+
+      expect(tester.takeException(), isNull);
       expect(find.textContaining('Copy failed'), findsOneWidget);
     });
   });
@@ -819,8 +1082,10 @@ public class Greeter {
       await tester.pumpWidget(
         ChangeNotifierProvider<PiViewModel>(
           create: (_) => PiViewModel(piService: service),
-          child: MaterialApp(
-            home: Scaffold(body: FileViewer(filePath: path)),
+          child: _withAppearance(
+            MaterialApp(
+              home: Scaffold(body: FileViewer(filePath: path)),
+            ),
           ),
         ),
       );
@@ -837,8 +1102,10 @@ public class Greeter {
       await tester.pumpWidget(
         ChangeNotifierProvider<PiViewModel>(
           create: (_) => PiViewModel(piService: service),
-          child: MaterialApp(
-            home: Scaffold(body: FileViewer(filePath: 'gone.txt')),
+          child: _withAppearance(
+            MaterialApp(
+              home: Scaffold(body: FileViewer(filePath: 'gone.txt')),
+            ),
           ),
         ),
       );
@@ -871,9 +1138,11 @@ public class Greeter {
         );
 
       await tester.pumpWidget(
-        ChangeNotifierProvider<PiViewModel>(
-          create: (_) => PiViewModel(piService: service),
-          child: const MaterialApp(home: Scaffold(body: FileBrowser())),
+        ChangeNotifierProvider<PiViewModel>.value(
+          value: PiViewModel(piService: service),
+          child: _withAppearance(
+            const MaterialApp(home: Scaffold(body: FileBrowser())),
+          ),
         ),
       );
       await tester.pumpAndSettle();

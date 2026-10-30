@@ -19,3 +19,7 @@ void saveThemeMode(ThemeMode mode) {}
 Future<double?> loadFontScale() async => null;
 
 void saveFontScale(double scale) {}
+
+Future<double?> loadFileFontScale() async => null;
+
+void saveFileFontScale(double scale) {}
