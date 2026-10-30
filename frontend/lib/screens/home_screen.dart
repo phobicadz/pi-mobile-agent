@@ -372,17 +372,6 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: const Text('Working directory'),
-                  subtitle: Text(directoryLabel.isEmpty
-                      ? 'Not known yet'
-                      : directoryLabel),
-                  onTap: () {
-                    closeMenu();
-                    _showDirectoryBrowser(context);
-                  },
-                ),
-                ListTile(
                   leading: const Icon(Icons.history),
                   title: const Text('Resume a previous session'),
                   enabled: !viewModel.resumingSession,
@@ -392,6 +381,17 @@ class _HomeScreenState extends State<HomeScreen> {
                           closeMenu();
                           _showSessionPicker(context);
                         },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.folder_outlined),
+                  title: const Text('Working directory'),
+                  subtitle: Text(directoryLabel.isEmpty
+                      ? 'Not known yet'
+                      : directoryLabel),
+                  onTap: () {
+                    closeMenu();
+                    _showDirectoryBrowser(context);
+                  },
                 ),
                 ListTile(
                   leading: const Icon(Icons.description),

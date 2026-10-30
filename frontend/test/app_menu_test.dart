@@ -79,6 +79,26 @@ void main() {
     viewModel.dispose();
   });
 
+  testWidgets('resuming a session sits above the directory a session runs in',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    await openAppMenu(tester);
+
+    // Tree order, not screen position: a menu that scrolls still has an order.
+    final titles = tester
+        .widgetList<ListTile>(find.descendant(
+            of: find.byType(Drawer), matching: find.byType(ListTile)))
+        .map((tile) => (tile.title as Text).data ?? '')
+        .toList();
+
+    expect(titles.indexOf('Resume a previous session'),
+        lessThan(titles.indexOf('Working directory')),
+        reason: 'coming back to a conversation is the thing the menu is most '
+            'often opened for, and the directory is set once and left alone');
+
+    viewModel.dispose();
+  });
   testWidgets('the bar carries the menu and the connection state, nothing else',
       (tester) async {
     final (viewModel, _) = await pumpHome(tester);
@@ -108,8 +128,7 @@ void main() {
   testWidgets('the menu states what the app is currently set to',
       (tester) async {
     final (viewModel, service) = await pumpHome(tester);
-    service.reportDirectory(
-        '/home/adam/source/repos/pi-mobile-agent',
+    service.reportDirectory('/home/adam/source/repos/pi-mobile-agent',
         '~/source/repos/pi-mobile-agent');
     for (var i = 0; i < 4; i++) {
       await tester.pump(const Duration(milliseconds: 100));
@@ -121,12 +140,14 @@ void main() {
         reason: 'the dot in the bar is a colour with no words attached to it; '
             'the menu is where those words exist');
     expect(find.text('~/source/repos/pi-mobile-agent'), findsWidgets,
-        reason: 'which directory a new session would be started in is the thing '
+        reason:
+            'which directory a new session would be started in is the thing '
             'a person is deciding when they open this menu');
     await scrollMenuIntoView(tester, find.textContaining('% of the size'));
     expect(find.textContaining('100% of the size the chat was designed at'),
         findsOneWidget,
-        reason: 'a size control that does not say the current size is a control '
+        reason:
+            'a size control that does not say the current size is a control '
             'with no idea what it is set to');
 
     viewModel.dispose();
