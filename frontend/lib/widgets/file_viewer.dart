@@ -15,10 +15,16 @@ class FileViewer extends StatefulWidget {
   final String filePath;
   final String? fileName;
 
+  /// Hands a `path:line` reference to whatever opened this viewer, for it to put
+  /// into the prompt the user was already typing. Left null where there is no
+  /// prompt to write into, and the viewer offers copying only.
+  final void Function(String reference)? onUseInPrompt;
+
   const FileViewer({
     super.key,
     required this.filePath,
     this.fileName,
+    this.onUseInPrompt,
   });
 
   @override
@@ -398,6 +404,23 @@ class _FileViewerState extends State<FileViewer> {
     );
   }
 
+  /// Put the reference into the prompt the user was already typing.
+  ///
+  /// Copying it is a two-step route to the same place - clipboard, then paste -
+  /// and on a phone the prompt field is not even on screen while this dialog is
+  /// open. Inserting it here is one tap.
+  ///
+  /// This dialog closes itself first. `Navigator.pop` removes the topmost route,
+  /// and the callback goes on to close the browser sheet underneath; the other
+  /// order closes this dialog twice and leaves the sheet where it was.
+  void _useInPrompt(BuildContext insideDialog) {
+    final onUse = widget.onUseInPrompt;
+    if (onUse == null) return;
+    final reference = _lineReference();
+    Navigator.of(insideDialog).pop();
+    onUse(reference);
+  }
+
   /// The viewer's controls, spelled out rather than left to icons.
   ///
   /// The text size lives here and not in the app's menu because it is a decision
@@ -438,17 +461,27 @@ class _FileViewerState extends State<FileViewer> {
               : null,
         ),
         const SizedBox(width: 10),
-        if (_hasSelection)
-          // Inside a Builder so the confirmation goes to the messenger in this
-          // dialog, for the same reason the copy button is.
+        if (_hasSelection) ...[
+          // Both inside a Builder so their confirmations go to the messenger in
+          // this dialog, for the same reason the copy button is.
+          if (widget.onUseInPrompt != null)
+            Builder(
+              builder: (inside) => FilledButton.tonalIcon(
+                onPressed: () => _useInPrompt(inside),
+                icon: const Icon(Icons.add_to_queue, size: 18),
+                label: Text(_selectedStart == _selectedEnd
+                    ? 'Put line $_selectedStart in the prompt'
+                    : 'Put lines $_selectedStart–$_selectedEnd in the prompt'),
+              ),
+            ),
           Builder(
             builder: (inside) => TextButton.icon(
               onPressed: () => _copyLineReference(inside),
               icon: const Icon(Icons.link, size: 18),
               label: Text(_referenceLabel),
             ),
-          )
-        else
+          ),
+        ] else
           // Said out loud because "tap a line number" is not an affordance a
           // number in the margin announces by itself.
           Text(

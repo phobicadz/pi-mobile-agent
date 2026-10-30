@@ -7,7 +7,12 @@ import 'file_viewer.dart';
 
 /// Browse and view files in the current directory.
 class FileBrowser extends StatefulWidget {
-  const FileBrowser({super.key});
+  /// Passed straight to the viewer, which is where lines get selected. The
+  /// prompt field is not this widget's to write in, so the handing over goes on
+  /// up to whoever opened this sheet.
+  final void Function(String reference)? onUseInPrompt;
+
+  const FileBrowser({super.key, this.onUseInPrompt});
 
   @override
   State<FileBrowser> createState() => _FileBrowserState();
@@ -37,9 +42,9 @@ class _FileBrowserState extends State<FileBrowser> {
       _error = null;
       _currentPath = path;
     });
-    
+
     final vm = context.read<PiViewModel>();
-    
+
     try {
       final listing = await vm.listFiles(path: path);
       if (!mounted) return;
@@ -65,6 +70,7 @@ class _FileBrowserState extends State<FileBrowser> {
         builder: (context) => FileViewer(
           filePath: entry.path,
           fileName: entry.name,
+          onUseInPrompt: widget.onUseInPrompt,
         ),
       );
     }
@@ -191,7 +197,9 @@ class _FileBrowserState extends State<FileBrowser> {
     }
 
     final name = entry.name.toLowerCase();
-    if (name.endsWith('.txt') || name.endsWith('.md') || name.endsWith('.log')) {
+    if (name.endsWith('.txt') ||
+        name.endsWith('.md') ||
+        name.endsWith('.log')) {
       return Icons.description;
     }
     if (name.endsWith('.jpg') ||
@@ -209,7 +217,7 @@ class _FileBrowserState extends State<FileBrowser> {
   @override
   Widget build(BuildContext context) {
     final listing = _listing;
-    
+
     return SingleChildScrollView(
       child: Column(
         children: [
@@ -236,8 +244,7 @@ class _FileBrowserState extends State<FileBrowser> {
                   IconButton(
                     icon: const Icon(Icons.create_new_folder),
                     tooltip: 'New folder',
-                    onPressed:
-                        listing == null ? null : _showCreateFolderDialog,
+                    onPressed: listing == null ? null : _showCreateFolderDialog,
                   ),
                   IconButton(
                     icon: const Icon(Icons.refresh),
@@ -248,7 +255,7 @@ class _FileBrowserState extends State<FileBrowser> {
               ],
             ),
           ),
-          
+
           // Error message
           if (_error != null)
             Container(
@@ -265,7 +272,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 ),
               ),
             ),
-          
+
           // Action buttons for current directory
           if (listing != null && !_loading)
             Padding(
@@ -275,15 +282,13 @@ class _FileBrowserState extends State<FileBrowser> {
                 child: FilledButton.icon(
                   icon: const Icon(Icons.check),
                   label: Text(
-                    _applying
-                        ? 'Switching...'
-                        : 'Set as working directory',
+                    _applying ? 'Switching...' : 'Set as working directory',
                   ),
                   onPressed: _applying ? null : _setWorkingDirectory,
                 ),
               ),
             ),
-          
+
           // Current path
           if (listing != null && !_loading) ...[
             Padding(
@@ -307,11 +312,12 @@ class _FileBrowserState extends State<FileBrowser> {
                 ],
               ),
             ),
-            
+
             // Roots (drives on Windows, / on Unix)
             if (listing.roots.isNotEmpty) ...[
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 child: Wrap(
                   spacing: 6,
                   runSpacing: 6,
@@ -328,7 +334,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 ),
               ),
             ],
-            
+
             // Recent directories
             if (listing.recent.isNotEmpty) ...[
               Padding(
@@ -363,9 +369,9 @@ class _FileBrowserState extends State<FileBrowser> {
                 ),
               ),
             ],
-            
+
             const Divider(height: 1),
-            
+
             // Files and folders list
             if (listing.entries.isEmpty)
               Padding(
@@ -387,7 +393,7 @@ class _FileBrowserState extends State<FileBrowser> {
                   itemBuilder: (context, index) {
                     final entry = listing.entries[index];
                     final isDir = entry.isDirectory == true;
-                    
+
                     return ListTile(
                       leading: Icon(
                         _getFileIcon(entry),
@@ -398,7 +404,8 @@ class _FileBrowserState extends State<FileBrowser> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      subtitle: isDir ? null : Text(_formatFileSize(entry.size)),
+                      subtitle:
+                          isDir ? null : Text(_formatFileSize(entry.size)),
                       trailing: Icon(
                         isDir ? Icons.chevron_right : Icons.open_in_new,
                         size: 18,
@@ -409,7 +416,7 @@ class _FileBrowserState extends State<FileBrowser> {
                 ),
               ),
           ],
-          
+
           const SizedBox(height: 12),
         ],
       ),

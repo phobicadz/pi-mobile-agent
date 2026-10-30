@@ -52,6 +52,15 @@ class TurnProgress {
   final int? contextWindow;
   final double? contextPercent;
 
+  /// Seconds the model itself spent generating in this run.
+  ///
+  /// Built from Pi's own per-response `durationMs` where it reported one, and
+  /// from the wall clock between that response starting and finishing where it
+  /// did not. Tool time is deliberately excluded: a command that takes two
+  /// minutes is not the model being slow, and folding it in is what made the
+  /// old throughput figures read wrong.
+  final double modelSeconds;
+
   const TurnProgress({
     required this.active,
     required this.kind,
@@ -63,6 +72,7 @@ class TurnProgress {
     this.contextTokens,
     this.contextWindow,
     this.contextPercent,
+    this.modelSeconds = 0,
   });
 
   static const TurnProgress idle = TurnProgress(
@@ -83,11 +93,29 @@ class TurnProgress {
   /// True when the produced-token count is our estimate, not Pi's numbers.
   bool get estimated => live.produced == 0 && estimatedTokens > 0;
 
+  /// Everything the model generated in this run, thinking included.
+  ///
+  /// A rate is measured over the tokens that were actually decoded, and
+  /// reasoning tokens are decoded in the same window and on the same clock as
+  /// the reply text. Leaving them out makes a model that thinks look slower
+  /// than it is.
+  int get generatedTokens =>
+      completed.output +
+      completed.reasoning +
+      ((live.output + live.reasoning) > estimatedTokens
+          ? live.output + live.reasoning
+          : estimatedTokens);
+
+  /// Tokens the model generated per second it spent generating.
+  ///
+  /// Zero until there is a window long enough to divide by, so the status line
+  /// can say "starting" rather than invent a number from the first token.
+  double get tokensPerSecond =>
+      modelSeconds >= 0.5 ? generatedTokens / modelSeconds : 0;
+
   /// Tokens consumed by everything Pi has in context right now.
   int get consumedTokens =>
-      completed.totalTokens +
-      live.totalTokens +
-      (contextTokens ?? 0);
+      completed.totalTokens + live.totalTokens + (contextTokens ?? 0);
 
   @override
   bool operator ==(Object other) =>
@@ -101,7 +129,8 @@ class TurnProgress {
       other.toolOutputChars == toolOutputChars &&
       other.contextTokens == contextTokens &&
       other.contextWindow == contextWindow &&
-      other.contextPercent == contextPercent;
+      other.contextPercent == contextPercent &&
+      other.modelSeconds == modelSeconds;
 
   @override
   int get hashCode => Object.hash(
@@ -115,5 +144,6 @@ class TurnProgress {
         contextTokens,
         contextWindow,
         contextPercent,
+        modelSeconds,
       );
 }

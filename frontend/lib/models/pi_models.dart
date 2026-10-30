@@ -213,6 +213,15 @@ class PiMessage {
   /// True while Pi is still streaming this reply.
   bool streaming;
 
+  /// A line the app wrote itself, not something Pi said.
+  ///
+  /// Used for the one case Pi's own output cannot express: a run that ended
+  /// having produced no reply at all. Rendered as a muted status line instead of
+  /// a reply bubble, so it never reads as a message from the model. It lives
+  /// only in this view - resuming the session reloads Pi's transcript and the
+  /// note is gone, which is correct for a status line.
+  bool localNote;
+
   PiMessage({
     required this.id,
     required this.role,
@@ -223,6 +232,7 @@ class PiMessage {
     this.stopReason,
     this.errorMessage,
     this.streaming = false,
+    this.localNote = false,
   }) : toolCalls = toolCalls ?? [];
 
   factory PiMessage.fromJson(Map<String, dynamic> json) {

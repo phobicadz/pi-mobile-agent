@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import '../services/pi_service.dart';
 import '../models/pi_models.dart';
@@ -26,6 +27,15 @@ class PiViewModel extends ChangeNotifier {
   /// [_isLoading] is still set as well, because every action that would start a
   /// new turn has to be closed while the old one is being restored.
   bool _resumingSession = false;
+
+  /// A session path from `?session=<path>` in the page URL.
+  ///
+  /// Set when the app is opened from a Pi completion notification link. Held
+  /// until the backend is known reachable, then cleared before use so a reload
+  /// or a second frame does not resume the same conversation again.
+  String? _pendingSessionLink =
+      kIsWeb ? Uri.base.queryParameters['session'] : null;
+
   String? _error;
   String _userInput = '';
 
@@ -49,6 +59,15 @@ class PiViewModel extends ChangeNotifier {
 
   /// Usage of the responses already completed in this run.
   PiUsage _runUsage = PiUsage.zero;
+
+  /// Milliseconds the model spent generating the responses already completed in
+  /// this run - Pi's own per-response `durationMs` where it reported one.
+  int _runModelMs = 0;
+
+  /// Clock for the response currently in flight, started when that response
+  /// begins. A finished response reports its own duration; a streaming one has
+  /// nothing else to measure against.
+  Stopwatch? _responseClock;
 
   /// Characters streamed for the response in flight. Providers that report
   /// usage only at completion would otherwise show nothing while working.
@@ -123,7 +142,17 @@ class PiViewModel extends ChangeNotifier {
       contextTokens: _sessionStats?.contextTokens,
       contextWindow: _sessionStats?.contextWindow,
       contextPercent: _sessionStats?.contextPercent,
+      modelSeconds: _modelSeconds(),
     );
+  }
+
+  /// Seconds the model has spent generating in this run, including the response
+  /// still in flight. Tool time is not in it - see [TurnProgress.modelSeconds].
+  double _modelSeconds() {
+    final liveMs = _responseClock?.isRunning == true
+        ? _responseClock!.elapsed.inMilliseconds
+        : 0;
+    return (_runModelMs + liveMs) / 1000.0;
   }
 
   PiSessionStats? get sessionStats => _sessionStats;
@@ -155,6 +184,16 @@ class PiViewModel extends ChangeNotifier {
         _bumpMessages();
         _setActivity(ActivityKind.idle, '');
       }
+
+      // A notification deep link has to wait for this first state update: it is
+      // the only proof the socket is open, and resume_session over a closed one
+      // would fail before the app ever had a chance to retry.
+      final deepLink = _pendingSessionLink;
+      if (deepLink != null) {
+        _pendingSessionLink = null;
+        unawaited(resumeSession(deepLink));
+      }
+
       // The first state fetch can beat the initial model load (the socket may
       // not be open yet), so retry once we know the backend is reachable.
       if (_availableModels.isEmpty) {
@@ -229,6 +268,9 @@ class PiViewModel extends ChangeNotifier {
             // is kept separately in [_runUsage].
             _liveUsage = PiUsage.zero;
             _responseChars = 0;
+            // Generation has started: this is the window a rate is measured over.
+            _responseClock?.stop();
+            _responseClock = Stopwatch()..start();
             _setActivity(ActivityKind.thinking, 'thinking');
           }
           _addMessage(PiMessage.fromJson(message),
@@ -254,6 +296,17 @@ class PiViewModel extends ChangeNotifier {
             _responseChars = 0;
           }
           final text = _textOf(message);
+          // Pi times every response it streamed, and that is the honest
+          // denominator for a generation rate. Where it reported none, the clock
+          // started when this response began stands in for it.
+          final reportedMs = message['durationMs'];
+          if (reportedMs is int && reportedMs > 0) {
+            _runModelMs += reportedMs;
+          } else if (_responseClock != null && _responseClock!.isRunning) {
+            _runModelMs += _responseClock!.elapsed.inMilliseconds;
+          }
+          _responseClock?.stop();
+          _responseClock = null;
           if (_streamingMessage != null) {
             if (text.isNotEmpty) _streamingMessage!.content = text;
             // The bubble Pi just finished writing carries its own usage, so the
@@ -316,6 +369,11 @@ class PiViewModel extends ChangeNotifier {
       case 'agent_end':
         _streamingMessage?.streaming = false; // never leave a spinner spinning
         _streamingMessage = null;
+        _responseClock?.stop();
+        _responseClock = null;
+        // Before the chat is rebuilt: a run that produced no reply has to say
+        // so, or the turn ends as visible silence.
+        _noteEmptyRun(data['messages']);
         _bumpMessages();
         _awaitingModel = false;
         _isLoading = false;
@@ -411,6 +469,9 @@ class PiViewModel extends ChangeNotifier {
   void _resetRunCounters() {
     _liveUsage = PiUsage.zero;
     _runUsage = PiUsage.zero;
+    _runModelMs = 0;
+    _responseClock?.stop();
+    _responseClock = null;
     _responseChars = 0;
     _toolOutputChars = 0;
     _toolOutputByCall.clear();
@@ -508,6 +569,9 @@ class PiViewModel extends ChangeNotifier {
   Future<void> _refreshSessionStats() async {
     try {
       _sessionStats = await piService.getSessionStats();
+      // The app bar's context meter reads these. Without saying so, a number Pi
+      // has just measured waits for the next run before it is shown.
+      _notifyNow();
     } catch (_) {
       // A backend without get_session_stats simply means the progress line
       // shows this run's numbers only.
@@ -598,6 +662,64 @@ class PiViewModel extends ChangeNotifier {
     if (_messages.length > maxMessages) {
       _messages.removeRange(0, _messages.length - maxMessages);
     }
+  }
+
+  /// Say so in the chat when a run ends without any reply text.
+  ///
+  /// Pi hands the whole run to `agent_end`, which is the only place that can
+  /// tell "nothing to show" apart from the two cases that already have their own
+  /// rendering: a run the user stopped, and a model that refused and said why.
+  /// Repeating those as a bare "no reply" would be worse than the silence it
+  /// replaces, so both are left alone here.
+  void _noteEmptyRun(dynamic rawMessages) {
+    if (rawMessages is! List) return;
+
+    var sawAssistant = false;
+    var stopReason = '';
+
+    for (final raw in rawMessages) {
+      if (raw is! Map<String, dynamic> || raw['role'] != 'assistant') continue;
+      sawAssistant = true;
+
+      final content = raw['content'];
+      if (content is String && content.trim().isNotEmpty) return;
+      if (content is List) {
+        for (final block in content) {
+          if (block is! Map<String, dynamic>) continue;
+          // Running commands is an answer of its own; a run that did work is
+          // not a run that said nothing.
+          if (block['type'] == 'toolCall') return;
+          if (block['type'] == 'text' &&
+              (block['text'] as String? ?? '').trim().isNotEmpty) {
+            return;
+          }
+        }
+      }
+
+      // A refusal already renders its own reason on its own bubble.
+      if (raw['errorMessage'] is String) return;
+      final reason = raw['stopReason'] as String? ?? '';
+      if (reason.isNotEmpty) stopReason = reason;
+    }
+
+    // Nothing to report about a run that never reached the model.
+    if (!sawAssistant) return;
+    // Stopping a run is the user's own action, and the partial reply plus the
+    // stopped state already carry it.
+    if (stopReason == 'aborted') return;
+
+    _messages.add(PiMessage(
+      id: 'no-reply-${DateTime.now().microsecondsSinceEpoch}',
+      role: 'assistant',
+      content: switch (stopReason) {
+        'length' => 'Pi finished with no reply: the model ran out of tokens.',
+        'error' => 'Pi finished with no reply: the provider returned an error.',
+        _ => 'Pi finished with no reply.',
+      },
+      timestamp: DateTime.now(),
+      localNote: true,
+    ));
+    _trimMessages();
   }
 
   static String _textOf(Map<String, dynamic> message) {
@@ -715,6 +837,10 @@ class PiViewModel extends ChangeNotifier {
       _resetRunCounters();
       _sessionStats = null;
       await piService.refreshState();
+      // The conversation being resumed is the one whose context matters now, and
+      // it is usually the long one. Without this the bar keeps the numbers of
+      // the session that was just left behind, or shows nothing at all.
+      await _refreshSessionStats();
       _isLoading = false;
       _resumingSession = false;
       _notifyNow();

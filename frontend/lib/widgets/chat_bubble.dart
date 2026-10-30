@@ -6,7 +6,6 @@ import 'package:markdown/markdown.dart' as md;
 import '../models/pi_models.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
-import '../utils/format.dart';
 import '../utils/responsive.dart';
 import '../utils/toast.dart';
 
@@ -72,6 +71,34 @@ class ChatBubble extends StatelessWidget {
         ? (isDark ? const Color(0xFF2A2D34) : Colors.grey.shade200)
         : (isDark ? const Color(0xFF1E3A5F) : Colors.blue.shade100);
     final mutedColor = isDark ? Colors.white70 : const Color(0x99000000);
+
+    // A line the app wrote rather than a reply from Pi: no bubble, no accent,
+    // no copy button. Without it the chat shows nothing at all for a run that
+    // ended without answering, and silence reads the same as a reply that was
+    // never attempted.
+    if (message.localNote) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(Icons.not_interested,
+                size: 15, color: mutedColor, semanticLabel: 'no reply'),
+            const SizedBox(width: 8),
+            Expanded(
+              child: SelectableText(
+                message.content,
+                style: TextStyle(
+                  color: mutedColor,
+                  fontSize: _font(12.5),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     // Colour coding by output kind: assistant replies are teal-accented, your
     // own messages blue. A tool call is part of Pi's turn, so it stays in the
@@ -142,74 +169,67 @@ class ChatBubble extends StatelessWidget {
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
         onDoubleTap: phone ? null : onToggleExpanded,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          constraints: BoxConstraints(maxWidth: maxWidth),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: bubbleColor,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    isAssistant ? Icons.smart_toy : Icons.person,
-                    size: 16,
-                    color: accentColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    isAssistant ? 'Pi' : 'You',
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: accentColor, fontWeight: FontWeight.bold),
-                  ),
-                  // Finished assistant replies carry the usage Pi reported for
-                  // them, so each reply shows what it cost.
-                  if (isAssistant &&
-                      message.usage != null &&
-                      !message.usage!.isEmpty) ...[
-                    const SizedBox(width: 8),
+        // A slow glow around the reply Pi is still writing. The status line
+        // inside the bubble names what is happening; this is the part a wall of
+        // finished messages cannot show - which bubble is the live one. It
+        // paints behind the bubble and stops the moment the reply finishes.
+        child: _ProcessingGlow(
+          active: message.streaming,
+          color: accentColor,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: bubbleColor,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      isAssistant ? Icons.smart_toy : Icons.person,
+                      size: 16,
+                      color: accentColor,
+                    ),
+                    const SizedBox(width: 6),
                     Text(
-                      '${formatTokens(message.usage!.produced)} tok'
-                      '${message.usage!.reasoning > 0 ? ' (thinking)' : ''}',
-                      style: Theme.of(context)
-                          .textTheme
-                          .labelSmall
-                          ?.copyWith(color: mutedColor),
+                      isAssistant ? 'Pi' : 'You',
+                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: accentColor, fontWeight: FontWeight.bold),
                     ),
-                  ],
-                  // Copy button in the top-right corner of the bubble. The header
-                  // row already spans the whole bubble, so a Spacer puts it in the
-                  // corner without changing any widths, and being in the row's own
-                  // band it can never cover the reply.
-                  if (canCopy) ...[
-                    const Spacer(),
-                    IconButton(
-                      icon: const Icon(Icons.content_copy, size: 15),
-                      color: mutedColor,
-                      tooltip: 'Copy',
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        minimumSize: const Size(26, 26),
-                        padding: const EdgeInsets.all(4),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    // Copy button in the top-right corner of the bubble. The header
+                    // row already spans the whole bubble, so a Spacer puts it in the
+                    // corner without changing any widths, and being in the row's own
+                    // band it can never cover the reply.
+                    if (canCopy) ...[
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.content_copy, size: 15),
+                        color: mutedColor,
+                        tooltip: 'Copy',
+                        visualDensity: VisualDensity.compact,
+                        style: IconButton.styleFrom(
+                          minimumSize: const Size(26, 26),
+                          padding: const EdgeInsets.all(4),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        onPressed: () => _copyMessage(context, copyText),
                       ),
-                      onPressed: () => _copyMessage(context, copyText),
-                    ),
+                    ],
                   ],
-                ],
-              ),
-              const SizedBox(height: 6),
-              ...body,
-              // The one busy indicator: passed in by ChatList for the bubble that
-              // is actually streaming (or for the "thinking" placeholder), so
-              // there is never a second spinner anywhere else.
-              if (status != null) status!,
-            ],
+                ),
+                const SizedBox(height: 6),
+                ...body,
+                // The one busy indicator: passed in by ChatList for the bubble that
+                // is actually streaming (or for the "thinking" placeholder), so
+                // there is never a second spinner anywhere else.
+                if (status != null) status!,
+              ],
+            ),
           ),
         ),
       ),
@@ -294,6 +314,7 @@ class ChatBubble extends StatelessWidget {
       message.role,
       isDark,
       fontScale,
+      message.localNote,
       message.content.length,
       Object.hashAll(message.content.codeUnits),
       message.errorMessage,
@@ -521,6 +542,98 @@ class _HighlightCodeBuilder extends MarkdownElementBuilder {
       language: _language,
       isDark: isDark,
       textStyle: TextStyle(fontSize: fontSize),
+    );
+  }
+}
+
+/// A slow breathing glow around the bubble Pi is still writing.
+///
+/// Only the wrapper animates: the reply is handed through as the builder's
+/// `child`, so the cached Markdown body is never re-rendered for the sake of a
+/// halo. Nothing runs while no reply is in flight - an inactive glow builds no
+/// controller and no ticker, and the wrapper disappears entirely.
+class _ProcessingGlow extends StatefulWidget {
+  final Widget child;
+  final Color color;
+
+  /// True only for the reply currently being streamed.
+  final bool active;
+
+  const _ProcessingGlow({
+    required this.child,
+    required this.color,
+    required this.active,
+  });
+
+  @override
+  State<_ProcessingGlow> createState() => _ProcessingGlowState();
+}
+
+class _ProcessingGlowState extends State<_ProcessingGlow>
+    with SingleTickerProviderStateMixin {
+  AnimationController? _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(covariant _ProcessingGlow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.active != widget.active) _sync();
+  }
+
+  /// The animation exists exactly while a reply is being written, and not one
+  /// frame longer: a ticker left running behind a finished chat would repaint
+  /// the chat forever for a cue that no longer means anything.
+  void _sync() {
+    if (widget.active) {
+      _controller ??= AnimationController(
+        vsync: this,
+        duration: const Duration(milliseconds: 1400),
+      )..repeat(reverse: true);
+    } else {
+      _controller?.dispose();
+      _controller = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (!widget.active || controller == null) return widget.child;
+
+    return AnimatedBuilder(
+      animation: controller,
+      child: widget.child,
+      builder: (context, child) {
+        // One curve driving spread, blur and opacity together, so the halo
+        // breathes as a single thing rather than three values drifting apart.
+        final t = Curves.easeInOut.transform(controller.value);
+        return Container(
+          // The bubble's own corner radius, so the glow is its outline and not
+          // a rectangle drawn around it.
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: 0.10 + 0.22 * t),
+                blurRadius: 10 + 16 * t,
+                spreadRadius: 1 + 4 * t,
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
     );
   }
 }

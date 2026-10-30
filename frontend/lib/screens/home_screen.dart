@@ -4,8 +4,10 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
+import '../utils/prompt_reference.dart';
 import '../utils/responsive.dart';
 import '../widgets/chat_list.dart';
+import '../widgets/context_meter.dart';
 import '../widgets/file_browser.dart';
 import '../widgets/model_selector.dart';
 
@@ -253,9 +255,44 @@ class _HomeScreenState extends State<HomeScreen> {
       isScrollControlled: true,
       builder: (sheetContext) => SizedBox(
         height: MediaQuery.of(sheetContext).size.height * 0.8,
-        child: const FileBrowser(),
+        child: FileBrowser(
+          onUseInPrompt: (reference) =>
+              _useReferenceInPrompt(sheetContext, reference),
+        ),
       ),
     );
+  }
+
+  /// Put a `path:line` reference from the file viewer into the prompt field.
+  ///
+  /// Copying one out and pasting it back is three steps on a phone, and the
+  /// field is not visible while the browser sheet is over it - so a reference
+  /// the user cannot see is one they have to trust. This closes the sheet and
+  /// focuses the field instead, which is where the sentence was being written
+  /// before the file was opened.
+  void _useReferenceInPrompt(BuildContext sheetContext, String reference) {
+    final existing = _inputController.value;
+    final inserted = insertReferenceIntoPrompt(
+      text: existing.text,
+      selection: existing.selection.isValid
+          ? existing.selection
+          : TextSelection.collapsed(offset: existing.text.length),
+      reference: reference,
+    );
+
+    _inputController.value = TextEditingValue(
+      text: inserted.text,
+      selection: TextSelection.collapsed(offset: inserted.caret),
+    );
+    // Setting `.value` does not go through `onChanged`, and the view model keeps
+    // the draft prompt for its own reasons - a draft lost on a session switch is
+    // the user's typing thrown away.
+    if (mounted) context.read<PiViewModel>().setUserInput(inserted.text);
+
+    if (sheetContext.mounted && Navigator.of(sheetContext).canPop()) {
+      Navigator.of(sheetContext).pop();
+    }
+    _inputFocus.requestFocus();
   }
 
   /// The menu the hamburger opens.
@@ -473,6 +510,10 @@ class _HomeScreenState extends State<HomeScreen> {
         centerTitle: true,
         elevation: 0,
         actions: [
+          // How full this conversation is, from Pi's own measurement. Ahead of
+          // the connection dot: this is the one you act on - start a new session
+          // or compact - while the dot only tells you the app is talking.
+          const ContextMeter(),
           // The connection state as a dot and nothing else. It stays in the bar
           // because it is not a control: it is the one thing on this screen that
           // has to be visible without asking for it.

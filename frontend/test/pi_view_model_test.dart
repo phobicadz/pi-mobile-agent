@@ -71,11 +71,18 @@ class FakeResumeService extends FakePiService {
   }
 
   @override
-  Future<PiSessionStats> getSessionStats() async => const PiSessionStats(
-        tokens: PiUsage.zero,
-        contextTokens: 1200,
-        contextWindow: 200000,
-      );
+  Future<PiSessionStats> getSessionStats() async => PiSessionStats.fromJson({
+        'tokens': {'input': 100, 'output': 20, 'total': 120},
+        'cost': 0,
+        // What Pi reports for whichever session is live now. A resumed
+        // conversation is usually the long one, and its figures are the ones the
+        // app has to show after the switch.
+        'contextUsage': {
+          'tokens': resumedPath == null ? 1200 : 148000,
+          'contextWindow': 200000,
+          'percent': resumedPath == null ? 0.6 : 74.0,
+        },
+      });
 
   @override
   Future<void> refreshState() async {
@@ -351,8 +358,11 @@ void main() {
             'the working directory is not something Pi reports in a chat event');
     expect(vm.workingDirectory, r'\Projects\resumed');
     expect(vm.workingDirectoryDisplay, '~/resumed');
-    expect(vm.sessionStats, isNull,
-        reason: 'token totals belong to the session that was just left');
+    expect(vm.sessionStats?.contextTokens, 148000,
+        reason:
+            'the resumed conversation is the one whose context matters now; '
+            'keeping the numbers of the session just left behind puts a figure '
+            'in the app bar that describes a different conversation');
 
     vm.dispose();
   });
@@ -871,6 +881,118 @@ void main() {
       ),
     ));
     expect(find.textContaining('model_not_available'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  test('a run that ends without answering says so instead of leaving silence',
+      () async {
+    final service = QuietPiService();
+    final vm = PiViewModel(piService: service);
+
+    // Captured from the live backend: the model was asked something it chose to
+    // end on without producing text, so the run has an assistant message with
+    // no content and no reason attached to it.
+    service.emit({'type': 'agent_start'});
+    service.emit({'type': 'turn_start'});
+    service.emit({
+      'type': 'agent_end',
+      'messages': [
+        {
+          'role': 'assistant',
+          'content': <dynamic>[],
+          'stopReason': 'stop',
+        },
+      ],
+    });
+
+    await Future<void>.delayed(Duration.zero);
+
+    expect(vm.messages.length, 1,
+        reason: 'a run with nothing to show still has to appear in the chat');
+    expect(vm.messages.single.localNote, isTrue,
+        reason: 'the app wrote this line, so it must not read as a reply');
+    expect(vm.messages.single.content, contains('no reply'));
+    expect(vm.isLoading, isFalse);
+
+    vm.dispose();
+  });
+
+  test(
+    'a run the user stopped is not reported as having said nothing',
+    () async {
+      final service = QuietPiService();
+      final vm = PiViewModel(piService: service);
+
+      service.emit({'type': 'agent_start'});
+      service.emit({
+        'type': 'agent_end',
+        'messages': [
+          {
+            'role': 'assistant',
+            'content': <dynamic>[],
+            'stopReason': 'aborted',
+          },
+        ],
+      });
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(vm.messages, isEmpty,
+          reason: 'the partial reply and the stopped state already say this');
+
+      vm.dispose();
+    },
+  );
+
+  test(
+    'a run that only ran tools is not treated as having said nothing',
+    () async {
+      final service = QuietPiService();
+      final vm = PiViewModel(piService: service);
+
+      service.emit({'type': 'agent_start'});
+      service.emit({
+        'type': 'agent_end',
+        'messages': [
+          {
+            'role': 'assistant',
+            'content': [
+              {
+                'type': 'toolCall',
+                'id': 'call-1',
+                'name': 'bash',
+                'arguments': {}
+              },
+            ],
+            'stopReason': 'toolUse',
+          },
+        ],
+      });
+
+      await Future<void>.delayed(Duration.zero);
+
+      expect(vm.messages.any((m) => m.localNote), isFalse,
+          reason: 'running commands is an answer of its own');
+
+      vm.dispose();
+    },
+  );
+
+  testWidgets('a no-reply note renders as a status line, not a reply bubble',
+      (tester) async {
+    final note = PiMessage(
+      id: 'no-reply-1',
+      role: 'assistant',
+      content: 'Pi finished with no reply.',
+      timestamp: DateTime(2026),
+      localNote: true,
+    );
+
+    await tester.pumpWidget(MaterialApp(
+      home: Scaffold(body: ListView(children: [ChatBubble(message: note)])),
+    ));
+
+    expect(find.textContaining('Pi finished with no reply'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
