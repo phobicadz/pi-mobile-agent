@@ -8,7 +8,7 @@ import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
 import { listPiSessions, sessionCwdOf } from "./session-store.js";
-import { listDirectory, listFiles, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
+import { listDirectory, listFiles, createDirectory, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
 const app = express();
 const server = createServer(app);
@@ -208,6 +208,50 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             current: currentCwd,
             cwdDisplay: shrinkHome(currentCwd),
             recent: recentDirectories(),
+          },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "create_dir") {
+    try {
+      const parent = params.path
+        ? resolveExistingDir(params.path)
+        : resolveExistingDir(currentCwd) ?? os.homedir();
+      if (!parent) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      const created = createDirectory(parent, params.name);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: {
+            path: created,
+            parent,
+            name: params.name.trim(),
           },
         })
       );

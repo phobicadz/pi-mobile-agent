@@ -6,7 +6,6 @@ import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
 import '../utils/responsive.dart';
 import '../widgets/chat_list.dart';
-import '../widgets/directory_browser.dart';
 import '../widgets/file_browser.dart';
 import '../widgets/model_selector.dart';
 
@@ -248,17 +247,6 @@ class _HomeScreenState extends State<HomeScreen> {
     _chatKey.currentState?.stickToBottom();
   }
 
-  void _showDirectoryBrowser(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) => SizedBox(
-        height: MediaQuery.of(sheetContext).size.height * 0.7,
-        child: const DirectoryBrowser(),
-      ),
-    );
-  }
-
   void _showFileBrowser(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -383,19 +371,11 @@ class _HomeScreenState extends State<HomeScreen> {
                         },
                 ),
                 ListTile(
-                  leading: const Icon(Icons.folder_outlined),
-                  title: const Text('Working directory'),
+                  leading: const Icon(Icons.folder_open),
+                  title: const Text('Browse files & set working directory'),
                   subtitle: Text(directoryLabel.isEmpty
-                      ? 'Not known yet'
-                      : directoryLabel),
-                  onTap: () {
-                    closeMenu();
-                    _showDirectoryBrowser(context);
-                  },
-                ),
-                ListTile(
-                  leading: const Icon(Icons.description),
-                  title: const Text('Browse and view files'),
+                      ? 'Navigate and change working directory'
+                      : 'Current: $directoryLabel'),
                   onTap: () {
                     closeMenu();
                     _showFileBrowser(context);

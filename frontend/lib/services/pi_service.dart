@@ -192,6 +192,17 @@ class PiService {
     return FileListing.fromJson(unwrapData(response, command: 'list_files'));
   }
 
+  /// Create a new directory inside [path]. Omit [path] to create it in the
+  /// current working directory. Returns the created path.
+  Future<String> createDirectory({required String name, String? path}) async {
+    final response = await _sendCommand('create_dir', params: {
+      'name': name,
+      if (path != null) 'path': path,
+    });
+    final data = unwrapData(response, command: 'create_dir');
+    return data['path'] as String? ?? name;
+  }
+
   /// Read the contents of a text file.
   Future<FileContent> readFile(String path) async {
     final response = await _sendCommand('read_file', params: {'path': path});

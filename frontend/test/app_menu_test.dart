@@ -7,7 +7,6 @@ import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/screens/home_screen.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
-import 'package:pi_mobile_agent/widgets/directory_browser.dart';
 import 'package:pi_mobile_agent/widgets/file_browser.dart';
 import 'package:provider/provider.dart';
 
@@ -65,9 +64,8 @@ void main() {
 
     for (final label in const [
       'New session',
-      'Working directory',
       'Resume a previous session',
-      'Browse and view files',
+      'Browse files & set working directory',
       'Chat text size',
       'Switch to dark mode',
     ]) {
@@ -93,7 +91,7 @@ void main() {
         .toList();
 
     expect(titles.indexOf('Resume a previous session'),
-        lessThan(titles.indexOf('Working directory')),
+        lessThan(titles.indexOf('Browse files & set working directory')),
         reason: 'coming back to a conversation is the thing the menu is most '
             'often opened for, and the directory is set once and left alone');
 
@@ -106,8 +104,6 @@ void main() {
     for (final icon in const [
       Icons.add,
       Icons.history,
-      Icons.description,
-      Icons.folder_outlined,
       Icons.dark_mode,
       Icons.light_mode,
       Icons.text_decrease,
@@ -165,20 +161,12 @@ void main() {
     }
 
     await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.description);
+    await tapMenuRow(tester, Icons.folder_open);
 
     expect(find.byType(FileBrowser), findsOneWidget);
     expect(find.byType(Drawer), findsNothing,
         reason: 'a menu left standing over the thing it just opened hides half '
             'of it on a phone');
-
-    // The sheet owns the screen while it is up: the bar is behind its barrier,
-    // so the menu has to be reached after it is put away.
-    await closeSheet();
-
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.folder_outlined);
-    expect(find.byType(DirectoryBrowser), findsOneWidget);
 
     viewModel.dispose();
   });

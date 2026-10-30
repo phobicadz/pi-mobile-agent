@@ -18,6 +18,7 @@ class _FileBrowserState extends State<FileBrowser> {
   bool _loading = true;
   String? _error;
   String? _currentPath;
+  bool _applying = false;
 
   @override
   void initState() {
@@ -66,6 +67,73 @@ class _FileBrowserState extends State<FileBrowser> {
           fileName: entry.name,
         ),
       );
+    }
+  }
+
+  Future<void> _setWorkingDirectory() async {
+    final listing = _listing;
+    if (listing == null) return;
+
+    setState(() => _applying = true);
+    final vm = context.read<PiViewModel>();
+    final ok = await vm.setWorkingDirectory(listing.path);
+    if (!mounted) return;
+    if (ok) {
+      Navigator.of(context).pop();
+    } else {
+      setState(() {
+        _applying = false;
+        _error = vm.error ?? 'Could not change the working directory.';
+      });
+    }
+  }
+
+  Future<void> _showCreateFolderDialog() async {
+    final listing = _listing;
+    if (listing == null || _loading) return;
+
+    final controller = TextEditingController();
+    final name = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('New Folder'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: InputDecoration(
+            labelText: 'Folder name',
+            hintText: 'Create inside ${listing.path}',
+          ),
+          onSubmitted: (value) => Navigator.of(dialogContext).pop(value),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+
+    final trimmed = name?.trim() ?? '';
+    if (trimmed.isEmpty || !mounted) return;
+
+    setState(() => _loading = true);
+    final vm = context.read<PiViewModel>();
+    final created = await vm.createDirectory(name: trimmed, path: listing.path);
+    if (!mounted) return;
+    if (created == null) {
+      setState(() {
+        _loading = false;
+        _error = vm.error ?? 'Could not create folder.';
+      });
+    } else {
+      // Refresh the current listing so the new folder appears.
+      _browse(listing.path);
     }
   }
 
@@ -158,18 +226,25 @@ class _FileBrowserState extends State<FileBrowser> {
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
-                if (_loading)
+                if (_loading || _applying)
                   const SizedBox(
                     width: 20,
                     height: 20,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                else
+                else ...[
+                  IconButton(
+                    icon: const Icon(Icons.create_new_folder),
+                    tooltip: 'New folder',
+                    onPressed:
+                        listing == null ? null : _showCreateFolderDialog,
+                  ),
                   IconButton(
                     icon: const Icon(Icons.refresh),
                     tooltip: 'Refresh',
                     onPressed: () => _browse(_currentPath),
                   ),
+                ],
               ],
             ),
           ),
@@ -187,6 +262,24 @@ class _FileBrowserState extends State<FileBrowser> {
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onErrorContainer,
                   fontSize: 13,
+                ),
+              ),
+            ),
+          
+          // Action buttons for current directory
+          if (listing != null && !_loading)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.check),
+                  label: Text(
+                    _applying
+                        ? 'Switching...'
+                        : 'Set as working directory',
+                  ),
+                  onPressed: _applying ? null : _setWorkingDirectory,
                 ),
               ),
             ),

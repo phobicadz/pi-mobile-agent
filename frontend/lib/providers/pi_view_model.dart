@@ -785,6 +785,19 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// Create a new directory inside [path]. Returns the created path, or null
+  /// on failure (with [error] set).
+  Future<String?> createDirectory({required String name, String? path}) async {
+    _error = null;
+    try {
+      return await piService.createDirectory(name: name, path: path);
+    } catch (e) {
+      _error = 'Failed to create directory: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
   /// Read the contents of a text file.
   Future<FileContent?> readFile(String path) async {
     _error = null;

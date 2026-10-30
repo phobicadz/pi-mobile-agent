@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 
@@ -218,6 +218,35 @@ export function listFiles(dirPath: string): FileListing {
     roots: listRoots(),
     entries,
   };
+}
+
+/** Create a new subdirectory inside dirPath. Returns the created path. */
+export function createDirectory(dirPath: string, name: string): string {
+  const resolved = expandUserPath(dirPath);
+  const trimmed = (name ?? "").trim();
+
+  if (!trimmed) throw new Error("Directory name is required");
+  if (/[\\/]/.test(trimmed))
+    throw new Error("Directory name cannot contain path separators");
+  if (trimmed === "." || trimmed === "..")
+    throw new Error("Invalid directory name");
+  if (process.platform === "win32" && /[<>:"|?*]/.test(trimmed))
+    throw new Error('Directory name cannot contain < > : " | ? * on Windows');
+
+  const target = path.join(resolved, trimmed);
+  if (existsSync(target)) throw new Error(`Already exists: ${target}`);
+
+  try {
+    mkdirSync(target);
+  } catch (err) {
+    const message = (err as Error).message;
+    if (message.includes("EACCES")) {
+      throw new Error(`Permission denied: ${target}`);
+    }
+    throw err;
+  }
+
+  return target;
 }
 
 /** Read the contents of a text file. */
