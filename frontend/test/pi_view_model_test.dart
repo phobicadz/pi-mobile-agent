@@ -271,14 +271,14 @@ void main() {
 
   testWidgets('chat text is dark in the light theme', (tester) async {
     await pumpBubble(tester, ThemeMode.light);
-    final text = tester.widget<SelectableText>(find.byType(SelectableText));
+    final text = tester.widget<Text>(find.text('Hello there, friend!'));
     expect(text.style!.color!.computeLuminance(), lessThan(0.2),
         reason: 'light theme text must be dark');
   });
 
   testWidgets('chat text is light in the dark theme', (tester) async {
     await pumpBubble(tester, ThemeMode.dark);
-    final text = tester.widget<SelectableText>(find.byType(SelectableText));
+    final text = tester.widget<Text>(find.text('Hello there, friend!'));
     expect(text.style!.color!.computeLuminance(), greaterThan(0.6),
         reason: 'dark theme text must be light');
   });

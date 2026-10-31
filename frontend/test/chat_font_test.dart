@@ -59,10 +59,10 @@ void main() {
   /// rather than out of the setting - the setting being 1.3 means nothing if the
   /// bubble is still drawing 14.
   double chatTextSize(WidgetTester tester) => tester
-      .widget<SelectableText>(find
+      .widget<Text>(find
           .descendant(
             of: find.byType(ChatList),
-            matching: find.byType(SelectableText),
+            matching: find.text('plain text about the build'),
           )
           .first)
       .style!

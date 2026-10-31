@@ -223,7 +223,27 @@ class ChatBubble extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                ...body,
+                // One selection area for the whole reply, not a selectable
+                // widget per Markdown block.
+                //
+                // `MarkdownBody(selectable: true)` builds a `SelectableText` -
+                // a read-only text field with its own focus and its own
+                // selection - for every paragraph, list and heading. Each one is
+                // its own selection domain, so a reply you actually want to copy
+                // out of is the one thing you cannot select: a chunk that starts
+                // in one paragraph and ends in another, or runs across a code
+                // block, has no drag that reaches it.
+                //
+                // With the blocks rendered as plain `Text.rich` inside a single
+                // SelectionArea they share one selection registry, and the drag
+                // goes across them. Tool output is inside here too, which is
+                // exactly the text worth copying off a phone.
+                SelectionArea(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: body,
+                  ),
+                ),
                 // The one busy indicator: passed in by ChatList for the bubble that
                 // is actually streaming (or for the "thinking" placeholder), so
                 // there is never a second spinner anywhere else.
@@ -285,7 +305,7 @@ class ChatBubble extends StatelessWidget {
           Icon(Icons.error_outline, size: 18, color: color),
           const SizedBox(width: 8),
           Expanded(
-            child: SelectableText(
+            child: Text(
               message.stopReason == 'error' || message.stopReason == null
                   ? detail
                   : '$detail (${message.stopReason})',
@@ -343,7 +363,10 @@ class ChatBubble extends StatelessWidget {
       if (text.contains('```') || text.contains('#') || text.contains('**')) {
         return MarkdownBody(
           data: text,
-          selectable: true,
+          // False on purpose: this bubble is inside a SelectionArea. `true` here
+          // would put a separate text field around every block and split the
+          // reply back into pieces that cannot be selected across.
+          selectable: false,
           // Fenced code blocks get full syntax highlighting.
           builders: {
             'pre': _HighlightCodeBuilder(isDark: isDark, fontSize: _font(13)),
@@ -383,7 +406,7 @@ class ChatBubble extends StatelessWidget {
       // Fallback to plain text
     }
 
-    return SelectableText(
+    return Text(
       text,
       style: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
     );

@@ -135,7 +135,8 @@ TextSpan _toTextSpan(Node node, Map<String, TextStyle> theme) {
   return TextSpan(
     style: style,
     children: [
-      for (final child in node.children ?? const <Node>[]) _toTextSpan(child, theme),
+      for (final child in node.children ?? const <Node>[])
+        _toTextSpan(child, theme),
     ],
   );
 }
@@ -227,7 +228,15 @@ const Map<String, String> _languageByFileName = {
 /// because something in it looked like a Python comment is worse than leaving
 /// it alone.
 const Set<String> _proseExtensions = {
-  'txt', 'md', 'markdown', 'rst', 'adoc', 'log', 'csv', 'tsv', 'text',
+  'txt',
+  'md',
+  'markdown',
+  'rst',
+  'adoc',
+  'log',
+  'csv',
+  'tsv',
+  'text',
 };
 
 /// True when [path] is a document rather than something to colour.
@@ -277,7 +286,9 @@ const Map<String, String> languageDisplayNames = {
 
 String languageDisplayName(String language) =>
     languageDisplayNames[language] ??
-    (language.isEmpty ? 'Plain text' : language[0].toUpperCase() + language.substring(1));
+    (language.isEmpty
+        ? 'Plain text'
+        : language[0].toUpperCase() + language.substring(1));
 
 /// Split a rendered span tree into one list of spans per line.
 ///
@@ -317,9 +328,9 @@ List<List<TextSpan>> splitSpansByLine(List<TextSpan> spans) {
 /// Plain text cut into lines in the shape [splitSpansByLine] returns, so the
 /// viewer renders a coloured file and a plain one through the same code.
 List<List<TextSpan>> plainLines(String source, TextStyle style) => [
-    for (final line in source.split('\n'))
-      line.isEmpty ? <TextSpan>[] : [TextSpan(text: line, style: style)],
-  ];
+      for (final line in source.split('\n'))
+        line.isEmpty ? <TextSpan>[] : [TextSpan(text: line, style: style)],
+    ];
 
 /// The colours the highlight palette expects to be painted with: its own
 /// foreground and its own background.
@@ -377,12 +388,19 @@ class HighlightedCode extends StatelessWidget {
         borderRadius: borderRadius ?? BorderRadius.circular(6),
       ),
       padding: padding,
-      child: RichText(
-        text: TextSpan(style: base, children: highlightedSpans(
-          source,
-          language: language,
-          isDark: isDark,
-        )),
+      // `Text.rich`, not `RichText`. A plain RichText is not a selectable
+      // widget: it only participates in a selection if it is handed a registrar
+      // itself, which nothing outside a Text does. This is the difference
+      // between a fenced block being part of the reply you can drag a selection
+      // across and being a picture of text.
+      child: Text.rich(
+        TextSpan(
+            style: base,
+            children: highlightedSpans(
+              source,
+              language: language,
+              isDark: isDark,
+            )),
         textDirection: TextDirection.ltr,
       ),
     );
