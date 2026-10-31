@@ -111,6 +111,80 @@
     })();
   </script>
 
+  <!--
+    A clipboard for a page served over plain http.
+
+    `navigator.clipboard` only exists in a secure context - https, or localhost.
+    This app is served over `http://<lan-ip>:3000`, so on iOS Safari and on
+    Android Chrome there is no `navigator.clipboard` at all.
+
+    The app's own copy buttons already know this and fall back to a DOM copy
+    (`lib/utils/clipboard_web.dart`). A text selection's Copy does not, because
+    that call is made by the engine - `Clipboard.setData` goes straight to
+    `navigator.clipboard.writeText` and throws when it is missing - and nothing
+    in this app is in that path. So selecting text and tapping Copy appeared to
+    work and put nothing anywhere.
+
+    Defining `navigator.clipboard` when the browser has none puts the safety net
+    where the engine looks for it, which fixes every copy at once instead of only
+    the ones this app writes itself. `Object.defineProperty` rather than an
+    assignment because `clipboard` is an accessor on Navigator's prototype, and
+    assigning to it is silently ignored.
+
+    `document.execCommand('copy')` is deprecated and remains the only thing that
+    copies in an insecure context. The promise is rejected when it fails, so a
+    copy that did not happen is not reported as one that did.
+  -->
+  <script>
+    (function () {
+      if (navigator.clipboard) return;
+
+      var lastCopied = '';
+
+      function copyThroughDom(text) {
+        var area = document.createElement('textarea');
+        area.value = text;
+        // On-screen but invisible: a display:none element has no selection to
+        // copy, and an unpositioned one scrolls the page to reach it.
+        area.style.position = 'fixed';
+        area.style.top = '0';
+        area.style.left = '0';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        var copied = false;
+        try {
+          copied = document.execCommand('copy') === true;
+        } catch (e) {
+          copied = false;
+        }
+        document.body.removeChild(area);
+        if (copied) lastCopied = text;
+        return copied;
+      }
+
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        get: function () {
+          return {
+            writeText: function (text) {
+              var value = String(text === undefined || text === null ? '' : text);
+              return copyThroughDom(value)
+                ? Promise.resolve()
+                : Promise.reject(new Error('copy failed'));
+            },
+            // What this clipboard knows is what it was given. Without this half,
+            // reading the clipboard would fail on a page that can write it, and
+            // a paste menu would offer nothing to paste.
+            readText: function () {
+              return Promise.resolve(lastCopied);
+            },
+          };
+        },
+      });
+    })();
+  </script>
+
   <style>
     html,
     body {
