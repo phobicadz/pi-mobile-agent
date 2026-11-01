@@ -1,10 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import '../services/pi_service.dart';
 import '../models/pi_models.dart';
 import '../models/turn_progress.dart';
+import '../utils/image_attachment.dart' show maxImagesPerPrompt, preparePickedImage, ImageAttachmentError;
+import '../utils/image_picking.dart';
 
 class PiViewModel extends ChangeNotifier {
   final PiService piService;
@@ -38,6 +42,18 @@ class PiViewModel extends ChangeNotifier {
 
   String? _error;
   String _userInput = '';
+
+  /// Images held for the next prompt.
+  ///
+  /// They live here rather than going straight out: picking an image on a phone
+  /// is often accidental, and the user has to be able to see what is about to
+  /// be sent and take it back out before it is.
+  final List<PiImage> _attachments = [];
+
+  /// Where this view gets images from. Swapped in tests, which have no browser
+  /// and therefore no file picker to open.
+  Future<List<PickedImage>> Function() _pickImages = pickImagesFromDevice;
+  bool _devicePickerAvailable = deviceImagePickerSupported;
 
   /// The assistant reply currently being streamed, if any.
   PiMessage? _streamingMessage;
@@ -125,6 +141,51 @@ class PiViewModel extends ChangeNotifier {
   String get userInput => _userInput;
   int get messagesVersion => _messagesVersion;
   bool get awaitingModel => _awaitingModel;
+
+  /// Images waiting to be sent with the next prompt.
+  List<PiImage> get attachments => List.unmodifiable(_attachments);
+  int get attachmentLimit => maxImagesPerPrompt;
+
+  /// The model Pi is answering with, when it is one Pi offered.
+  ///
+  /// Null when the current model is one Pi was started with but does not offer,
+  /// or before any state has arrived.
+  PiModel? get currentModel {
+    final id = _state?.currentModel;
+    if (id == null) return null;
+    final provider = _state?.currentModelProvider;
+    for (final candidate in _availableModels) {
+      if (candidate.id == id &&
+          (provider == null || candidate.provider == provider)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  /// Whether the current model can be sent an image.
+  ///
+  /// Unknown is treated as yes: refusing to attach a photo because the app could
+  /// not match the running model against the list Pi offered would hide the
+  /// feature for a model that can in fact see it, and the provider says so in
+  /// the reply if it cannot.
+  bool get attachmentsAccepted => currentModel?.acceptsImages ?? true;
+
+  /// Whether this build can open the device's picker at all.
+  bool get deviceImagePickerAvailable => _devicePickerAvailable;
+
+  /// Whether the attach control should be offered at all.
+  bool get canAttachImages => _devicePickerAvailable && attachmentsAccepted;
+
+  /// Why it is not offered, in the words the app shows.
+  String? get attachmentUnavailableReason {
+    if (!_devicePickerAvailable) return 'This app build cannot open the device’s file picker.';
+    if (!attachmentsAccepted) {
+      final name = _state?.currentModel ?? 'the current model';
+      return '$name does not accept images. Switch to one that can.';
+    }
+    return null;
+  }
 
   /// Live view of the run in flight, shown in the streaming chat bubble.
   TurnProgress get progress {
@@ -734,6 +795,17 @@ class PiViewModel extends ChangeNotifier {
     return content as String? ?? '';
   }
 
+  /// The images a stored message carries.
+  ///
+  /// Pi keeps an attached image inside the user message it stored, base64 and
+  /// all, so a resumed session shows the same photos the user sent rather than
+  /// the text half of them.
+  static List<PiImage> _imagesOf(Map<String, dynamic> message) {
+    final content = message['content'];
+    if (content is! List) return const [];
+    return content.map(PiImage.fromContentBlock).whereType<PiImage>().toList();
+  }
+
   static String _resultText(dynamic result) {
     if (result is Map && result['content'] is List) {
       return (result['content'] as List)
@@ -744,10 +816,99 @@ class PiViewModel extends ChangeNotifier {
     return result?.toString() ?? '';
   }
 
+  /// Open the device's picker and queue whatever it returns.
+  ///
+  /// Images are prepared here rather than at send time so the size and type
+  /// problems surface while the user still has the picker's file in front of
+  /// them, not after they pressed send.
+  Future<void> attachImagesFromDevice() async {
+    if (!canAttachImages) {
+      _error = attachmentUnavailableReason;
+      _notifyNow();
+      return;
+    }
+    _error = null;
+    _notifyNow();
+
+    try {
+      // A picker the user closes without choosing answers immediately in some
+      // browsers and not at all in others, so this does not wait on one forever.
+      final picked = await _pickImages().timeout(const Duration(minutes: 5));
+      for (final image in picked) {
+        await addAttachmentBytes(
+          bytes: image.bytes,
+          name: image.name,
+          notify: false,
+        );
+      }
+    } on TimeoutException {
+      _error = 'No image was chosen.';
+    } on UnsupportedError catch (error) {
+      _error = error.message;
+    } on ImageAttachmentError catch (error) {
+      _error = error.message;
+    } catch (error) {
+      _error = 'That image could not be read: $error';
+    }
+    _notifyNow();
+  }
+
+  /// Prepare one image and queue it. The error it produces, if any, is the
+  /// advice from `preparePickedImage`, shown as it is.
+  Future<void> addAttachmentBytes({
+    required Uint8List bytes,
+    required String name,
+    bool notify = true,
+  }) async {
+    if (_attachments.length >= maxImagesPerPrompt) {
+      _error = 'A prompt can carry at most $maxImagesPerPrompt images.';
+      if (notify) _notifyNow();
+      return;
+    }
+    try {
+      _attachments.add(await preparePickedImage(bytes: bytes, name: name));
+      _error = null;
+    } on ImageAttachmentError catch (error) {
+      _error = error.message;
+    }
+    if (notify) _notifyNow();
+  }
+
+  void removeAttachmentAt(int index) {
+    if (index < 0 || index >= _attachments.length) return;
+    _attachments.removeAt(index);
+    _notifyNow();
+  }
+
+  void clearAttachments() {
+    if (_attachments.isEmpty) return;
+    _attachments.clear();
+    _notifyNow();
+  }
+
+  @visibleForTesting
+  void useImagePickerForTest(
+    Future<List<PickedImage>> Function() picker, {
+    bool supported = true,
+  }) {
+    _pickImages = picker;
+    _devicePickerAvailable = supported;
+  }
+
   Future<void> submitPrompt([String? input]) async {
     final prompt = (input ?? _userInput).trim();
     if (prompt.isEmpty) return;
 
+    // An image the model cannot see is not worth dropping quietly: the message
+    // would read one way to the user and be sent another, and the reply would
+    // never mention what it never saw.
+    if (_attachments.isNotEmpty && !attachmentsAccepted) {
+      _error = attachmentUnavailableReason;
+      _notifyNow();
+      return;
+    }
+
+    final images = List<PiImage>.from(_attachments);
     _userInput = '';
     _isLoading = true;
     _awaitingModel = true;
@@ -758,13 +919,18 @@ class PiViewModel extends ChangeNotifier {
       role: 'user',
       content: prompt,
       timestamp: DateTime.now(),
+      images: images,
     ));
     _bumpMessages();
     _trimMessages();
     _notifyNow();
 
     try {
-      await piService.sendPrompt(prompt);
+      await piService.sendPrompt(prompt, images: images);
+      // Only once the turn actually started. A send that failed left the images
+      // where the user can see them and try again, which is the whole point of
+      // showing them before sending.
+      _attachments.clear();
     } catch (e) {
       _error = 'Error: $e';
       _isLoading = false;
@@ -954,12 +1120,17 @@ class PiViewModel extends ChangeNotifier {
 
       if (role == 'user') {
         final text = _textOf(raw);
-        if (text.isEmpty) continue;
+        final images = _imagesOf(raw);
+        // A message that is only an image is still a message the user sent, and
+        // dropping it here would make an image-only turn look like it never
+        // happened when the session is opened again.
+        if (text.isEmpty && images.isEmpty) continue;
         _messages.add(PiMessage(
           id: raw['id'] as String? ?? 'user-history',
           role: 'user',
           content: text,
           timestamp: when,
+          images: images,
         ));
       } else if (role == 'assistant') {
         final message = PiMessage(

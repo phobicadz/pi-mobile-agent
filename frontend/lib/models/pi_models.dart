@@ -213,6 +213,13 @@ class PiMessage {
   /// True while Pi is still streaming this reply.
   bool streaming;
 
+  /// Images carried with this message.
+  ///
+  /// For a message the app sent, they are the ones the user picked, so the
+  /// thumbnail stays next to the text the model saw. For a resumed session they
+  /// come out of Pi's own transcript, which stores the image inline.
+  final List<PiImage> images;
+
   /// A line the app wrote itself, not something Pi said.
   ///
   /// Used for the one case Pi's own output cannot express: a run that ended
@@ -233,7 +240,9 @@ class PiMessage {
     this.errorMessage,
     this.streaming = false,
     this.localNote = false,
-  }) : toolCalls = toolCalls ?? [];
+    List<PiImage>? images,
+  })  : toolCalls = toolCalls ?? [],
+        images = images ?? [];
 
   factory PiMessage.fromJson(Map<String, dynamic> json) {
     // Pi serialises message content as a list of blocks; join the text ones.
@@ -253,6 +262,12 @@ class PiMessage {
       id: json['id'] as String? ?? '',
       role: json['role'] as String? ?? 'user',
       content: text,
+      images: rawContent is List
+          ? (rawContent
+              .map(PiImage.fromContentBlock)
+              .whereType<PiImage>()
+              .toList())
+          : const [],
       timestamp: json['timestamp'] is int
           ? DateTime.fromMillisecondsSinceEpoch(json['timestamp'] as int)
           : DateTime.now(),
@@ -315,11 +330,20 @@ class PiModel {
   final String provider;
   final bool available;
 
+  /// What this model accepts, exactly as Pi reports it: `["text", "image"]`.
+  ///
+  /// Pi sends this on every model it offers, so "can this model take a photo?"
+  /// is answered by the model list rather than guessed from the model's name.
+  final List<String> input;
+
+  bool get acceptsImages => input.contains('image');
+
   PiModel({
     required this.id,
     required this.name,
     required this.provider,
     this.available = true,
+    this.input = const [],
   });
 
   factory PiModel.fromJson(Map<String, dynamic> json) {
@@ -328,6 +352,61 @@ class PiModel {
       name: json['name'] as String? ?? '',
       provider: json['provider'] as String? ?? '',
       available: json['available'] as bool? ?? true,
+      input: switch (json['input']) {
+        final List list => list.map((entry) => entry.toString()).toList(),
+        _ => const [],
+      },
+    );
+  }
+}
+
+/// An image the app carries into a prompt, or reads back out of a transcript.
+///
+/// `base64Data` is the payload Pi's RPC expects (no `data:` prefix); `bytes`
+/// is the size of those decoded bytes, which is what the model is actually
+/// charged for and what the app shows on the attachment chip.
+class PiImage {
+  final String name;
+  final String mimeType;
+  final String base64Data;
+  final int width;
+  final int height;
+
+  PiImage({
+    required this.name,
+    required this.mimeType,
+    required this.base64Data,
+    this.width = 0,
+    this.height = 0,
+  });
+
+  int get bytes => (base64Data.length * 3) ~/ 4;
+
+  String get sizeLabel {
+    const kb = 1024;
+    if (bytes < kb) return '$bytes B';
+    if (bytes < 1024 * kb) return '${(bytes / kb).toStringAsFixed(0)} KB';
+    return '${(bytes / kb / kb).toStringAsFixed(1)} MB';
+  }
+
+  /// The shape Pi's `prompt` command takes for one image.
+  Map<String, dynamic> toJson() => {
+        'type': 'image',
+        'data': base64Data,
+        'mimeType': mimeType,
+      };
+
+  /// An image block from Pi's own transcript (`ImageContent`).
+  static PiImage? fromContentBlock(dynamic block) {
+    if (block is! Map) return null;
+    if (block['type'] != 'image') return null;
+    final data = block['data'];
+    final mimeType = block['mimeType'];
+    if (data is! String || data.isEmpty || mimeType is! String) return null;
+    return PiImage(
+      name: 'image',
+      mimeType: mimeType,
+      base64Data: data,
     );
   }
 }

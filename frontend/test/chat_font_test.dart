@@ -28,7 +28,8 @@ class FakeChatService extends PiService {
   Future<List<PiModel>> getAvailableModels() async => const [];
 
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 
   @override
   bool get isConnected => true;

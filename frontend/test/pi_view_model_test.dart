@@ -136,7 +136,8 @@ class FakeStateService extends FakePiService {
   Future<List<PiModel>> getAvailableModels() async => const [];
 
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 
   void report({required bool streaming}) => _states
       .add(PiState.fromJson({'isStreaming': streaming, 'cwd': r'C:\work'}));

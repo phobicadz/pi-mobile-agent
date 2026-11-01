@@ -6,6 +6,7 @@ import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
 import '../utils/prompt_reference.dart';
 import '../utils/responsive.dart';
+import '../widgets/attachment_tray.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/file_browser.dart';
@@ -655,9 +656,44 @@ class _HomeScreenState extends State<HomeScreen> {
                     const ModelSelector(),
                     const SizedBox(height: 12),
 
+                    // What is about to be sent, shown before it is sent.
+                    if (viewModel.attachments.isNotEmpty) ...[
+                      AttachmentTray(
+                        images: viewModel.attachments,
+                        onRemove: viewModel.removeAttachmentAt,
+                      ),
+                      const SizedBox(height: 10),
+                    ],
+
                     // Input field
                     Row(
                       children: [
+                        // Attaching sits next to sending rather than in a menu:
+                        // the image is chosen because of what is being asked, and
+                        // the two decisions happen in the same breath. It stays
+                        // visible on a model that cannot see images, greyed out,
+                        // so the reason is at least findable.
+                        if (viewModel.deviceImagePickerAvailable)
+                          Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Tooltip(
+                              message: viewModel.attachmentUnavailableReason ??
+                                  'Attach an image from this device',
+                              child: FloatingActionButton(
+                                mini: true,
+                                heroTag: 'attach-image',
+                                backgroundColor:
+                                    viewModel.canAttachImages
+                                        ? null
+                                        : Colors.grey.shade300,
+                                onPressed: viewModel.canAttachImages
+                                    ? () => viewModel.attachImagesFromDevice()
+                                    : null,
+                                child:
+                                    const Icon(Icons.add_photo_alternate_outlined),
+                              ),
+                            ),
+                          ),
                         Expanded(
                           child: Focus(
                             onKeyEvent: (node, event) {

@@ -32,7 +32,8 @@ class _WideBubbleService extends PiService {
   Future<List<PiModel>> getAvailableModels() async => const [];
 
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 
   void emit(Map<String, dynamic> inner) =>
       _events.add(PiEvent.fromJson({'type': 'pi_event', 'event': inner}));

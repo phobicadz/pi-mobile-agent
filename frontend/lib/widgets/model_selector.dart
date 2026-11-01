@@ -132,6 +132,19 @@ class _ModelSelectorState extends State<ModelSelector> {
                         ],
                       ),
                     ),
+                    // Which models can be sent a photo, marked where the choice
+                    // is actually made. Pi reports this on every model it offers
+                    // (`input`), so it is not a guess from the model's name.
+                    if (model.acceptsImages)
+                      Padding(
+                        padding: const EdgeInsets.only(left: 6),
+                        child: Icon(
+                          Icons.image_outlined,
+                          size: 15,
+                          color: Colors.grey.shade600,
+                          semanticLabel: 'accepts images',
+                        ),
+                      ),
                   ],
                 ),
               );

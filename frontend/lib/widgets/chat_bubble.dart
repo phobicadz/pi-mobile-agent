@@ -1,4 +1,5 @@
 import 'dart:collection';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -60,6 +61,7 @@ class ChatBubble extends StatelessWidget {
     // provider reported why it failed, which is the whole content of that reply.
     if (message.content.isEmpty &&
         message.toolCalls.isEmpty &&
+        message.images.isEmpty &&
         message.errorMessage == null &&
         !message.streaming) {
       return const SizedBox.shrink();
@@ -280,6 +282,9 @@ class ChatBubble extends StatelessWidget {
       Color mutedColor,
       bool isDark) {
     return [
+      // Sent first: an image is the thing the user actually asked about, and a
+      // caption under it is the comment on it.
+      if (message.images.isNotEmpty) _buildImages(context, message),
       if (message.errorMessage != null)
         _buildModelError(context, message, isDark),
       if (message.content.isNotEmpty)
@@ -321,6 +326,100 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
+  /// The images the user sent with this message.
+  ///
+  /// Thumbnails in a wrap, each one opening full size on tap. A phone photo of a
+  /// whiteboard or an error on another screen is unreadable at 160px, and the
+  /// only useful thing about a thumbnail is what it opens.
+  Widget _buildImages(BuildContext context, PiMessage message) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: [
+          for (final image in message.images) _buildThumbnail(context, image),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildThumbnail(BuildContext context, PiImage image) {
+    return InkWell(
+      onTap: () => _showImageFullSize(context, image),
+      borderRadius: BorderRadius.circular(8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: _drawImage(image, width: 160, height: 160),
+      ),
+    );
+  }
+
+  /// Draw a stored image, or say that it could not be drawn.
+  ///
+  /// The base64 is what Pi stored, so a `FormatException` here means the stored
+  /// value is not what it claims to be - which is a thing worth showing rather
+  /// than a thing to fail a bubble over.
+  Widget _drawImage(PiImage image, {double? width, double? height}) {
+    try {
+      return Image.memory(
+        base64Decode(image.base64Data),
+        width: width,
+        height: height,
+        fit: width == null ? null : BoxFit.cover,
+        errorBuilder: (_, __, ___) => _unreadableImage(image),
+      );
+    } on FormatException {
+      return _unreadableImage(image);
+    }
+  }
+
+  /// A stored image the app cannot draw.
+  ///
+  /// The name and size are still worth showing: the message was sent, and the
+  /// model saw it or refused it. Saying the thumbnail failed is not the same as
+  /// hiding the message.
+  Widget _unreadableImage(PiImage image) {
+    return Container(
+      width: 160,
+      height: 100,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade400),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.image_not_supported_outlined, size: 22),
+          const SizedBox(height: 4),
+          Text(
+            image.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: _font(11)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showImageFullSize(BuildContext context, PiImage image) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => Dialog(
+        insetPadding: const EdgeInsets.all(12),
+        child: InteractiveViewer(
+          maxScale: 6,
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
+            child: _drawImage(image),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Hash of everything the cached rendering depends on. Content length is
   /// folded in alongside the hash so two different messages cannot silently
   /// share an entry.
@@ -339,6 +438,11 @@ class ChatBubble extends StatelessWidget {
       Object.hashAll(message.content.codeUnits),
       message.errorMessage,
       message.stopReason,
+      message.images.length,
+      Object.hashAll([
+        for (final image in message.images)
+          Object.hash(image.mimeType, image.name, image.base64Data.length),
+      ]),
       message.toolCalls.length,
       Object.hashAll([
         for (final tool in message.toolCalls)

@@ -26,7 +26,8 @@ class FakeService extends PiService {
   Future<List<PiModel>> getAvailableModels() async => const [];
 
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 }
 
 /// iPhone-shaped surface, logical pixels.

@@ -9,6 +9,16 @@ export interface RpcCommand {
   [key: string]: unknown;
 }
 
+/**
+ * One image to attach to a prompt. Pi's own shape is `ImageContent`:
+ * base64 with no `data:` prefix, plus the MIME type. `type` is added on the
+ * way out because Pi requires it and the app has no reason to carry it.
+ */
+export interface PromptImage {
+  data: string;
+  mimeType: string;
+}
+
 export interface RpcResponse {
   id?: string;
   type: "response";
@@ -92,10 +102,24 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
-  async prompt(message: string): Promise<RpcResponse> {
+  async prompt(
+    message: string,
+    images?: PromptImage[],
+  ): Promise<RpcResponse> {
     return this.sendCommand({
       type: "prompt",
       message,
+      // Omit the field entirely rather than send an empty list: Pi treats a
+      // prompt with `images: []` as an image prompt on some providers.
+      ...(images && images.length > 0
+        ? {
+            images: images.map((image) => ({
+              type: "image",
+              data: image.data,
+              mimeType: image.mimeType,
+            })),
+          }
+        : {}),
     });
   }
 

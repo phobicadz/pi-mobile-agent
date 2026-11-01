@@ -43,7 +43,8 @@ class FakeChatService extends PiService {
 /// failing on a missing WebSocket.
 class _QuietChatService extends FakeChatService {
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 }
 
 void main() {

@@ -7,6 +7,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
+import type { PromptImage } from "./pi-rpc-client.js";
 import { listPiSessions, sessionCwdOf } from "./session-store.js";
 import { listDirectory, listFiles, createDirectory, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
@@ -129,6 +130,47 @@ wss.on("connection", (ws: WebSocket) => {
     console.error("WebSocket error:", err);
   });
 });
+
+const MAX_IMAGES_PER_PROMPT = 8;
+const MAX_IMAGE_BASE64_CHARS = 8 * 1024 * 1024;
+
+/**
+ * Validate the images the app sent, before any of it reaches Pi.
+ *
+ * A base64 image is the one part of this protocol that arrives unbounded: a
+ * phone photo is several megabytes of text, and a model that cannot take images
+ * rejects the whole prompt rather than the image. Saying which one is wrong, in
+ * a sentence the app can show, beats a provider error several hops away.
+ */
+function toPromptImages(raw: unknown): PromptImage[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) throw new Error("images must be a list");
+  if (raw.length === 0) return undefined;
+  if (raw.length > MAX_IMAGES_PER_PROMPT) {
+    throw new Error(`At most ${MAX_IMAGES_PER_PROMPT} images per prompt`);
+  }
+
+  return raw.map((entry, index) => {
+    if (typeof entry !== "object" || entry === null) {
+      throw new Error(`image ${index + 1} is not an object`);
+    }
+    const { data, mimeType } = entry as Record<string, unknown>;
+    if (typeof data !== "string" || data.length === 0) {
+      throw new Error(`image ${index + 1} has no data`);
+    }
+    if (data.length > MAX_IMAGE_BASE64_CHARS) {
+      throw new Error(
+        `image ${index + 1} is too large (${Math.round(
+          data.length / 1024 / 1024,
+        )} MB)`,
+      );
+    }
+    if (typeof mimeType !== "string" || !mimeType.startsWith("image/")) {
+      throw new Error(`image ${index + 1} is not an image`);
+    }
+    return { data, mimeType };
+  });
+}
 
 async function handleClientMessage(ws: WebSocket, message: any) {
   const { id, command, ...params } = message;
@@ -402,7 +444,7 @@ async function handleClientMessage(ws: WebSocket, message: any) {
 
     switch (command) {
       case "prompt":
-        response = await piClient.prompt(params.message);
+        response = await piClient.prompt(params.message, toPromptImages(params.images));
         break;
       case "new_session":
         // A fresh conversation in the directory Pi is already working in. The
@@ -566,8 +608,8 @@ app.post("/api/prompt", async (req, res) => {
     if (!piClient) {
       return res.status(503).json({ error: "Pi not initialized" });
     }
-    const { message } = req.body;
-    const response = await piClient.prompt(message);
+    const { message, images } = req.body;
+    const response = await piClient.prompt(message, toPromptImages(images));
     res.json({ success: response.success, data: response.data });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });

@@ -27,7 +27,8 @@ class FakeScrollChatService extends PiService {
   Future<List<PiModel>> getAvailableModels() async => const [];
 
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 
   /// HomeScreen keeps a full-screen connecting spinner until the socket is up, so
   /// the chat only exists once the service reports a connection.

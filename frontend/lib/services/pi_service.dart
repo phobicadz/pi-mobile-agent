@@ -140,10 +140,20 @@ class PiService {
     }
   }
 
-  Future<void> sendPrompt(String message) async {
+  /// Send a prompt, optionally with images attached.
+  ///
+  /// The images are Pi's own `ImageContent` shape (`toJson` on [PiImage] is
+  /// that shape). Whether the model in play accepts them is decided before this
+  /// is called - the backend validates the payload but does not know which model
+  /// the user picked, and a model that cannot see would reject the whole prompt.
+  Future<void> sendPrompt(String message, {List<PiImage> images = const []}) async {
     final response = await _sendCommand(
       'prompt',
-      params: {'message': message},
+      params: {
+        'message': message,
+        if (images.isNotEmpty)
+          'images': images.map((image) => image.toJson()).toList(),
+      },
     );
     if (!response['success']) {
       throw Exception('Prompt failed: ${response['error']}');
