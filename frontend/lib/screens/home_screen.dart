@@ -508,6 +508,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'Pi Agent'
                 : cwd.split(RegExp(r'[\\/]')).where((e) => e.isNotEmpty).last;
             final branchName = viewModel.gitBranch;
+            final git = viewModel.gitStatus;
 
             return Row(
               children: [
@@ -533,16 +534,38 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                // Right: Git icon + branch name (if available)
-                if (branchName != null && branchName.isNotEmpty) ...[const SizedBox(width: 12), Icon(
-                  Icons.merge_type,
-                  size: 16,
-                ), const SizedBox(width: 4), Text(
-                  branchName,
-                  overflow: TextOverflow.ellipsis,
-                  maxLines: 1,
-                  style: Theme.of(context).textTheme.labelMedium,
-                )],
+                // Right: Git icon + branch name (if available), with the state
+                // behind the name in a tooltip. The bar has room for the branch
+                // and nothing else; whether it is dirty, mid-conflict, or
+                // unpushed is worth a press or a hover.
+                if (branchName != null && branchName.isNotEmpty) ...[
+                  const SizedBox(width: 12),
+                  Tooltip(
+                    message: git?.describe() ?? branchName,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.merge_type,
+                          size: 16,
+                          // A conflict is the one state the colour should say on
+                          // its own: unlike "dirty", it blocks the next commit.
+                          color: (git?.conflicted ?? 0) > 0
+                              ? Theme.of(context).colorScheme.error
+                              : null,
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            branchName,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            style: Theme.of(context).textTheme.labelMedium,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             );
           },

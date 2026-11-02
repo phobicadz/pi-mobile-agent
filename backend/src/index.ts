@@ -36,22 +36,116 @@ let currentCwd =
 // what lets the backend follow Pi instead of guessing.
 let piProcessCwd = currentCwd;
 
-// Get the current git branch for a directory, or null if not a git repo
-function getGitBranch(cwd: string): string | null {
+// Git state for a directory, or null when it is not a git repository (or git is
+// unavailable). One `git status --branch --porcelain` answers the branch name and
+// the working-tree counts in a single call, which is what the app bar tooltip shows.
+type GitStatus = {
+  branch: string;
+  detached: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  staged: number;
+  modified: number;
+  untracked: number;
+  conflicted: number;
+};
+
+// get_state is asked for on every connect and after any directory change, and a
+// resume can ask twice in the same breath. Repeating git for each of those is
+// pointless work, so the answer is held briefly per directory.
+const gitStatusCache = new Map<string, { at: number; status: GitStatus | null }>();
+const GIT_STATUS_TTL_MS = 1000;
+
+function gitStatus(cwd: string): GitStatus | null {
+  const cached = gitStatusCache.get(cwd);
+  if (cached && Date.now() - cached.at < GIT_STATUS_TTL_MS) return cached.status;
+
+  let status: GitStatus | null = null;
   try {
-    const result = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
-      cwd,
-      encoding: "utf-8",
-      timeout: 2000,
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-    if (result.status === 0 && result.stdout) {
-      return result.stdout.trim();
-    }
+    const result = spawnSync(
+      "git",
+      ["status", "--branch", "--porcelain=v1"],
+      {
+        cwd,
+        encoding: "utf-8",
+        timeout: 2000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    // Non-zero here means "not a repository", "not a work tree", or git missing -
+    // all of which mean there is no branch to show.
+    if (result.status === 0) status = parseGitStatus(result.stdout ?? "");
   } catch (err) {
-    // git not found or other error
+    status = null;
   }
-  return null;
+
+  gitStatusCache.set(cwd, { at: Date.now(), status });
+  return status;
+}
+
+function parseGitStatus(output: string): GitStatus | null {
+  const lines = output.split("\n").filter((line) => line.length > 0);
+  const header = lines[0];
+  if (!header || !header.startsWith("## ")) return null;
+
+  const status: GitStatus = {
+    branch: "",
+    detached: false,
+    upstream: null,
+    ahead: 0,
+    behind: 0,
+    staged: 0,
+    modified: 0,
+    untracked: 0,
+    conflicted: 0,
+  };
+
+  // `## HEAD (no branch)` is what a detached HEAD looks like; `## main` is a
+  // branch with no upstream; `## main...origin/main [ahead 1, behind 2]` is a
+  // branch with one. The counts are what a `git status` header line would say.
+  const body = header.slice(3);
+  if (body.startsWith("HEAD ")) {
+    status.detached = true;
+  } else {
+    const [branchPart, trackingPart] = body.split("...", 2);
+    status.branch = branchPart.trim();
+    if (trackingPart) {
+      const [upstream, ...rest] = trackingPart.split("]");
+      status.upstream = upstream.trim();
+      const notes = rest.join("]");
+      const ahead = /ahead (\d+)/.exec(notes);
+      const behind = /behind (\d+)/.exec(notes);
+      if (ahead) status.ahead = Number(ahead[1]);
+      if (behind) status.behind = Number(behind[1]);
+    }
+  }
+
+  // Every remaining line is `XY path`; the two status columns say what changed.
+  for (const line of lines.slice(1)) {
+    const index = line[0] ?? " ";
+    const worktree = line[1] ?? " ";
+    if (index === "?" && worktree === "?") {
+      status.untracked += 1;
+    } else if (index === "U" || worktree === "U" || (index === "A" && worktree === "A") || (index === "D" && worktree === "D")) {
+      status.conflicted += 1;
+    } else {
+      if (index !== " ") status.staged += 1;
+      if (worktree !== " ") status.modified += 1;
+    }
+  }
+
+  // A detached HEAD still has something worth showing, but the app labels a
+  // branch, so only answer when there is one (or a detached head to name).
+  if (!status.branch && !status.detached) return null;
+  return status;
+}
+
+// Kept for the places that only ever needed the name.
+function getGitBranch(cwd: string): string | null {
+  const status = gitStatus(cwd);
+  if (!status) return null;
+  return status.detached ? "HEAD" : status.branch;
 }
 
 // Directories recently used by Pi sessions, most recent first (deduplicated).
@@ -403,6 +497,9 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         piClient = null;
       }
       currentCwd = target;
+      // A new directory is a different repository; anything held for the old one
+      // is not an answer about this one.
+      gitStatusCache.clear();
       await initializePi(target);
       ws.send(
         JSON.stringify({
@@ -487,6 +584,7 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             cwd: currentCwd,
             cwdDisplay: shrinkHome(currentCwd),
             gitBranch: getGitBranch(currentCwd),
+            gitStatus: gitStatus(currentCwd),
           };
         }
         break;
@@ -534,10 +632,12 @@ async function handleClientMessage(ws: WebSocket, message: any) {
           // Same order Pi uses: the directory recorded in the session file, and
           // if it records none, the directory the Pi process was started in.
           currentCwd = resolved ?? piProcessCwd;
+          gitStatusCache.clear();
           if (response.data) {
             response.data = {
               ...response.data,
               gitBranch: getGitBranch(currentCwd),
+              gitStatus: gitStatus(currentCwd),
               cwd: currentCwd,
               cwdDisplay: shrinkHome(currentCwd),
             };

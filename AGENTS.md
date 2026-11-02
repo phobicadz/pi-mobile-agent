@@ -86,6 +86,16 @@ method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
   itself is fine — verify with `systemctl --user is-active pi-mobile-agent`.
 - A `PiViewModel` field that the AppBar reads must be exposed through the ViewModel and
   fed from `piService.stateUpdates`, not read from a widget-local state.
+- **When you are driving this repo *from* the app, you are the service's child process.**
+  The tree is `systemd → node dist/index.js → pi → your tool calls`, so
+  `systemctl --user restart pi-mobile-agent` stops the node process, which stops the Pi
+  running you, which ends the tool call with `SIGTERM` (exit 143). The restart still
+  succeeds — it just outlives the command that asked for it.
+- **A frontend-only change needs no restart.** The backend serves `frontend/build/web`
+  from disk with `no-store` on `index.html`, so `flutter build web` is live on the next
+  page load. Restart only for a backend change. When in doubt, compare
+  `curl -s localhost:3000/main.dart.js | grep -c <a-string-only-the-new-code-has>`
+  against the same count in `frontend/build/web/main.dart.js` — they must match.
 
 ## Style
 
@@ -104,5 +114,7 @@ dated change notes, not current docs — don't treat them as authoritative.
 
 ## Definition of done
 
-For any change: build it (`./deploy/install-service.sh`), restart the service, confirm
+For any change: build it (`./deploy/install-service.sh`), confirm
 `curl localhost:3000/health` is ok, and push to `main` (`https://github.com/phobicadz/pi-mobile-agent`).
+Restart the service only when a **backend** file changed — and see the child-process note
+above before doing that from inside the app.

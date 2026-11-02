@@ -20,6 +20,7 @@ class PiViewModel extends ChangeNotifier {
   String? _workingDirectory;
   String? _workingDirectoryDisplay;
   String? _gitBranch;
+  GitStatus? _gitStatus;
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
@@ -135,6 +136,10 @@ class PiViewModel extends ChangeNotifier {
   String? get workingDirectoryDisplay =>
       _workingDirectoryDisplay ?? _workingDirectory;
   String? get gitBranch => _gitBranch;
+
+  /// Branch name plus working-tree counts, for the app bar tooltip.
+  GitStatus? get gitStatus => _gitStatus;
+  bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
   bool get resumingSession => _resumingSession;
@@ -235,6 +240,7 @@ class PiViewModel extends ChangeNotifier {
       }
       // Capture git branch for display in the app bar
       _gitBranch = state.gitBranch;
+      _gitStatus = state.gitStatus;
       // Pi's state is the only thing that can say whether a run is still in
       // flight after the socket dropped mid-run - a backend restart, a phone
       // sleeping, a walk out of wifi range. The agent_end that would have
@@ -262,6 +268,14 @@ class PiViewModel extends ChangeNotifier {
       // not be open yet), so retry once we know the backend is reachable.
       if (_availableModels.isEmpty) {
         unawaited(_loadModels());
+      }
+      // The same reasoning covers the context meter: it renders nothing until Pi
+      // has measured a figure, and nothing asks for that measurement on connect.
+      // Keying on "unmeasured" rather than "first update" is what makes a
+      // reconnect, and a session switch that dropped the old numbers, ask for it
+      // too instead of leaving the bar blank until the next run happens to end.
+      if (_sessionStats == null) {
+        unawaited(_refreshSessionStats());
       }
       _notifyNow();
     });
@@ -454,9 +468,17 @@ class PiViewModel extends ChangeNotifier {
         unawaited(_refreshSessionStats());
         break;
 
+      case 'turn_end':
+        // One model request and its tool calls are done. Without this the
+        // context meter only moves when the whole run settles, which for a run
+        // that reads and writes its way through a codebase means the number you
+        // act on is as stale as the run is long. agent_settled still does the
+        // authoritative one; this is the meter keeping up in between.
+        unawaited(_refreshSessionStats());
+        return;
+
       default:
-        // Other lifecycle events (turn_end/...) are not rendered as chat
-        // bubbles.
+        // Other lifecycle events are not rendered as chat bubbles.
         return;
     }
 
@@ -630,7 +652,16 @@ class PiViewModel extends ChangeNotifier {
     return text.isEmpty ? name : '$name $text';
   }
 
+  /// Ask Pi for its own session totals and hand them to the app bar.
+  ///
+  /// Held to one call at a time: turn_end fires once per model request, and a
+  /// run can be many of them, so the same question would otherwise be asked
+  /// several times over while an answer is already on its way.
+  bool _statsInFlight = false;
+
   Future<void> _refreshSessionStats() async {
+    if (_statsInFlight) return;
+    _statsInFlight = true;
     try {
       _sessionStats = await piService.getSessionStats();
       // The app bar's context meter reads these. Without saying so, a number Pi
@@ -639,6 +670,8 @@ class PiViewModel extends ChangeNotifier {
     } catch (_) {
       // A backend without get_session_stats simply means the progress line
       // shows this run's numbers only.
+    } finally {
+      _statsInFlight = false;
     }
   }
 
@@ -979,6 +1012,10 @@ class PiViewModel extends ChangeNotifier {
       // Ask the backend what is live now: the new session has its own token
       // totals, and a fresh chat must not keep showing the old context bar.
       await piService.refreshState();
+      // ...and then measure them. Setting the numbers to null above is only half
+      // of not showing the old bar; without asking, the meter stays blank for
+      // the whole of the new conversation until some run happens to settle.
+      await _refreshSessionStats();
       _notifyNow();
       return true;
     } catch (e) {

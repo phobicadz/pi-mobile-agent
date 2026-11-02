@@ -18,6 +18,10 @@ class PiState {
 
   /// Current git branch name, if the directory is a git repository, or null.
   final String? gitBranch;
+
+  /// The rest of the git state behind that branch name - how the working tree
+  /// actually looks. Shown in the app bar tooltip.
+  final GitStatus? gitStatus;
   final Map<String, dynamic>? raw;
 
   PiState({
@@ -29,6 +33,7 @@ class PiState {
     this.cwd,
     this.cwdDisplay,
     this.gitBranch,
+    this.gitStatus,
     this.raw,
   });
 
@@ -49,6 +54,9 @@ class PiState {
       cwd: json['cwd'] as String?,
       cwdDisplay: json['cwdDisplay'] as String?,
       gitBranch: json['gitBranch'] as String?,
+      gitStatus: json['gitStatus'] is Map
+          ? GitStatus.fromJson(Map<String, dynamic>.from(json['gitStatus'] as Map))
+          : null,
       raw: json,
     );
   }
@@ -62,6 +70,7 @@ class PiState {
     String? cwd,
     String? cwdDisplay,
     String? gitBranch,
+    GitStatus? gitStatus,
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
@@ -72,8 +81,112 @@ class PiState {
       cwd: cwd ?? this.cwd,
       cwdDisplay: cwdDisplay ?? this.cwdDisplay,
       gitBranch: gitBranch ?? this.gitBranch,
+      gitStatus: gitStatus ?? this.gitStatus,
       raw: raw,
     );
+  }
+}
+
+/// The working-tree state of a git repository, as the backend read it from
+/// `git status --branch --porcelain`.
+///
+/// Counts, not paths: the app bar has room for "3 files changed", and a list of
+/// paths belongs in the file browser. The one thing worth naming in full is the
+/// branch itself.
+class GitStatus {
+  final String branch;
+
+  /// No branch is checked out - a detached HEAD. The branch name is empty then.
+  final bool detached;
+
+  /// The remote-tracking branch this one is compared against, e.g. `origin/main`.
+  final String? upstream;
+
+  /// Commits this branch has that upstream does not, and the other way round.
+  final int ahead;
+  final int behind;
+
+  /// Files with something recorded in the index, files changed in the working
+  /// tree, and files git has never seen. A file in both counts once per column:
+  /// half-committed work is genuinely two things.
+  final int staged;
+  final int modified;
+  final int untracked;
+
+  /// Files a merge or rebase left for a human to settle.
+  final int conflicted;
+
+  GitStatus({
+    required this.branch,
+    this.detached = false,
+    this.upstream,
+    this.ahead = 0,
+    this.behind = 0,
+    this.staged = 0,
+    this.modified = 0,
+    this.untracked = 0,
+    this.conflicted = 0,
+  });
+
+  factory GitStatus.fromJson(Map<String, dynamic> json) {
+    int count(Object? value) => value is int ? value : 0;
+    return GitStatus(
+      branch: json['branch'] as String? ?? '',
+      detached: json['detached'] as bool? ?? false,
+      upstream: json['upstream'] as String?,
+      ahead: count(json['ahead']),
+      behind: count(json['behind']),
+      staged: count(json['staged']),
+      modified: count(json['modified']),
+      untracked: count(json['untracked']),
+      conflicted: count(json['conflicted']),
+    );
+  }
+
+  int get changedFiles => staged + modified + untracked;
+
+  bool get clean => changedFiles == 0 && conflicted == 0;
+
+  /// The tooltip text: what the branch is doing, then what the tree holds.
+  ///
+  /// Built as sentences rather than a table because a tooltip is one short
+  /// block of text, and the interesting part comes first - a branch that is
+  /// mid-rebase or 5 commits ahead is the thing you want to know before you
+  /// ask how many files are dirty.
+  String describe() {
+    final parts = <String>[];
+
+    parts.add(detached
+        ? 'Detached HEAD - no branch checked out'
+        : 'Branch ${branch.isEmpty ? '(unknown)' : branch}');
+    if (upstream != null && upstream!.isNotEmpty) {
+      if (ahead > 0 && behind > 0) {
+        parts.add('$upstream: $ahead ahead, $behind behind');
+      } else if (ahead > 0) {
+        parts.add('$ahead committed, not pushed to $upstream');
+      } else if (behind > 0) {
+        parts.add('$behind behind $upstream - pull to catch up');
+      } else {
+        parts.add('up to date with $upstream');
+      }
+    } else if (!detached) {
+      parts.add('no upstream configured');
+    }
+
+    if (conflicted > 0) {
+      parts.add('$conflicted file${conflicted == 1 ? '' : 's'} in conflict');
+    }
+    if (clean) {
+      parts.add('working tree clean');
+    } else {
+      final bits = <String>[];
+      if (staged > 0) bits.add('$staged staged');
+      if (modified > 0) bits.add('$modified modified');
+      if (untracked > 0) bits.add('$untracked untracked');
+      parts.add(bits.join(', '));
+    }
+
+    return parts.join('\n');
   }
 }
 
