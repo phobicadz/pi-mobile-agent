@@ -531,6 +531,9 @@ class _HomeScreenState extends State<HomeScreen> {
             final dirName = cwd.isEmpty
                 ? 'Pi Agent'
                 : cwd.split(RegExp(r'[\\/]')).where((e) => e.isNotEmpty).last;
+            // Pi omits sessionName when the session has none, so "no name" is
+            // simply nothing to show rather than a placeholder for an unnamed chat.
+            final sessionName = viewModel.sessionName?.trim() ?? '';
 
             return Row(
               children: [
@@ -550,44 +553,95 @@ class _HomeScreenState extends State<HomeScreen> {
                 // hamburger to change it is a second place to learn the same
                 // thing.
                 Expanded(
-                  // A click cursor is the only thing that says "this is a
-                  // control" on a laptop browser, where there is no press to
-                  // find it by.
-                  child: MouseRegion(
-                    cursor: SystemMouseCursors.click,
-                    child: InkWell(
-                      onTap: () => _showFileBrowser(context),
-                    // The ripple wants a little more than the text's own box,
-                    // and on a phone the whole strip is what the thumb has to
-                    // be able to land on.
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 10,
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.folder_open,
-                              size: 18,
-                            ),
-                            const SizedBox(width: 6),
-                            Expanded(
-                              child: Tooltip(
-                                message: cwd.isEmpty
-                                    ? 'No directory selected'
-                                    : cwd,
-                                child: Text(
-                                  dirName,
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 1,
-                                ),
+                  child: Row(
+                    children: [
+                      // The directory is the primary half and the session name the
+                      // secondary one, so the flex favours it: 3 to 2 means a short
+                      // name costs the directory nothing it needs, and a long one
+                      // ellipsizes its own share rather than the path.
+                      //
+                      // Both are loose-fit. A tight Expanded here would claim every
+                      // pixel left over after the name's share, which is the same
+                      // mistake that put the git chip in the middle of the bar.
+                      //
+                      // The name belongs in the bar because it is the other half of
+                      // "where am I": which directory, and which conversation in it.
+                      // It is also the only place the live session's name is ever
+                      // visible - the picker shows saved sessions, and the live one
+                      // is the one you cannot find there without scrolling.
+                      Flexible(
+                        flex: 3,
+                        fit: FlexFit.loose,
+                        // A click cursor is the only thing that says "this is a
+                        // control" on a laptop browser, where there is no press to
+                        // find it by.
+                        child: MouseRegion(
+                          cursor: SystemMouseCursors.click,
+                          child: InkWell(
+                            onTap: () => _showFileBrowser(context),
+                            // The ripple wants a little more than the text's own box,
+                            // and on a phone the whole strip is what the thumb has to
+                            // be able to land on.
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 10,
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.folder_open,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Expanded(
+                                    child: Tooltip(
+                                      message: cwd.isEmpty
+                                          ? 'No directory selected'
+                                          : cwd,
+                                      child: Text(
+                                        dirName,
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 1,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                          ],
+                          ),
                         ),
                       ),
-                    ),
+                      if (sessionName.isNotEmpty)
+                        Flexible(
+                          flex: 2,
+                          fit: FlexFit.loose,
+                          child: Padding(
+                            padding: const EdgeInsets.only(
+                              right: 6,
+                              top: 10,
+                              bottom: 10,
+                            ),
+                            // Dimmer and smaller than the directory: it names the
+                            // conversation, and the bar should read as a location
+                            // first. The tooltip carries it in full, because this is
+                            // the half that gets ellipsized.
+                            child: Tooltip(
+                              message: 'Session: $sessionName',
+                              child: Text(
+                                '[$sessionName]',
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                                // labelMedium is what the git chip in this bar uses
+                                // for the same kind of secondary text, so the two
+                                // read as the same class of thing in both themes
+                                // rather than as hand-picked greys.
+                                style: Theme.of(context).textTheme.labelMedium,
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ],

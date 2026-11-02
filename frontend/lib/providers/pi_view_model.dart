@@ -21,6 +21,7 @@ class PiViewModel extends ChangeNotifier {
   String? _workingDirectoryDisplay;
   String? _gitBranch;
   GitStatus? _gitStatus;
+  String? _sessionName;
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
@@ -139,6 +140,14 @@ class PiViewModel extends ChangeNotifier {
 
   /// Branch name plus working-tree counts, for the app bar tooltip.
   GitStatus? get gitStatus => _gitStatus;
+
+  /// The name of the conversation the live Pi is in, or null when it has none.
+  ///
+  /// Only Pi can say this: the live session is the one its process is holding,
+  /// and a name is whatever the last `session_info` in that file said. It is
+  /// refreshed with the rest of the state, so renaming the live session shows up
+  /// in the bar as soon as the state is asked for again.
+  String? get sessionName => _sessionName;
   bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
@@ -241,6 +250,11 @@ class PiViewModel extends ChangeNotifier {
       // Capture git branch for display in the app bar
       _gitBranch = state.gitBranch;
       _gitStatus = state.gitStatus;
+      // Assigned rather than kept when absent, because Pi omits sessionName when
+      // the session has no name - and a bar still showing the old name after a
+      // rename to nothing, or after a new session, is describing a session it is
+      // no longer in.
+      _sessionName = state.sessionName;
       // Pi's state is the only thing that can say whether a run is still in
       // flight after the socket dropped mid-run - a backend restart, a phone
       // sleeping, a walk out of wifi range. The agent_end that would have
@@ -1056,6 +1070,9 @@ class PiViewModel extends ChangeNotifier {
       final trimmed = name?.trim() ?? '';
       await piService.renameSession(session.path, trimmed.isEmpty ? null : trimmed);
       await piService.listSessions().then((value) => _sessions = value);
+      // And ask what is live now. Renaming the session the app is sitting in
+      // changes the app bar, and the only thing that can report that is Pi.
+      await piService.refreshState();
       _notifyNow();
       return true;
     } catch (e) {

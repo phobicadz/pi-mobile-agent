@@ -22,6 +22,11 @@ class PiState {
   /// The rest of the git state behind that branch name - how the working tree
   /// actually looks. Shown in the app bar tooltip.
   final GitStatus? gitStatus;
+
+  /// The display name of the conversation the live Pi is in, or null when it has
+  /// none. Pi reports it in `get_state` as `sessionName` (omitted when unset),
+  /// and it is what `rename_session` changes.
+  final String? sessionName;
   final Map<String, dynamic>? raw;
 
   PiState({
@@ -34,6 +39,7 @@ class PiState {
     this.cwdDisplay,
     this.gitBranch,
     this.gitStatus,
+    this.sessionName,
     this.raw,
   });
 
@@ -57,6 +63,7 @@ class PiState {
       gitStatus: json['gitStatus'] is Map
           ? GitStatus.fromJson(Map<String, dynamic>.from(json['gitStatus'] as Map))
           : null,
+      sessionName: json['sessionName'] as String?,
       raw: json,
     );
   }
@@ -71,6 +78,7 @@ class PiState {
     String? cwdDisplay,
     String? gitBranch,
     GitStatus? gitStatus,
+    String? sessionName,
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
@@ -82,6 +90,7 @@ class PiState {
       cwdDisplay: cwdDisplay ?? this.cwdDisplay,
       gitBranch: gitBranch ?? this.gitBranch,
       gitStatus: gitStatus ?? this.gitStatus,
+      sessionName: sessionName ?? this.sessionName,
       raw: raw,
     );
   }

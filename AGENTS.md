@@ -63,7 +63,9 @@ method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
   distinct so a resume follows Pi instead of guessing.
 - **Pi's RPC `get_state` has no cwd.** The backend injects `cwd`, `cwdDisplay` (shrinkHome)
   and `gitBranch` into every state response. Anything the app bar shows about the
-  directory has to come from those injected fields.
+  directory has to come from those injected fields. `sessionName` is the other way round:
+  Pi reports it and the backend passes it through untouched — it is absent when the session
+  has no name, which is the app's signal to show nothing.
 - **Sessions are persisted** (no `--no-session`) so `/resume` can reload them. Resuming
   re-enters the directory recorded in the session file.
 - **`PI_PROVIDER` / `PI_MODEL` are unset in the unit on purpose** — Pi uses its own

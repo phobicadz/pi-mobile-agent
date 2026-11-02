@@ -114,13 +114,32 @@ Get the current state of the Pi agent.
   "command": "get_state",
   "success": true,
   "data": {
-    "model": "claude-3-5-sonnet-20241022",
+    "model": { "id": "claude-3-5-sonnet-20241022", "provider": "anthropic" },
     "messageCount": 5,
     "isProcessing": false,
-    "systemPrompt": "You are a helpful coding assistant..."
+    "systemPrompt": "You are a helpful coding assistant...",
+    "sessionFile": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl",
+    "sessionId": "01a19b80-df2c-7665-8787-d98cf0a23c29",
+    "sessionName": "refactor auth module",
+    "cwd": "/home/adam/projects/other",
+    "cwdDisplay": "~/projects/other",
+    "gitBranch": "main",
+    "gitStatus": {
+      "branch": "main",
+      "upstream": "origin/main",
+      "ahead": 2,
+      "modified": 3,
+      "untracked": 1
+    }
   }
 }
 ```
+
+`sessionFile`, `sessionId` and `sessionName` come from Pi. The name is omitted
+when the session has none, which is how the app knows to show nothing rather
+than an empty label. `cwd`, `cwdDisplay`, `gitBranch` and `gitStatus` are
+injected by the backend: Pi's own RPC state has no working directory, and the
+app bar shows both the directory and the branch. See `rename_session`.
 
 ---
 
