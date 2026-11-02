@@ -32,7 +32,11 @@ class ChatListState extends State<ChatList> {
 
   /// Build bubbles before they scroll into view, so scrolling shows finished
   /// content instead of waiting on work done mid-scroll.
-  static const ScrollCacheExtent _cacheExtent = ScrollCacheExtent.viewport(1.5);
+  /// Increased to 2.0 for smoother scrolling, especially on slower devices.
+  static const ScrollCacheExtent _cacheExtent = ScrollCacheExtent.viewport(2.0);
+  
+  /// Explicit pixel-based cache extent for fine-grained control
+  static const double _cacheExtentPixels = 2000;
 
   final ScrollController _scrollController = ScrollController();
   bool _followLatest = true;
@@ -189,6 +193,7 @@ class ChatListState extends State<ChatList> {
             ListView.builder(
               controller: _scrollController,
               scrollCacheExtent: _cacheExtent,
+              cacheExtent: _cacheExtentPixels,
               padding: const EdgeInsets.all(16),
               itemCount: messages.length + (thinking ? 1 : 0),
               itemBuilder: (context, index) {

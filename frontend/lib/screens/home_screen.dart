@@ -500,15 +500,36 @@ class _HomeScreenState extends State<HomeScreen> {
             onPressed: () => Scaffold.of(context).openDrawer(),
           ),
         ),
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.smart_toy, size: 24),
-            const SizedBox(width: 8),
-            const Text('Pi Agent'),
-          ],
+        title: Consumer<PiViewModel>(
+          builder: (context, viewModel, _) {
+            final cwd = viewModel.workingDirectory ?? '';
+            // Get just the directory name (last component of the path)
+            final dirName = cwd.isEmpty
+                ? 'Pi Agent'
+                : cwd.split(RegExp(r'[\\/]')).where((e) => e.isNotEmpty).last;
+            final branchName = viewModel.gitBranch;
+
+            return Row(
+              children: [
+                // Left: Directory name
+                Expanded(
+                  child: Text(
+                    dirName,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                ),
+                // Right: Git branch (if available)
+                if (branchName != null && branchName.isNotEmpty) ...[const SizedBox(width: 8), Text(
+                  '● $branchName',
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: 1,
+                  style: Theme.of(context).textTheme.labelMedium,
+                )],
+              ],
+            );
+          },
         ),
-        centerTitle: true,
         elevation: 0,
         actions: [
           // How full this conversation is, from Pi's own measurement. Ahead of

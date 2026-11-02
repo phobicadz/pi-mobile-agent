@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
+import 'package:url_launcher/url_launcher.dart';
+
 import '../models/pi_models.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
@@ -164,21 +166,22 @@ class ChatBubble extends StatelessWidget {
     final copyText = message.copyableText;
     final canCopy = copyText.isNotEmpty;
 
-    return Align(
-      alignment: isAssistant ? Alignment.centerLeft : Alignment.centerRight,
-      // Inside the alignment, so the gesture belongs to the bubble and not to
-      // the empty stretch of row beside a short one.
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onDoubleTap: phone ? null : onToggleExpanded,
-        // A slow glow around the reply Pi is still writing. The status line
-        // inside the bubble names what is happening; this is the part a wall of
-        // finished messages cannot show - which bubble is the live one. It
-        // paints behind the bubble and stops the moment the reply finishes.
-        child: _ProcessingGlow(
-          active: message.streaming,
-          color: accentColor,
-          child: AnimatedContainer(
+    return RepaintBoundary(
+      child: Align(
+        alignment: isAssistant ? Alignment.centerLeft : Alignment.centerRight,
+        // Inside the alignment, so the gesture belongs to the bubble and not to
+        // the empty stretch of row beside a short one.
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onDoubleTap: phone ? null : onToggleExpanded,
+          // A slow glow around the reply Pi is still writing. The status line
+          // inside the bubble names what is happening; this is the part a wall of
+          // finished messages cannot show - which bubble is the live one. It
+          // paints behind the bubble and stops the moment the reply finishes.
+          child: _ProcessingGlow(
+            active: message.streaming,
+            color: accentColor,
+            child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
             constraints: BoxConstraints(maxWidth: maxWidth),
@@ -254,6 +257,7 @@ class ChatBubble extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }
@@ -465,8 +469,10 @@ class ChatBubble extends StatelessWidget {
     try {
       // Check if it looks like markdown
       if (text.contains('```') || text.contains('#') || text.contains('**')) {
+        // For very large content, truncate for markdown parsing to improve performance
+        final renderText = text.length > 8000 ? '${text.substring(0, 8000)}…' : text;
         return MarkdownBody(
-          data: text,
+          data: renderText,
           // False on purpose: this bubble is inside a SelectionArea. `true` here
           // would put a separate text field around every block and split the
           // reply back into pieces that cannot be selected across.
@@ -474,6 +480,7 @@ class ChatBubble extends StatelessWidget {
           // Fenced code blocks get full syntax highlighting.
           builders: {
             'pre': _HighlightCodeBuilder(isDark: isDark, fontSize: _font(13)),
+            'a': _LinkBuilder(isDark: isDark, fontSize: _font(14)),
           },
           styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
             p: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
@@ -614,7 +621,8 @@ class ChatBubble extends StatelessWidget {
 class _BubbleBodyCache {
   static final LinkedHashMap<int, List<Widget>> _entries =
       LinkedHashMap<int, List<Widget>>();
-  static const int _maxEntries = 120;
+  /// Increased to 200 entries for better performance in longer conversations.
+  static const int _maxEntries = 200;
 
   static List<Widget>? lookup(int key) {
     final value = _entries.remove(key);
@@ -670,6 +678,57 @@ class _HighlightCodeBuilder extends MarkdownElementBuilder {
       isDark: isDark,
       textStyle: TextStyle(fontSize: fontSize),
     );
+  }
+}
+
+/// Renders markdown links as clickable, styled links.
+class _LinkBuilder extends MarkdownElementBuilder {
+  _LinkBuilder({required this.isDark, required this.fontSize});
+
+  final bool isDark;
+  final double fontSize;
+
+  @override
+  Widget visitText(md.Text text, TextStyle? preferredStyle) {
+    return Text(text.text, style: preferredStyle);
+  }
+
+  @override
+  Widget visitElementAfter(md.Element element, TextStyle? preferredStyle) {
+    // Extract the href from the link element
+    final href = element.attributes['href'] ?? '';
+    
+    // Extract the link text from children
+    final textContent = element.textContent;
+
+    if (href.isEmpty) {
+      return Text(textContent, style: preferredStyle);
+    }
+
+    // Style for links: underlined and colored based on theme
+    final linkStyle = TextStyle(
+      fontSize: fontSize,
+      color: isDark ? const Color(0xFF64B5F6) : const Color(0xFF0B4D8C),
+      decoration: TextDecoration.underline,
+      decorationThickness: 1.0,
+    );
+
+    return InkWell(
+      onTap: () => _handleLinkTap(href),
+      child: Text(
+        textContent,
+        style: linkStyle,
+      ),
+    );
+  }
+
+  /// Opens the link in a new browser tab (web) or the system browser
+  /// (mobile/desktop). url_launcher handles both targets.
+  void _handleLinkTap(String url) {
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+    launchUrl(uri, mode: LaunchMode.externalApplication)
+        .catchError((e) => debugPrint('Could not launch $url: $e'));
   }
 }
 

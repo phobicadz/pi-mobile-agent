@@ -15,6 +15,9 @@ class PiState {
 
   /// Same directory, shortened to "~" / "~/..." for display.
   final String? cwdDisplay;
+
+  /// Current git branch name, if the directory is a git repository, or null.
+  final String? gitBranch;
   final Map<String, dynamic>? raw;
 
   PiState({
@@ -25,6 +28,7 @@ class PiState {
     this.systemPrompt,
     this.cwd,
     this.cwdDisplay,
+    this.gitBranch,
     this.raw,
   });
 
@@ -44,6 +48,7 @@ class PiState {
       systemPrompt: json['systemPrompt'] as String?,
       cwd: json['cwd'] as String?,
       cwdDisplay: json['cwdDisplay'] as String?,
+      gitBranch: json['gitBranch'] as String?,
       raw: json,
     );
   }
@@ -56,6 +61,7 @@ class PiState {
     String? systemPrompt,
     String? cwd,
     String? cwdDisplay,
+    String? gitBranch,
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
@@ -65,6 +71,7 @@ class PiState {
       systemPrompt: systemPrompt ?? this.systemPrompt,
       cwd: cwd ?? this.cwd,
       cwdDisplay: cwdDisplay ?? this.cwdDisplay,
+      gitBranch: gitBranch ?? this.gitBranch,
       raw: raw,
     );
   }

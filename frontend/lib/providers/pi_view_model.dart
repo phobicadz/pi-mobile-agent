@@ -19,6 +19,7 @@ class PiViewModel extends ChangeNotifier {
   List<PiSessionInfo> _sessions = [];
   String? _workingDirectory;
   String? _workingDirectoryDisplay;
+  String? _gitBranch;
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
@@ -133,7 +134,7 @@ class PiViewModel extends ChangeNotifier {
   /// Same directory, shortened to "~" / "~/..." for the app bar.
   String? get workingDirectoryDisplay =>
       _workingDirectoryDisplay ?? _workingDirectory;
-  bool get loadingDirectories => _loadingDirectories;
+  String? get gitBranch => _gitBranch;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
   bool get resumingSession => _resumingSession;
@@ -232,6 +233,8 @@ class PiViewModel extends ChangeNotifier {
         _workingDirectory = state.cwd;
         _workingDirectoryDisplay = state.cwdDisplay ?? state.cwd;
       }
+      // Capture git branch for display in the app bar
+      _gitBranch = state.gitBranch;
       // Pi's state is the only thing that can say whether a run is still in
       // flight after the socket dropped mid-run - a backend restart, a phone
       // sleeping, a walk out of wifi range. The agent_end that would have

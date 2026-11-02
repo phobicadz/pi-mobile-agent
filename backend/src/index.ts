@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
@@ -35,6 +35,24 @@ let currentCwd =
 // not the mutable currentCwd, which a resume can move. Keeping the two apart is
 // what lets the backend follow Pi instead of guessing.
 let piProcessCwd = currentCwd;
+
+// Get the current git branch for a directory, or null if not a git repo
+function getGitBranch(cwd: string): string | null {
+  try {
+    const result = spawnSync("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      encoding: "utf-8",
+      timeout: 2000,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    if (result.status === 0 && result.stdout) {
+      return result.stdout.trim();
+    }
+  } catch (err) {
+    // git not found or other error
+  }
+  return null;
+}
 
 // Directories recently used by Pi sessions, most recent first (deduplicated).
 function recentDirectories(): string[] {
@@ -468,6 +486,7 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             ...response.data,
             cwd: currentCwd,
             cwdDisplay: shrinkHome(currentCwd),
+            gitBranch: getGitBranch(currentCwd),
           };
         }
         break;
@@ -518,6 +537,7 @@ async function handleClientMessage(ws: WebSocket, message: any) {
           if (response.data) {
             response.data = {
               ...response.data,
+              gitBranch: getGitBranch(currentCwd),
               cwd: currentCwd,
               cwdDisplay: shrinkHome(currentCwd),
             };
