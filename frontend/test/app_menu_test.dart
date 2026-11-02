@@ -65,7 +65,6 @@ void main() {
     for (final label in const [
       'New session',
       'Resume a previous session',
-      'Browse files & set working directory',
       'Chat text size',
       'Switch to dark mode',
     ]) {
@@ -77,23 +76,21 @@ void main() {
     viewModel.dispose();
   });
 
-  testWidgets('resuming a session sits above the directory a session runs in',
+  testWidgets('the directory is chosen from the bar, not from the menu',
       (tester) async {
     final (viewModel, _) = await pumpHome(tester);
 
     await openAppMenu(tester);
 
-    // Tree order, not screen position: a menu that scrolls still has an order.
-    final titles = tester
-        .widgetList<ListTile>(find.descendant(
-            of: find.byType(Drawer), matching: find.byType(ListTile)))
-        .map((tile) => (tile.title as Text).data ?? '')
-        .toList();
-
-    expect(titles.indexOf('Resume a previous session'),
-        lessThan(titles.indexOf('Browse files & set working directory')),
-        reason: 'coming back to a conversation is the thing the menu is most '
-            'often opened for, and the directory is set once and left alone');
+    expect(find.text('Browse files & set working directory'), findsNothing,
+        reason: 'the folder in the bar opens the same browser, and it is already '
+            'on screen naming the directory this row could only have repeated');
+    expect(
+      find.descendant(
+          of: find.byType(Drawer), matching: find.byIcon(Icons.folder_open)),
+      findsNothing,
+      reason: 'the menu keeps the things that need room to explain themselves, '
+          'and a folder does not');
 
     viewModel.dispose();
   });
@@ -149,24 +146,17 @@ void main() {
     viewModel.dispose();
   });
 
-  testWidgets('a row opens what it says it opens, and gets out of the way',
+  testWidgets('the file browser opens from the bar, with no menu involved',
       (tester) async {
     final (viewModel, _) = await pumpHome(tester);
 
-    Future<void> closeSheet() async {
-      Navigator.of(tester.element(find.byType(AppBar).first)).pop();
-      for (var i = 0; i < 6; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-    }
-
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.folder_open);
+    await openFileBrowser(tester);
 
     expect(find.byType(FileBrowser), findsOneWidget);
     expect(find.byType(Drawer), findsNothing,
-        reason: 'a menu left standing over the thing it just opened hides half '
-            'of it on a phone');
+        reason: 'changing the directory is reached from the thing already naming '
+            'it, so no menu has to be opened to find it and none is left standing '
+            'over the sheet on a phone');
 
     viewModel.dispose();
   });

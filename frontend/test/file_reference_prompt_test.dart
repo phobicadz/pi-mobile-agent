@@ -96,8 +96,7 @@ Future<void> startTyping(WidgetTester tester) async {
 
 /// Open the browser sheet and the viewer for the file in it.
 Future<void> openFile(WidgetTester tester) async {
-  await openAppMenu(tester);
-  await tapMenuRow(tester, Icons.folder_open);
+  await openFileBrowser(tester);
   expect(find.byType(FileBrowser), findsOneWidget);
 
   await tester.tap(find.text('app.ts'));

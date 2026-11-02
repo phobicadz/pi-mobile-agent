@@ -48,3 +48,20 @@ Future<void> tapMenuRow(WidgetTester tester, IconData icon) async {
     await tester.pump(const Duration(milliseconds: 100));
   }
 }
+
+/// Open the file browser from the folder in the app bar.
+///
+/// The menu used to be the way in. It is not any more: the bar says which
+/// directory this is, so it is the thing that changes it, and tests that need
+/// the browser should reach it the way a person does now - without opening a
+/// menu first.
+Future<void> openFileBrowser(WidgetTester tester) async {
+  final folder = find.descendant(
+    of: find.byType(AppBar),
+    matching: find.byIcon(Icons.folder_open),
+  );
+  await tester.tap(folder);
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}

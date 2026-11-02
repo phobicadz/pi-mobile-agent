@@ -409,17 +409,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           _showSessionPicker(context);
                         },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.folder_open),
-                  title: const Text('Browse files & set working directory'),
-                  subtitle: Text(directoryLabel.isEmpty
-                      ? 'Navigate and change working directory'
-                      : 'Current: $directoryLabel'),
-                  onTap: () {
-                    closeMenu();
-                    _showFileBrowser(context);
-                  },
-                ),
+                // No directory tile here. The folder in the bar is that control,
+                // and it is already on screen naming the directory this menu row
+                // would have had to describe - two ways to do one thing, one of
+                // them a press away from the chat it belongs next to.
                 const Divider(),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
