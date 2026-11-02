@@ -511,17 +511,34 @@ class _HomeScreenState extends State<HomeScreen> {
 
             return Row(
               children: [
-                // Left: Directory name
+                // Left: Directory icon + name with tooltip
                 Expanded(
-                  child: Text(
-                    dirName,
-                    overflow: TextOverflow.ellipsis,
-                    maxLines: 1,
+                  child: Tooltip(
+                    message: cwd.isEmpty ? 'No directory selected' : cwd,
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.folder_open,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            dirName,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-                // Right: Git branch (if available)
-                if (branchName != null && branchName.isNotEmpty) ...[const SizedBox(width: 8), Text(
-                  '● $branchName',
+                // Right: Git icon + branch name (if available)
+                if (branchName != null && branchName.isNotEmpty) ...[const SizedBox(width: 12), Icon(
+                  Icons.merge_type,
+                  size: 16,
+                ), const SizedBox(width: 4), Text(
+                  branchName,
                   overflow: TextOverflow.ellipsis,
                   maxLines: 1,
                   style: Theme.of(context).textTheme.labelMedium,
