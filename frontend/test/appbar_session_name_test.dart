@@ -118,8 +118,13 @@ void main() {
     return (service, viewModel);
   }
 
-  Finder folderName() => find.text('pi-mobile-agent');
-  Finder sessionName() => find.text('[garden siren diagnosis]');
+  /// Both finders are scoped to the bar. The same words appear in the session
+  /// sheet whenever it is open, and a test that taps one has to be sure which
+  /// copy it pressed.
+  Finder folderName() => find.descendant(
+      of: find.byType(AppBar), matching: find.text('pi-mobile-agent'));
+  Finder sessionName() => find.descendant(
+      of: find.byType(AppBar), matching: find.text('garden siren diagnosis'));
 
   testWidgets('the bar names the conversation next to the directory',
       (tester) async {
@@ -133,9 +138,24 @@ void main() {
     final folder = tester.getRect(folderName());
     final name = tester.getRect(sessionName());
     expect(name.left, greaterThan(folder.right),
-        reason: 'in brackets after the folder name, which is the order the '
-            'question is asked in');
+        reason: 'after the folder name, which is the order the question is '
+            'asked in');
     expect(name.left, lessThan(name.right));
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the name is the session picker, not a label', (tester) async {
+    final (_, viewModel) =
+        await pumpHome(tester, sessionName: 'garden siren diagnosis');
+
+    await tester.tap(sessionName());
+    await settle(tester);
+
+    expect(find.text('Resume a session'), findsOneWidget,
+        reason: 'the name is the live session\'s, and the one thing worth doing '
+            'with it is leaving it');
+    expect(find.byType(AppBar), findsOneWidget);
 
     viewModel.dispose();
   });
@@ -146,9 +166,12 @@ void main() {
 
     expect(folderName(), findsOneWidget);
     expect(find.text('[]'), findsNothing);
-    expect(find.textContaining('Session:'), findsNothing,
-        reason: 'a bar that says "[]" for every chat nobody named is a bar with '
-            'a decoration on it');
+    expect(
+      find.descendant(
+          of: find.byType(AppBar), matching: find.textContaining('Session:')),
+      findsNothing,
+      reason: 'an unnamed chat has nothing to show there, and a bar that prints a '
+          'placeholder for it is a bar with a decoration on it');
 
     viewModel.dispose();
   });
@@ -165,9 +188,10 @@ void main() {
             'that squeezed it out would be labelling the wrong thing');
 
     final bar = tester.getRect(find.byType(AppBar));
-    final name = tester.getRect(
-      find.textContaining('[refactor the mobile agent'),
-    );
+    final name = tester.getRect(find.descendant(
+      of: find.byType(AppBar),
+      matching: find.textContaining('refactor the mobile agent'),
+    ));
     expect(name.right, lessThanOrEqualTo(bar.right));
     expect(name.width, lessThan(bar.width * 0.6),
         reason: 'it gets the smaller share of the flex, so a long one ellipsizes '
@@ -202,10 +226,13 @@ void main() {
     await settle(tester);
 
     expect(service.renames, ['title bar layout work']);
-    expect(find.text('[title bar layout work]'), findsOneWidget,
-        reason: 'the bar shows the name Pi reports for the session it is in, so '
-            'renaming where you are has to show up where you are');
-    expect(find.text('[garden siren diagnosis]'), findsNothing);
+    expect(sessionName(), findsNothing);
+    expect(
+      find.descendant(
+          of: find.byType(AppBar), matching: find.text('title bar layout work')),
+      findsOneWidget,
+      reason: 'the bar shows the name Pi reports for the session it is in, so '
+          'renaming where you are has to show up where you are');
 
     viewModel.dispose();
   });
@@ -217,7 +244,7 @@ void main() {
     await viewModel.startNewSession();
     await settle(tester);
 
-    expect(find.text('[garden siren diagnosis]'), findsNothing,
+    expect(sessionName(), findsNothing,
         reason: 'a bar still naming the conversation that was just left behind '
             'describes a session it is no longer in');
 

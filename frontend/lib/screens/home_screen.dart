@@ -616,27 +616,43 @@ class _HomeScreenState extends State<HomeScreen> {
                         Flexible(
                           flex: 2,
                           fit: FlexFit.loose,
-                          child: Padding(
-                            padding: const EdgeInsets.only(
-                              right: 6,
-                              top: 10,
-                              bottom: 10,
-                            ),
-                            // Dimmer and smaller than the directory: it names the
-                            // conversation, and the bar should read as a location
-                            // first. The tooltip carries it in full, because this is
-                            // the half that gets ellipsized.
-                            child: Tooltip(
-                              message: 'Session: $sessionName',
-                              child: Text(
-                                '[$sessionName]',
-                                overflow: TextOverflow.ellipsis,
-                                maxLines: 1,
-                                // labelMedium is what the git chip in this bar uses
-                                // for the same kind of secondary text, so the two
-                                // read as the same class of thing in both themes
-                                // rather than as hand-picked greys.
-                                style: Theme.of(context).textTheme.labelMedium,
+                          child: InkWell(
+                            // Tapping it opens the session picker. The name is the
+                            // live session's, and the one thing worth doing with it
+                            // is leaving it - which is a decision made while looking
+                            // at the list of where else one could be.
+                            //
+                            // It is a separate control from the folder next to it on
+                            // purpose: one changes where the agent works, the other
+                            // which conversation it is in, and merging them would
+                            // make the second impossible to reach without guessing.
+                            onTap: () => _showSessionPicker(context),
+                            child: MouseRegion(
+                              cursor: SystemMouseCursors.click,
+                              child: Padding(
+                                padding: const EdgeInsets.only(
+                                  right: 6,
+                                  top: 10,
+                                  bottom: 10,
+                                ),
+                                // Dimmer and smaller than the directory: it names the
+                                // conversation, and the bar should read as a location
+                                // first. The tooltip says what the tap does, because
+                                // a name in a bar looks like a label and nothing else.
+                                child: Tooltip(
+                                  message: 'Session: $sessionName — tap to switch or '
+                                      'rename it',
+                                  child: Text(
+                                    sessionName,
+                                    overflow: TextOverflow.ellipsis,
+                                    maxLines: 1,
+                                    // labelMedium is what the git chip in this bar uses
+                                    // for the same kind of secondary text, so the two
+                                    // read as the same class of thing in both themes
+                                    // rather than as hand-picked greys.
+                                    style: Theme.of(context).textTheme.labelMedium,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
