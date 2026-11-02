@@ -509,21 +509,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           _startNewSession(context);
                         },
                 ),
-                ListTile(
-                  leading: const Icon(Icons.history),
-                  title: const Text('Resume a previous session'),
-                  enabled: !viewModel.resumingSession,
-                  onTap: viewModel.resumingSession
-                      ? null
-                      : () {
-                          closeMenu();
-                          _showSessionPicker(context);
-                        },
-                ),
-                // No directory tile here. The folder in the bar is that control,
-                // and it is already on screen naming the directory this menu row
-                // would have had to describe - two ways to do one thing, one of
-                // them a press away from the chat it belongs next to.
+                // No "Resume a previous session" row either, for the same reason as
+                // the directory row above: the centre of the bar is the conversation -
+                // its name when it has one, and the way to the list of them when it
+                // does not - and that is one tap from the chat it would replace.
                 const Divider(),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -676,6 +665,17 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             );
 
+            // The centre of this bar is the conversation: its name when it has
+            // one, and the way to the list of them when it does not. The menu used
+            // to be that way, and it was a place to look for something that is only
+            // ever wanted while looking at the conversation it would replace.
+            //
+            // Both are switched off while a session is being restored: a second
+            // resume started over the first races the history being loaded into the
+            // live session, which is the same reason the menu row used to close.
+            void openPicker() => _showSessionPicker(context);
+            final pickerEnabled = !viewModel.resumingSession;
+
             final nameControl = MouseRegion(
               cursor: SystemMouseCursors.click,
               child: InkWell(
@@ -687,51 +687,98 @@ class _HomeScreenState extends State<HomeScreen> {
                 // changes where the agent works, the other which conversation it is in,
                 // and merging them would make the second impossible to reach without
                 // guessing which one was meant.
-                onTap: () => _showSessionPicker(context),
+                onTap: pickerEnabled ? openPicker : null,
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 6,
                     vertical: 10,
                   ),
                   child: Tooltip(
-                    message: 'Session: $sessionName — tap to switch or '
-                        'rename it',
+                    message: pickerEnabled
+                        ? 'Session: $sessionName — tap to switch or rename it'
+                        : 'Session: $sessionName — restoring a session first',
                     child: Text(
                       sessionName,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
-                      // labelMedium is what the git chip in this bar uses for the same
-                      // kind of secondary text, so the two read as the same class of
-                      // thing in both themes rather than as hand-picked greys.
-                      style: Theme.of(context).textTheme.labelMedium,
+                      // Bold, and one step up from the label size the git chip uses:
+                      // this is the centre of the bar and the name of the thing the
+                      // rest of the screen is about, not a caption on the directory.
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
                     ),
                   ),
                 ),
               ),
             );
 
-            return Row(
-              children: [
-                Expanded(
-                  flex: sessionName.isEmpty ? 1 : 4,
-                  child: folderControl,
-                ),
-                if (sessionName.isNotEmpty) ...[
-                  // Centred: the box is centred, and Center puts the text in the middle
-                  // of a box it does not have to fill. Loose-fit, so a short name costs
-                  // the bar nothing and a long one ellipsizes inside its own share.
-                  Flexible(
-                    flex: 3,
-                    fit: FlexFit.loose,
-                    child: Center(child: nameControl),
+            if (sessionName.isEmpty) {
+              // No name to centre, so the centre holds the way in. An icon and no
+              // words: an unnamed chat has nothing to say there, but the list is
+              // still one tap away.
+              //
+              // Built like the folder control rather than as an IconButton, and for
+              // the width that costs: an IconButton is 48px of tap target, and on a
+              // phone with the git chip and the context meter in the actions this
+              // box measured 37.5px end to end. An icon at the size the folder's is
+              // fits where a button would overflow the bar.
+              //
+              // It is not a flex child, so it is laid out at its own width first and
+              // the two Expandeds then split what is left equally - which puts it in
+              // the middle without borrowing space the directory needs.
+              final sessionsControl = MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: InkWell(
+                  onTap: pickerEnabled ? openPicker : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 12,
+                    ),
+                    child: Tooltip(
+                      message: pickerEnabled
+                          ? 'Sessions'
+                          : 'Restoring a session…',
+                      child: const Icon(
+                        Icons.forum_outlined,
+                        size: 18,
+                      ),
+                    ),
                   ),
-                  // The counterweight. Without an identical share on the right there is
-                  // no centre to put anything in.
+                ),
+              );
+
+              return Row(
+                children: [
+                  Expanded(flex: 1, child: folderControl),
+                  sessionsControl,
                   const Expanded(
-                    flex: 4,
+                    flex: 1,
                     child: SizedBox.shrink(),
                   ),
                 ],
+              );
+            }
+
+            return Row(
+              children: [
+                Expanded(flex: 4, child: folderControl),
+                // Centred: the box is centred, and Center puts the text in the middle
+                // of a box it does not have to fill. Loose-fit, so a short name costs
+                // the bar nothing and a long one ellipsizes inside its own share.
+                Flexible(
+                  flex: 3,
+                  fit: FlexFit.loose,
+                  child: Center(child: nameControl),
+                ),
+                // The counterweight. Without an identical share on the right there is
+                // no centre to put anything in.
+                const Expanded(
+                  flex: 4,
+                  child: SizedBox.shrink(),
+                ),
               ],
             );
           },

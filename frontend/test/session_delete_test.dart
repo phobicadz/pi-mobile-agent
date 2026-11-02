@@ -106,8 +106,9 @@ void main() {
     service.push();
     await settle(tester);
 
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    // This backend names the live session, so the centre of the bar shows the
+    // name, and that is what opens the picker.
+    await openSessionPicker(tester, sessionName: 'the one being had');
     await settle(tester);
     return (service, viewModel);
   }

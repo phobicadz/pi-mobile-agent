@@ -65,3 +65,25 @@ Future<void> openFileBrowser(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 100));
   }
 }
+
+/// Open the session picker from the centre of the app bar.
+///
+/// The centre of the bar is the conversation: its name when it has one (pass
+/// [sessionName] to press that), and the sessions icon when it has none (leave
+/// it out). The menu used to be the way in and no longer is, so a test reaches
+/// it the way a person does - from the conversation it is about to replace.
+Future<void> openSessionPicker(
+  WidgetTester tester, {
+  String? sessionName,
+}) async {
+  final target = find.descendant(
+    of: find.byType(AppBar),
+    matching: sessionName == null
+        ? find.byIcon(Icons.forum_outlined)
+        : find.text(sessionName),
+  );
+  await tester.tap(target);
+  for (var i = 0; i < 6; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}

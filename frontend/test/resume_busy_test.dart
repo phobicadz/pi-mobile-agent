@@ -114,8 +114,7 @@ Finder sessionRow(WidgetTester tester) => find
       (tester) async {
     final (service, viewModel) = await pumpHome(tester);
 
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    await openSessionPicker(tester);
     await settle(tester);
     expect(find.text('The one from earlier'), findsOneWidget);
 
@@ -141,19 +140,25 @@ Finder sessionRow(WidgetTester tester) => find
     viewModel.dispose();
   });
 
-  testWidgets('the history entry is closed while a session is being restored',
+  testWidgets('the way back to the sessions is closed while one is being restored',
       (tester) async {
     final (service, viewModel) = await pumpHome(tester);
 
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    await openSessionPicker(tester);
     await settle(tester);
     await tester.tap(sessionRow(tester));
     await settle(tester);
 
-    await openAppMenu(tester);
     expect(
-        tester.widget<ListTile>(menuRow(Icons.history)).onTap,
+        tester
+            .widget<InkWell>(find.descendant(
+              of: find.byType(AppBar),
+              matching: find.ancestor(
+                of: find.byIcon(Icons.forum_outlined),
+                matching: find.byType(InkWell),
+              ),
+            ))
+            .onTap,
         isNull,
         reason: 'a second resume started over the first would race the history '
             'being loaded into the live session');
@@ -161,7 +166,17 @@ Finder sessionRow(WidgetTester tester) => find
     service.completeResume();
     await settle(tester);
 
-    expect(tester.widget<ListTile>(menuRow(Icons.history)).onTap, isNotNull);
+    expect(
+        tester
+            .widget<InkWell>(find.descendant(
+              of: find.byType(AppBar),
+              matching: find.ancestor(
+                of: find.byIcon(Icons.forum_outlined),
+                matching: find.byType(InkWell),
+              ),
+            ))
+            .onTap,
+        isNotNull);
 
     viewModel.dispose();
   });
@@ -183,8 +198,7 @@ Finder sessionRow(WidgetTester tester) => find
     );
     await settle(tester);
 
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    await openSessionPicker(tester);
     await settle(tester);
     await tester.tap(sessionRow(tester));
     await settle(tester);
@@ -195,8 +209,17 @@ Finder sessionRow(WidgetTester tester) => find
     expect(find.text('Restoring session…'), findsNothing);
     expect(viewModel.error, contains('Failed to resume session'));
 
-    await openAppMenu(tester);
-    expect(tester.widget<ListTile>(menuRow(Icons.history)).onTap, isNotNull);
+    expect(
+        tester
+            .widget<InkWell>(find.descendant(
+              of: find.byType(AppBar),
+              matching: find.ancestor(
+                of: find.byIcon(Icons.forum_outlined),
+                matching: find.byType(InkWell),
+              ),
+            ))
+            .onTap,
+        isNotNull);
 
     viewModel.dispose();
   });

@@ -135,6 +135,11 @@ void main() {
         reason: 'which directory and which conversation in it are the two halves '
             'of "where am I", and only the directory was ever on screen');
 
+    final style = tester.widget<Text>(sessionName()).style!;
+    expect(style.fontWeight, FontWeight.bold,
+        reason: 'this is the centre of the bar and the name of what the rest of '
+            'the screen is about, not a caption on the directory');
+
     final folder = tester.getRect(folderName());
     final name = tester.getRect(sessionName());
     expect(name.left, greaterThan(folder.right),
@@ -240,8 +245,7 @@ void main() {
     final (service, viewModel) =
         await pumpHome(tester, sessionName: 'garden siren diagnosis');
 
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    await openSessionPicker(tester, sessionName: 'garden siren diagnosis');
     await settle(tester);
 
     final row = find.ancestor(

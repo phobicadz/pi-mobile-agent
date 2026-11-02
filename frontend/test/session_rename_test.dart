@@ -110,8 +110,7 @@ void main() {
   /// Open the session picker and return the rename button of the row whose title
   /// contains [ofTitle].
   Future<void> openRenameFor(WidgetTester tester, String ofTitle) async {
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    await openSessionPicker(tester);
     await settle(tester);
 
     final row = find.ancestor(
@@ -130,8 +129,7 @@ void main() {
   testWidgets('every session in the list can be renamed', (tester) async {
     final (_, viewModel) = await pumpHome(tester);
 
-    await openAppMenu(tester);
-    await tapMenuRow(tester, Icons.history);
+    await openSessionPicker(tester);
     await settle(tester);
 
     expect(find.byIcon(Icons.edit_outlined), findsNWidgets(2),

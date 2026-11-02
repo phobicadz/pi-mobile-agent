@@ -64,7 +64,6 @@ void main() {
 
     for (final label in const [
       'New session',
-      'Resume a previous session',
       'Chat text size',
       'Switch to dark mode',
     ]) {
@@ -72,6 +71,36 @@ void main() {
           reason: 'the menu replaced the icons, so it has to say in words what '
               'each icon meant');
     }
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the sessions are reached from the bar, not from the menu',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    // The bar is asked for before the menu is opened, because an open drawer
+    // covers it and a tap there hits the drawer.
+    expect(
+      find.descendant(
+          of: find.byType(AppBar), matching: find.byIcon(Icons.forum_outlined)),
+      findsOneWidget,
+      reason: 'a session with no name has nothing to show in the centre of the '
+          'bar, and switching the menu row off is only safe while the way in is '
+          'still somewhere');
+
+    await openAppMenu(tester);
+
+    expect(find.text('Resume a previous session'), findsNothing,
+        reason: 'the centre of the bar is the conversation - its name when it has '
+            'one, and the way to the list of them when it has none - which is one '
+            'tap from the chat it would replace instead of a menu away');
+    expect(
+      find.descendant(
+          of: find.byType(Drawer), matching: find.byIcon(Icons.history)),
+      findsNothing,
+      reason: 'and the menu is left with the settings that need room to explain '
+          'themselves, which a session list does not');
 
     viewModel.dispose();
   });
