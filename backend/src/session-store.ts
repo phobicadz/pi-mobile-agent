@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { randomUUID } from "crypto";
 import os from "os";
 import path from "path";
 
@@ -67,8 +68,11 @@ function parseSessionFile(filePath: string): PiSessionInfo | null {
         created = record.timestamp ?? "";
         continue;
       }
-      if (record.type === "session_info" && typeof record.name === "string") {
-        name = record.name;
+      if (record.type === "session_info") {
+        // A later entry without a name is Pi clearing one ("an absent name means
+        // it was cleared"), so it has to unset what an earlier entry set - last
+        // entry in the file wins, exactly as it does for the conversation.
+        name = typeof record.name === "string" ? record.name : undefined;
         continue;
       }
       if (record.type === "message" && record.message) {
@@ -169,4 +173,79 @@ export function listPiSessions(options: { cwd?: string; limit?: number } = {}): 
   sessions.sort((a, b) => b.modified.localeCompare(a.modified));
   const limit = options.limit ?? 50;
   return sessions.slice(0, limit);
+}
+
+/**
+ * What a session is about, for naming it: the text of its user messages, oldest
+ * first, cut off at `maxChars`. A title only needs enough of a conversation to
+ * tell it apart from the others in the list, not all of it.
+ */
+export function sessionPromptExcerpt(filePath: string, maxChars = 2000): string {
+  const parts: string[] = [];
+  let used = 0;
+
+  for (const line of readFileSync(filePath, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    let record: any;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (record.type !== "message" || record.message?.role !== "user") continue;
+
+    const text = textOf(record.message.content).trim();
+    if (!text) continue;
+
+    const room = maxChars - used;
+    if (room <= 0) break;
+    parts.push(text.slice(0, room));
+    used += Math.min(text.length, room);
+  }
+
+  return parts.join("\n\n");
+}
+
+/**
+ * Name a session that is not the one Pi is running (`session_info` on disk).
+ *
+ * Pi's own format is an appended entry rather than an edited header: a
+ * `session_info` hanging off the last entry, with a fresh id. Appending keeps
+ * every existing entry byte-for-byte where it was, which is the safe thing to
+ * do to a file someone else may still be reading.
+ *
+ * Pass null to clear the name, which is what Pi does with an empty `name`.
+ * Returns false when the file cannot be rewritten.
+ */
+export function setSessionNameOnDisk(filePath: string, name: string | null): boolean {
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const lines = content.split("\n").filter((line) => line.trim());
+
+    let parentId: string | null = null;
+    for (const line of lines) {
+      let record: any;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof record?.id === "string" && record.id) parentId = record.id;
+    }
+
+    const id = randomUUID().replace(/-/g, "").slice(0, 8);
+    const entry: Record<string, unknown> = {
+      type: "session_info",
+      id,
+      parentId,
+      timestamp: new Date().toISOString(),
+    };
+    if (name) entry.name = name;
+
+    const prefix = content.endsWith("\n") || content === "" ? "" : "\n";
+    writeFileSync(filePath, `${content}${prefix}${JSON.stringify(entry)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
 }

@@ -353,6 +353,82 @@ still in use.
 
 ---
 
+### rename_session
+
+Give a saved session a display name. The name is shown in the app's session
+picker and in Pi's own `/resume` instead of the first message. This is the
+backend for the pencil icon on each row of the picker.
+
+The backend picks the route. The session the live Pi is in is renamed through
+Pi (`set_session_name`), so Pi's own idea of the name stays in step with its
+file; every other session is a file nobody has open and gets a `session_info`
+entry appended to it directly — the same record Pi's `/name` writes, hanging off
+the last entry so the tree is left intact.
+
+**Request:**
+```json
+{
+  "id": "req-9",
+  "command": "rename_session",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl",
+  "name": "refactor auth module"
+}
+```
+
+`"name": null` clears the name, which is what Pi's `/name` does with an empty
+one; the session shows its first message again. A name is trimmed and capped at
+120 characters.
+
+**Response:**
+```json
+{
+  "id": "req-9",
+  "type": "response",
+  "command": "rename_session",
+  "success": true,
+  "data": { "renamed": true }
+}
+```
+
+---
+
+### generate_session_title
+
+Ask the model what a session should be called, and suggest it to the person
+rather than applying it. This backs the "Suggest a name" button in the rename
+dialog; `rename_session` is what actually names the session.
+
+The prompt is the session's own user messages, oldest first, capped at 2000
+characters. It is sent to a separate one-shot Pi (`pi --no-session --print`) so
+that neither the request nor the answer lands inside the conversation being
+named, and so a title request never appears in the session list as a session of
+its own. Allow well over the usual 30 seconds — this is a model call.
+
+**Request:**
+```json
+{
+  "id": "req-10",
+  "command": "generate_session_title",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-10",
+  "type": "response",
+  "command": "generate_session_title",
+  "success": true,
+  "data": { "title": "refactor auth module" }
+}
+```
+
+A session with no user messages, or a model that returned nothing usable, is an
+error rather than an empty name.
+
+---
+
 ### new_session
 
 Start a fresh Pi conversation in the directory Pi is already working in - the

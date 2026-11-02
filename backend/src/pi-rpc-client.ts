@@ -181,6 +181,17 @@ export class PiRpcClient extends EventEmitter {
     });
   }
 
+  /**
+   * Name the session Pi is currently in (`set_session_name`).
+   *
+   * Used instead of editing the session file when the session being renamed is
+   * the live one: Pi owns that file and appends to it itself, so going through
+   * Pi is what keeps its own idea of the name in step with what is on disk.
+   */
+  async setSessionName(name: string | null): Promise<RpcResponse> {
+    return this.sendCommand({ type: "set_session_name", name });
+  }
+
   close() {
     this.child.stdin.end();
     this.rl.close();

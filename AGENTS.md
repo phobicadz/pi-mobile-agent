@@ -26,7 +26,7 @@ The script is idempotent and safe to re-run after every change. It needs no sudo
 | Backend dev server (watch) | `cd backend && npm run dev` (tsx, port 3000) |
 | Frontend only | `cd frontend && ~/flutter/bin/flutter pub get && ~/flutter/bin/flutter build web` |
 | Frontend analyze / test | `cd frontend && ~/flutter/bin/flutter analyze` · `flutter test` |
-| Backend tests | `cd backend && npm test` |
+| Backend tests | no test script — `backend/package.json` has only `dev`, `build`, `start`. Check a backend change against a throwaway instance (`PORT=3999 node dist/index.js`) over a WebSocket, so the live service is not touched |
 | Service status / logs | `systemctl --user status pi-mobile-agent` · `journalctl --user -u pi-mobile-agent -n 100 --no-pager` |
 | Restart / stop | `systemctl --user restart\|stop pi-mobile-agent` |
 | Health check | `curl http://localhost:3000/health` → `{"status":"ok","pi_connected":true,...}` |
@@ -70,6 +70,17 @@ method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
   configured provider/model. Set them only to override.
 - **The web build needs no `--dart-define`**: it connects to the host that served the
   page. Native builds do need `SERVER_URL`.
+- **A session name is an appended entry, never an edited header.** Pi's format is a
+  `session_info` record hanging off the last entry, so renaming appends one and the
+  *last* one in the file wins — including a nameless one, which is how Pi clears a
+  name. Editing the header instead would leave the old name winning, and appending to
+  the file the live Pi is itself appending to is how a half-written line gets into a
+  session: rename the live one through RPC `set_session_name`, and only touch files
+  nobody has open directly.
+- **`pi --print` reads the prompt from stdin**, which is how a title request gets its
+  conversation without putting it in an argument. Wrap what you pipe in delimiters (the
+  backend uses `<conversation>…</conversation>`): a bare block of text on stdin reads to
+  a model as something to answer rather than something to name.
 - **Port 3000 is unauthenticated LAN HTTP.** Don't expose it beyond the LAN without a
   reverse proxy with auth/WSS.
 

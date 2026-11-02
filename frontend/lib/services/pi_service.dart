@@ -108,6 +108,7 @@ class PiService {
   Future<Map<String, dynamic>> _sendCommand(
     String command, {
     Map<String, dynamic>? params,
+    Duration? timeout,
   }) async {
     if (!_isConnected) {
       throw Exception('Not connected to Pi backend');
@@ -128,7 +129,7 @@ class PiService {
     try {
       _channel.sink.add(jsonEncode(message));
       return await completer.future.timeout(
-        const Duration(seconds: 30),
+        timeout ?? const Duration(seconds: 30),
         onTimeout: () {
           _pendingRequests.remove(id);
           throw Exception('Command timeout: $command');
@@ -243,6 +244,48 @@ class PiService {
     return (data['sessions'] as List<dynamic>? ?? [])
         .map((e) => PiSessionInfo.fromJson(e as Map<String, dynamic>))
         .toList();
+  }
+
+  /// Give a saved session a display name (`rename_session`).
+  ///
+  /// The backend decides how: the session the live Pi is in goes through Pi, so
+  /// its own idea of the name stays in step with the file, and every other one
+  /// is a file nobody has open and is appended to directly. Either way the name
+  /// is what the picker shows instead of the first message, and what Pi's own
+  /// `/resume` shows too.
+  ///
+  /// A null [name] clears it, which is what Pi's `/name` does with an empty one.
+  Future<void> renameSession(String sessionPath, String? name) async {
+    final response = await _sendCommand(
+      'rename_session',
+      params: {'sessionPath': sessionPath, 'name': name},
+    );
+    if (response['success'] == false) {
+      throw Exception('Rename failed: ${response['error']}');
+    }
+  }
+
+  /// Ask the model what a session should be called (`generate_session_title`).
+  ///
+  /// A suggestion, never an applied name: what a model guessed about a
+  /// conversation is worth showing someone before it becomes that conversation's
+  /// label. It is a model call rather than a socket read, so it is given longer
+  /// than the 30 seconds a command over a LAN link normally needs.
+  Future<String> suggestSessionTitle(String sessionPath) async {
+    final response = await _sendCommand(
+      'generate_session_title',
+      params: {'sessionPath': sessionPath},
+      timeout: const Duration(seconds: 100),
+    );
+    if (response['success'] == false) {
+      throw Exception('Naming failed: ${response['error']}');
+    }
+    final data = unwrapData(response, command: 'generate_session_title');
+    final title = (data['title'] as String? ?? '').trim();
+    if (title.isEmpty) {
+      throw Exception('The model returned no name');
+    }
+    return title;
   }
 
   /// Start a fresh Pi session in the directory Pi is already working in (like

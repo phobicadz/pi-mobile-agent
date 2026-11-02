@@ -8,7 +8,12 @@ import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
 import type { PromptImage } from "./pi-rpc-client.js";
-import { listPiSessions, sessionCwdOf } from "./session-store.js";
+import {
+  listPiSessions,
+  sessionCwdOf,
+  sessionPromptExcerpt,
+  setSessionNameOnDisk,
+} from "./session-store.js";
 import { listDirectory, listFiles, createDirectory, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
 const app = express();
@@ -281,6 +286,114 @@ function toPromptImages(raw: unknown): PromptImage[] | undefined {
       throw new Error(`image ${index + 1} is not an image`);
     }
     return { data, mimeType };
+  });
+}
+
+/**
+ * The session file the running Pi has open, or null when it has none.
+ *
+ * Asked for rather than remembered, because the running Pi is the only thing
+ * that knows: it opens a new file on the first prompt, and resuming swaps it.
+ * Renaming has to know which file is live in order to go through Pi for that
+ * one and straight to disk for the rest - appending to a file Pi is itself
+ * appending to is how a half-written line gets into a session.
+ */
+async function liveSessionFile(): Promise<string | null> {
+  if (!piClient) return null;
+  try {
+    const state = await piClient.getState();
+    const file = (state.data as Record<string, unknown> | undefined)?.sessionFile;
+    return typeof file === "string" && file ? path.resolve(file) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Trim what a model says into something a session list can show. */
+function cleanSessionTitle(text: string): string {
+  const line =
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? "";
+
+  const title = line
+    .replace(/^[-*•\d.)\s]+/, "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/[.,;:]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return title.length > 80 ? `${title.slice(0, 79).trim()}…` : title;
+}
+
+/**
+ * Ask the model for a short name for a conversation (`pi --print`).
+ *
+ * A separate one-shot Pi rather than the app's own child: asking the live
+ * session to name itself would put both the request and its answer inside the
+ * conversation being named. `--no-session` keeps the call out of the session
+ * list too, so asking what a session should be called never adds one.
+ */
+function titleWithModel(excerpt: string): Promise<string> {
+  // PI_COMMAND is the same override the RPC child honours.
+  const piCommand = process.env.PI_COMMAND || "pi";
+  const instruction =
+    "The text between <conversation> and </conversation> on stdin is the user " +
+    "side of one saved conversation. Name that conversation. Reply with the name " +
+    "only: two to five words, lower case, no quotes, no sentence, no " +
+    "explanation - it is a label in a list of saved sessions, so it has to say " +
+    "what this particular conversation is about.";
+
+  return new Promise((resolve, reject) => {
+    // On Windows "pi" is a pi.cmd shim that needs a shell, and a shell would
+    // also split the instruction into separate words, so there it is quoted.
+    const onWindows = process.platform === "win32";
+
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(
+        piCommand,
+        ["--no-session", "--print", onWindows ? `"${instruction}"` : instruction],
+        { cwd: currentCwd, shell: onWindows },
+      );
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    let out = "";
+    let errText = "";
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("The model took too long to name this session"));
+    }, 90_000);
+
+    child.stdout?.on("data", (chunk) => (out += chunk.toString()));
+    child.stderr?.on("data", (chunk) => (errText += chunk.toString()));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const title = cleanSessionTitle(out);
+      if (title) {
+        resolve(title);
+        return;
+      }
+      reject(
+        new Error(
+          errText.trim() || `No name came back (pi exited with ${code ?? "no code"})`,
+        ),
+      );
+    });
+
+    // Delimited, because a bare block of text on stdin reads to a model as an
+    // instruction to answer rather than as the thing to be named.
+    child.stdin?.write(`<conversation>\n${excerpt}\n</conversation>\n`);
+    child.stdin?.end();
   });
 }
 
@@ -644,6 +757,44 @@ async function handleClientMessage(ws: WebSocket, message: any) {
           }
         }
         break;
+      case "rename_session": {
+        // A name is a `session_info` entry, which is what Pi's own /name and
+        // set_session_name write. The live session goes through Pi so its own
+        // idea of the name stays in step with the file; every other session is
+        // a file nobody has open, so it is edited directly.
+        const target = typeof params.sessionPath === "string" ? params.sessionPath : "";
+        const name =
+          typeof params.name === "string" && params.name.trim()
+            ? params.name.trim().slice(0, 120)
+            : null;
+        if (!target) throw new Error("rename_session needs a sessionPath");
+        if (!existsSync(target)) throw new Error("That session is no longer here");
+
+        const live = await liveSessionFile();
+        if (live && path.resolve(target) === live) {
+          response = await piClient.setSessionName(name);
+        } else if (setSessionNameOnDisk(target, name)) {
+          response = { success: true, data: { renamed: true } };
+        } else {
+          throw new Error("The session file could not be rewritten");
+        }
+        break;
+      }
+      case "generate_session_title": {
+        // Suggest, never apply: what a model guessed is worth showing someone
+        // before it becomes the name of a conversation they were in.
+        const target = typeof params.sessionPath === "string" ? params.sessionPath : "";
+        if (!target) throw new Error("generate_session_title needs a sessionPath");
+        if (!existsSync(target)) throw new Error("That session is no longer here");
+
+        const excerpt = sessionPromptExcerpt(target);
+        if (!excerpt.trim()) {
+          throw new Error("That session has no messages to name");
+        }
+        const title = await titleWithModel(excerpt);
+        response = { success: true, data: { title } };
+        break;
+      }
       default:
         ws.send(
           JSON.stringify({

@@ -1039,6 +1039,49 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// Give a saved session a display name, and bring back the list the picker is
+  /// showing.
+  ///
+  /// The list is reloaded rather than patched in place: the backend goes through
+  /// Pi for the session that is live and edits the file for the others, and the
+  /// picker should show what is actually recorded rather than what this app
+  /// assumed it would become.
+  ///
+  /// A null or blank [name] clears the name, which leaves the first message as
+  /// what the picker shows - the session is not renamed, just unnamed again.
+  Future<bool> renameSession(PiSessionInfo session, String? name) async {
+    _error = null;
+    _notifyNow();
+    try {
+      final trimmed = name?.trim() ?? '';
+      await piService.renameSession(session.path, trimmed.isEmpty ? null : trimmed);
+      await piService.listSessions().then((value) => _sessions = value);
+      _notifyNow();
+      return true;
+    } catch (e) {
+      _error = 'Could not rename that session: $e';
+      _notifyNow();
+      return false;
+    }
+  }
+
+  /// Ask the model what [session] should be called.
+  ///
+  /// Returns the suggestion without applying it, so the person sees it in the
+  /// rename field and can keep it, change it, or ignore it. null when the model
+  /// could not be asked, with the reason left in [error] for the dialog to show.
+  Future<String?> suggestSessionTitle(PiSessionInfo session) async {
+    _error = null;
+    _notifyNow();
+    try {
+      return await piService.suggestSessionTitle(session.path);
+    } catch (e) {
+      _error = 'The model could not name it: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
   /// Start a fresh session in the current working directory (like `/new` in the
   /// TUI): the chat is emptied, the directory, model and token counters are left
   /// as they are. The conversation being replaced stays on disk and is still

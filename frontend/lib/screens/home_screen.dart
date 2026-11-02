@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../models/pi_models.dart';
 import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
 import '../utils/prompt_reference.dart';
@@ -12,6 +13,7 @@ import '../widgets/context_meter.dart';
 import '../widgets/file_browser.dart';
 import '../widgets/git_status_chip.dart';
 import '../widgets/model_selector.dart';
+import '../widgets/session_rename_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -222,6 +224,18 @@ class _HomeScreenState extends State<HomeScreen> {
                                 Navigator.of(sheetContext).pop();
                                 await vm.resumeSession(session.path);
                               },
+                              // Renaming lives on the row rather than inside the
+                              // conversation: a name is about finding a session,
+                              // and this is the list that is searched by name.
+                              trailing: IconButton(
+                                icon: const Icon(Icons.edit_outlined),
+                                tooltip: 'Rename',
+                                onPressed: () => _showRenameSessionDialog(
+                                  sheetContext,
+                                  vm,
+                                  session,
+                                ),
+                              ),
                             );
                           },
                         ),
@@ -231,6 +245,22 @@ class _HomeScreenState extends State<HomeScreen> {
           },
         ),
       ),
+    );
+  }
+
+  /// Open the dialog that names a saved session.
+  ///
+  /// The dialog is a widget of its own (see `SessionRenameDialog`) because it
+  /// holds a text controller, and a controller disposed by whoever opened the
+  /// dialog is gone before the dialog has finished animating out.
+  Future<void> _showRenameSessionDialog(
+    BuildContext context,
+    PiViewModel viewModel,
+    PiSessionInfo session,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (_) => SessionRenameDialog(session: session, viewModel: viewModel),
     );
   }
 
