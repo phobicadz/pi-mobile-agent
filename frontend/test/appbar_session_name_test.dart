@@ -160,6 +160,42 @@ void main() {
     viewModel.dispose();
   });
 
+  testWidgets('the name sits in the middle of the bar, at both widths',
+      (tester) async {
+    for (final width in const [Size(390, 844), Size(1280, 900)]) {
+      final (_, viewModel) = await pumpHome(
+        tester,
+        sessionName: 'garden siren diagnosis',
+        width: width,
+      );
+
+      // The title box is the space the AppBar leaves between the menu button and
+      // the actions, and it is the box the name has to be centred in - the bar
+      // itself would be centred on the model picker.
+      final title = tester.getRect(
+        find
+            .descendant(
+                of: find.byType(AppBar),
+                matching: find.byType(Consumer<PiViewModel>))
+            .first,
+      );
+      final name = tester.getRect(sessionName());
+
+      expect((name.center.dx - title.center.dx).abs(), lessThan(2),
+          reason: 'the middle box is bounded by equal flexes on both sides, so '
+              'its centre is the title\'s centre whatever the numbers are '
+              '(width $width)');
+      expect(name.center.dx,
+          greaterThan(tester
+              .getRect(find.descendant(
+                  of: find.byType(AppBar), matching: find.text('pi-mobile-agent')))
+              .right),
+          reason: 'and centring it does not mean laying it over the directory');
+
+      viewModel.dispose();
+    }
+  });
+
   testWidgets('an unnamed session shows nothing rather than a placeholder',
       (tester) async {
     final (_, viewModel) = await pumpHome(tester);
@@ -193,7 +229,7 @@ void main() {
       matching: find.textContaining('refactor the mobile agent'),
     ));
     expect(name.right, lessThanOrEqualTo(bar.right));
-    expect(name.width, lessThan(bar.width * 0.6),
+    expect(name.width, lessThan(bar.width * 0.4),
         reason: 'it gets the smaller share of the flex, so a long one ellipsizes '
             'its own half instead of the path');
 

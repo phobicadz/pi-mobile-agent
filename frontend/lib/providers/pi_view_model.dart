@@ -22,6 +22,7 @@ class PiViewModel extends ChangeNotifier {
   String? _gitBranch;
   GitStatus? _gitStatus;
   String? _sessionName;
+  String? _liveSessionPath;
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
@@ -148,6 +149,14 @@ class PiViewModel extends ChangeNotifier {
   /// refreshed with the rest of the state, so renaming the live session shows up
   /// in the bar as soon as the state is asked for again.
   String? get sessionName => _sessionName;
+
+  /// The file the live Pi session is backed by, or null when it has none (a
+  /// conversation with no turns yet has no file).
+  ///
+  /// The session picker needs it for one decision: which row is the conversation
+  /// being had, and therefore must not be deleted out from under the agent that
+  /// is still writing it.
+  String? get liveSessionPath => _liveSessionPath;
   bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
@@ -255,6 +264,7 @@ class PiViewModel extends ChangeNotifier {
       // rename to nothing, or after a new session, is describing a session it is
       // no longer in.
       _sessionName = state.sessionName;
+      _liveSessionPath = state.sessionFile;
       // Pi's state is the only thing that can say whether a run is still in
       // flight after the socket dropped mid-run - a backend restart, a phone
       // sleeping, a walk out of wifi range. The agent_end that would have
@@ -1099,7 +1109,27 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
-  /// Start a fresh session in the current working directory (like `/new` in the
+  /// Remove a saved session and its conversation from the list.
+  ///
+  /// The list is reloaded rather than dropped locally, so what the picker shows
+  /// is what is on disk — including the case where the backend trashed the file
+  /// instead of unlinking it and someone wants it back.
+  Future<bool> deleteSession(PiSessionInfo session) async {
+    _error = null;
+    _notifyNow();
+    try {
+      await piService.deleteSession(session.path);
+      _sessions = await piService.listSessions();
+      _notifyNow();
+      return true;
+    } catch (e) {
+      _error = 'Could not delete that session: $e';
+      _notifyNow();
+      return false;
+    }
+  }
+
+  /// Start a fresh Pi session in the current working directory (like `/new` in the
   /// TUI): the chat is emptied, the directory, model and token counters are left
   /// as they are. The conversation being replaced stays on disk and is still
   /// reachable from the session picker.

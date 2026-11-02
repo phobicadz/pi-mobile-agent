@@ -27,6 +27,10 @@ class PiState {
   /// none. Pi reports it in `get_state` as `sessionName` (omitted when unset),
   /// and it is what `rename_session` changes.
   final String? sessionName;
+
+  /// The file the live Pi session is backed by. It is how the session picker
+  /// knows which row is the conversation being had — the one it must not delete.
+  final String? sessionFile;
   final Map<String, dynamic>? raw;
 
   PiState({
@@ -40,6 +44,7 @@ class PiState {
     this.gitBranch,
     this.gitStatus,
     this.sessionName,
+    this.sessionFile,
     this.raw,
   });
 
@@ -64,6 +69,7 @@ class PiState {
           ? GitStatus.fromJson(Map<String, dynamic>.from(json['gitStatus'] as Map))
           : null,
       sessionName: json['sessionName'] as String?,
+      sessionFile: json['sessionFile'] as String?,
       raw: json,
     );
   }
@@ -79,6 +85,7 @@ class PiState {
     String? gitBranch,
     GitStatus? gitStatus,
     String? sessionName,
+    String? sessionFile,
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
@@ -91,6 +98,7 @@ class PiState {
       gitBranch: gitBranch ?? this.gitBranch,
       gitStatus: gitStatus ?? this.gitStatus,
       sessionName: sessionName ?? this.sessionName,
+      sessionFile: sessionFile ?? this.sessionFile,
       raw: raw,
     );
   }

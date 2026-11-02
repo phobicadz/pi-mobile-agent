@@ -1,4 +1,5 @@
-import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
 import { randomUUID } from "crypto";
 import os from "os";
 import path from "path";
@@ -247,5 +248,48 @@ export function setSessionNameOnDisk(filePath: string, name: string | null): boo
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * Remove a session file, trying `trash` first and falling back to unlink.
+ *
+ * The same order Pi's own session picker uses, on purpose: a session deleted
+ * from the app and one deleted from the TUI should end up in the same place,
+ * and where a trashing tool exists that place is recoverable. A conversation is
+ * the one thing here that cannot be re-derived.
+ *
+ * The caller is responsible for not handing it the file Pi is running - that one
+ * is still open, and its history is still being appended to.
+ */
+export function deleteSessionOnDisk(
+  filePath: string,
+): { ok: boolean; method: "trash" | "unlink"; error?: string } {
+  // A path beginning with "-" would otherwise read to trash as an option.
+  const args = filePath.startsWith("-") ? ["--", filePath] : [filePath];
+  const trashResult = spawnSync("trash", args, { encoding: "utf-8" });
+
+  // Success from trash, or the file simply not being there afterwards.
+  if (trashResult.status === 0 || !existsSync(filePath)) {
+    return { ok: true, method: "trash" };
+  }
+
+  const trashHint = [
+    trashResult.error?.message,
+    trashResult.stderr?.trim()?.split("\n")[0],
+  ]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" · ");
+
+  try {
+    unlinkSync(filePath);
+    return { ok: true, method: "unlink" };
+  } catch (err) {
+    const unlinkError = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      method: "unlink",
+      error: trashHint ? `${unlinkError} (trash: ${trashHint.slice(0, 200)})` : unlinkError,
+    };
   }
 }

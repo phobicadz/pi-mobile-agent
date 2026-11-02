@@ -9,6 +9,7 @@ import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
 import type { PromptImage } from "./pi-rpc-client.js";
 import {
+  deleteSessionOnDisk,
   listPiSessions,
   sessionCwdOf,
   sessionPromptExcerpt,
@@ -778,6 +779,33 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         } else {
           throw new Error("The session file could not be rewritten");
         }
+        break;
+      }
+      case "delete_session": {
+        // A saved conversation, not the one being had: the live session's file is
+        // open and still being appended to, so removing it from under Pi would
+        // leave an app that is in a conversation that no longer exists. The
+        // caller starts a new session first, which is what the picker says.
+        const target = typeof params.sessionPath === "string" ? params.sessionPath : "";
+        if (!target) throw new Error("delete_session needs a sessionPath");
+
+        // Asked before the file is looked for, because a session Pi has just
+        // started has a path and no file yet - and "that is no longer here" about
+        // the conversation the app is sitting in is the wrong wrong answer.
+        const live = await liveSessionFile();
+        if (live && path.resolve(target) === live) {
+          throw new Error(
+            "That is the session you are in. Start a new one and it can be deleted.",
+          );
+        }
+
+        if (!existsSync(target)) throw new Error("That session is no longer here");
+
+        const deleted = deleteSessionOnDisk(target);
+        if (!deleted.ok) {
+          throw new Error(deleted.error ?? "The session file could not be removed");
+        }
+        response = { success: true, data: { deleted: true, method: deleted.method } };
         break;
       }
       case "generate_session_title": {

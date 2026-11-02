@@ -288,6 +288,23 @@ class PiService {
     return title;
   }
 
+  /// Remove a saved session (`delete_session`).
+  ///
+  /// The backend tries `trash` and falls back to unlinking, which is the order
+  /// Pi's own session picker uses — so a session removed from the app and one
+  /// removed from the TUI end up in the same place, and where a trashing tool
+  /// exists that place is recoverable. It refuses the session the live Pi is in:
+  /// that file is open and still being written to.
+  Future<void> deleteSession(String sessionPath) async {
+    final response = await _sendCommand(
+      'delete_session',
+      params: {'sessionPath': sessionPath},
+    );
+    if (response['success'] == false) {
+      throw Exception('Delete failed: ${response['error']}');
+    }
+  }
+
   /// Start a fresh Pi session in the directory Pi is already working in (like
   /// `/new` in the TUI). The conversation being left behind stays on disk, so
   /// the session picker can load it again.

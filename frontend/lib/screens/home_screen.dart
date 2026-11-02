@@ -201,6 +201,12 @@ class _HomeScreenState extends State<HomeScreen> {
                           separatorBuilder: (_, __) => const Divider(height: 1),
                           itemBuilder: (_, index) {
                             final session = sessions[index];
+                            // The conversation being had. Its file is open and still
+                            // being appended to, so deleting it would leave an app
+                            // sitting in a conversation that no longer exists - the row
+                            // says so instead of the backend throwing at it.
+                            final isLive = vm.liveSessionPath != null &&
+                                vm.liveSessionPath == session.path;
                             final title =
                                 session.name != null && session.name!.isNotEmpty
                                     ? session.name!
@@ -227,14 +233,32 @@ class _HomeScreenState extends State<HomeScreen> {
                               // Renaming lives on the row rather than inside the
                               // conversation: a name is about finding a session,
                               // and this is the list that is searched by name.
-                              trailing: IconButton(
-                                icon: const Icon(Icons.edit_outlined),
-                                tooltip: 'Rename',
-                                onPressed: () => _showRenameSessionDialog(
-                                  sheetContext,
-                                  vm,
-                                  session,
-                                ),
+                              trailing: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.edit_outlined),
+                                    tooltip: 'Rename',
+                                    onPressed: () => _showRenameSessionDialog(
+                                      sheetContext,
+                                      vm,
+                                      session,
+                                    ),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.delete_outline),
+                                    tooltip: isLive
+                                        ? 'This is the session you are in'
+                                        : 'Delete',
+                                    onPressed: isLive
+                                        ? null
+                                        : () => _confirmDeleteSession(
+                                            sheetContext,
+                                            vm,
+                                            session,
+                                          ),
+                                  ),
+                                ],
                               ),
                             );
                           },
@@ -262,6 +286,63 @@ class _HomeScreenState extends State<HomeScreen> {
       context: context,
       builder: (_) => SessionRenameDialog(session: session, viewModel: viewModel),
     );
+  }
+
+  /// Ask before a session is deleted, then delete it.
+  ///
+  /// The confirmation is the whole point: this removes a conversation, not a
+  /// listing of one, and the only thing that says whether the file was trashed or
+  /// unlinked is the backend's answer. Deleting the session the app is sitting in
+  /// is refused on the row, so it never reaches here.
+  Future<void> _confirmDeleteSession(
+    BuildContext context,
+    PiViewModel viewModel,
+    PiSessionInfo session,
+  ) async {
+    final title = session.name?.trim().isNotEmpty == true
+        ? session.name!.trim()
+        : (session.preview.isNotEmpty ? session.preview : '(empty session)');
+
+    final deleted = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete this session?'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '${session.messageCount} messages in '
+              '${session.cwd.isEmpty ? 'an unknown directory' : session.cwd}.\n\n'
+              'The conversation goes with it. Where the machine has a trash '
+              'command the file is trashed rather than erased, which is the same '
+              'way the Pi session picker removes one.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Keep it'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (deleted != true) return;
+    await viewModel.deleteSession(session);
   }
 
   static String _formatAge(DateTime time) {
@@ -535,131 +616,122 @@ class _HomeScreenState extends State<HomeScreen> {
             // simply nothing to show rather than a placeholder for an unnamed chat.
             final sessionName = viewModel.sessionName?.trim() ?? '';
 
-            return Row(
+            // Two controls in one Row with the name's box exactly in the middle
+            // of it. With the two outer flexes equal - a, b, a - the middle box
+            // spans [a, a+b] of (2a+b), whose centre is (a + b/2) / (2a + b) = 1/2
+            // whatever the numbers are. That is why the two side flexes match, and
+            // why the name's share is the smaller one: a name that has to be
+            // squeezed is the one that reads as secondary.
+            //
+            // The name belongs in the bar because it is the other half of "where am
+            // I": which directory, and which conversation in it. It is also the only
+            // place the live session's name is ever visible - the picker lists saved
+            // sessions, and the one being had is the one not there.
+            //
+            // The flex lives in this Row and each Tooltip wraps its Text directly.
+            // The other way round - a Tooltip holding a Row with an Expanded in it -
+            // is a layout error: the widget a Tooltip keeps in place is laid out with
+            // no width constraint of its own, and a flex child inside an unconstrained
+            // Row throws rather than degrading.
+            final folderGroup = Row(
               children: [
-                // Left: directory icon, then the name, with the full path in a
-                // tooltip.
-                //
-                // The flex lives in this Row and the Tooltip sits inside it,
-                // wrapping the Text directly. The other way round - a Tooltip
-                // holding a Row with an Expanded in it - is a layout error: the
-                // widget a Tooltip keeps in place is laid out with no width
-                // constraint of its own, and a flex child inside an unconstrained
-                // Row throws rather than degrading.
-                // Tapping it opens the same browser the menu offers as
-                // "Browse files & set working directory". Which directory a run
-                // happens in is decided while the chat is being read, and the
-                // folder is already on screen saying it - sending the user to a
-                // hamburger to change it is a second place to learn the same
-                // thing.
+                const Icon(
+                  Icons.folder_open,
+                  size: 18,
+                ),
+                const SizedBox(width: 6),
                 Expanded(
-                  child: Row(
-                    children: [
-                      // The directory is the primary half and the session name the
-                      // secondary one, so the flex favours it: 3 to 2 means a short
-                      // name costs the directory nothing it needs, and a long one
-                      // ellipsizes its own share rather than the path.
-                      //
-                      // Both are loose-fit. A tight Expanded here would claim every
-                      // pixel left over after the name's share, which is the same
-                      // mistake that put the git chip in the middle of the bar.
-                      //
-                      // The name belongs in the bar because it is the other half of
-                      // "where am I": which directory, and which conversation in it.
-                      // It is also the only place the live session's name is ever
-                      // visible - the picker shows saved sessions, and the live one
-                      // is the one you cannot find there without scrolling.
-                      Flexible(
-                        flex: 3,
-                        fit: FlexFit.loose,
-                        // A click cursor is the only thing that says "this is a
-                        // control" on a laptop browser, where there is no press to
-                        // find it by.
-                        child: MouseRegion(
-                          cursor: SystemMouseCursors.click,
-                          child: InkWell(
-                            onTap: () => _showFileBrowser(context),
-                            // The ripple wants a little more than the text's own box,
-                            // and on a phone the whole strip is what the thumb has to
-                            // be able to land on.
-                            child: Padding(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 10,
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.folder_open,
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Expanded(
-                                    child: Tooltip(
-                                      message: cwd.isEmpty
-                                          ? 'No directory selected'
-                                          : cwd,
-                                      child: Text(
-                                        dirName,
-                                        overflow: TextOverflow.ellipsis,
-                                        maxLines: 1,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      if (sessionName.isNotEmpty)
-                        Flexible(
-                          flex: 2,
-                          fit: FlexFit.loose,
-                          child: InkWell(
-                            // Tapping it opens the session picker. The name is the
-                            // live session's, and the one thing worth doing with it
-                            // is leaving it - which is a decision made while looking
-                            // at the list of where else one could be.
-                            //
-                            // It is a separate control from the folder next to it on
-                            // purpose: one changes where the agent works, the other
-                            // which conversation it is in, and merging them would
-                            // make the second impossible to reach without guessing.
-                            onTap: () => _showSessionPicker(context),
-                            child: MouseRegion(
-                              cursor: SystemMouseCursors.click,
-                              child: Padding(
-                                padding: const EdgeInsets.only(
-                                  right: 6,
-                                  top: 10,
-                                  bottom: 10,
-                                ),
-                                // Dimmer and smaller than the directory: it names the
-                                // conversation, and the bar should read as a location
-                                // first. The tooltip says what the tap does, because
-                                // a name in a bar looks like a label and nothing else.
-                                child: Tooltip(
-                                  message: 'Session: $sessionName — tap to switch or '
-                                      'rename it',
-                                  child: Text(
-                                    sessionName,
-                                    overflow: TextOverflow.ellipsis,
-                                    maxLines: 1,
-                                    // labelMedium is what the git chip in this bar uses
-                                    // for the same kind of secondary text, so the two
-                                    // read as the same class of thing in both themes
-                                    // rather than as hand-picked greys.
-                                    style: Theme.of(context).textTheme.labelMedium,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
+                  child: Tooltip(
+                    message: cwd.isEmpty ? 'No directory selected' : cwd,
+                    child: Text(
+                      dirName,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
                   ),
                 ),
+              ],
+            );
+
+            // A click cursor is the only thing that says "this is a control" on a
+            // laptop browser, where there is no press to find it by. The padding is
+            // the tap target: on a phone the whole strip is what a thumb has to be
+            // able to land on.
+            final folderControl = MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                // Tapping it opens the same browser the menu offers as "Browse files
+                // & set working directory". Which directory a run happens in is decided
+                // while the chat is being read, and the folder is already on screen
+                // saying it - sending the user to a hamburger to change it is a second
+                // place to learn the same thing.
+                onTap: () => _showFileBrowser(context),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 10,
+                  ),
+                  child: folderGroup,
+                ),
+              ),
+            );
+
+            final nameControl = MouseRegion(
+              cursor: SystemMouseCursors.click,
+              child: InkWell(
+                // Tapping it opens the session picker. The name is the live session's,
+                // and the one thing worth doing with it is leaving it - a decision made
+                // while looking at the list of where else one could be.
+                //
+                // It is a separate control from the folder beside it on purpose: one
+                // changes where the agent works, the other which conversation it is in,
+                // and merging them would make the second impossible to reach without
+                // guessing which one was meant.
+                onTap: () => _showSessionPicker(context),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 10,
+                  ),
+                  child: Tooltip(
+                    message: 'Session: $sessionName — tap to switch or '
+                        'rename it',
+                    child: Text(
+                      sessionName,
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                      // labelMedium is what the git chip in this bar uses for the same
+                      // kind of secondary text, so the two read as the same class of
+                      // thing in both themes rather than as hand-picked greys.
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ),
+                ),
+              ),
+            );
+
+            return Row(
+              children: [
+                Expanded(
+                  flex: sessionName.isEmpty ? 1 : 4,
+                  child: folderControl,
+                ),
+                if (sessionName.isNotEmpty) ...[
+                  // Centred: the box is centred, and Center puts the text in the middle
+                  // of a box it does not have to fill. Loose-fit, so a short name costs
+                  // the bar nothing and a long one ellipsizes inside its own share.
+                  Flexible(
+                    flex: 3,
+                    fit: FlexFit.loose,
+                    child: Center(child: nameControl),
+                  ),
+                  // The counterweight. Without an identical share on the right there is
+                  // no centre to put anything in.
+                  const Expanded(
+                    flex: 4,
+                    child: SizedBox.shrink(),
+                  ),
+                ],
               ],
             );
           },

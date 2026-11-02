@@ -411,6 +411,45 @@ one; the session shows its first message again. A name is trimmed and capped at
 
 ---
 
+### delete_session
+
+Remove a saved session. This is the backend for the trash icon on each row of
+the session picker.
+
+It refuses the session the live Pi is in: that file is open and still being
+appended to, so removing it would leave the app sitting in a conversation that no
+longer exists. The picker switches that row's delete off and says why, so the
+refusal is normally never seen.
+
+The file goes the way Pi's own session picker sends it: `trash` first where the
+machine has one, then unlinking. That is reported back, because whether a
+conversation is recoverable is worth knowing.
+
+**Request:**
+```json
+{
+  "id": "req-11",
+  "command": "delete_session",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-11",
+  "type": "response",
+  "command": "delete_session",
+  "success": true,
+  "data": { "deleted": true, "method": "trash" }
+}
+```
+
+An unknown path, a session already gone, and the live session are all errors with
+a sentence each.
+
+---
+
 ### generate_session_title
 
 Ask the model what a session should be called, and suggest it to the person
