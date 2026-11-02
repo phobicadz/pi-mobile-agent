@@ -512,26 +512,35 @@ class _HomeScreenState extends State<HomeScreen> {
 
             return Row(
               children: [
-                // Left: Directory icon + name with tooltip
+                // Left: directory icon, then the name, with the full path in a
+                // tooltip.
+                //
+                // The flex lives in this Row and the Tooltip sits inside it,
+                // wrapping the Text directly. The other way round - a Tooltip
+                // holding a Row with an Expanded in it - is a layout error: the
+                // widget a Tooltip keeps in place is laid out with no width
+                // constraint of its own, and a flex child inside an unconstrained
+                // Row throws rather than degrading.
                 Expanded(
-                  child: Tooltip(
-                    message: cwd.isEmpty ? 'No directory selected' : cwd,
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.folder_open,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.folder_open,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Tooltip(
+                          message:
+                              cwd.isEmpty ? 'No directory selected' : cwd,
                           child: Text(
                             dirName,
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
                 // Right: Git icon + branch name (if available), with the state
@@ -540,29 +549,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 // unpushed is worth a press or a hover.
                 if (branchName != null && branchName.isNotEmpty) ...[
                   const SizedBox(width: 12),
-                  Tooltip(
-                    message: git?.describe() ?? branchName,
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.merge_type,
-                          size: 16,
-                          // A conflict is the one state the colour should say on
-                          // its own: unlike "dirty", it blocks the next commit.
-                          color: (git?.conflicted ?? 0) > 0
-                              ? Theme.of(context).colorScheme.error
-                              : null,
-                        ),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            branchName,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                            style: Theme.of(context).textTheme.labelMedium,
-                          ),
-                        ),
-                      ],
+                  Icon(
+                    Icons.merge_type,
+                    size: 16,
+                    // A conflict is the one state the colour should say on its
+                    // own: unlike "dirty", it blocks the next commit.
+                    color: (git?.conflicted ?? 0) > 0
+                        ? Theme.of(context).colorScheme.error
+                        : null,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Tooltip(
+                      message: git?.describe() ?? branchName,
+                      child: Text(
+                        branchName,
+                        overflow: TextOverflow.ellipsis,
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelMedium,
+                      ),
                     ),
                   ),
                 ],

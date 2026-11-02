@@ -277,6 +277,22 @@ class PiViewModel extends ChangeNotifier {
       if (_sessionStats == null) {
         unawaited(_refreshSessionStats());
       }
+      // And the same goes for the conversation itself. Reopening the app after
+      // closing it starts nothing: the backend's Pi process has been alive the
+      // whole time, in its own directory, with its own history and its own token
+      // totals - and the state above tells the app bar all three. Loading what
+      // that session actually contains is what makes the chat agree with the bar
+      // instead of showing an empty one beside another conversation's numbers.
+      //
+      // Not while a run is in flight: Pi is mid-answer, the chat is being built
+      // from the live event stream, and swapping in the messages persisted so far
+      // would drop the reply arriving right now.
+      if (_messages.isEmpty &&
+          !state.isProcessing &&
+          !_resumingSession &&
+          !_historyHydrating) {
+        unawaited(_hydrateCurrentSession());
+      }
       _notifyNow();
     });
 
@@ -672,6 +688,37 @@ class PiViewModel extends ChangeNotifier {
       // shows this run's numbers only.
     } finally {
       _statsInFlight = false;
+    }
+  }
+
+  /// Load the conversation the live Pi session is holding.
+  ///
+  /// This is what makes reopening the app mean what it looks like it means. The
+  /// backend's Pi process is not restarted when the last tab closes, so coming
+  /// back joins a session that kept running - in its own directory, with its own
+  /// history and its own token totals. The app bar is fed from the backend's
+  /// state and knows all three; only the chat was left to start empty, which is
+  /// the point where "my last folder and my last context are back" turns into
+  /// "...but the conversation isn't".
+  ///
+  /// An empty answer is left alone rather than loaded: a fresh session genuinely
+  /// has nothing, and clearing a chat to put nothing back in it is a rebuild for
+  /// no visible reason.
+  bool _historyHydrating = false;
+
+  Future<void> _hydrateCurrentSession() async {
+    if (_historyHydrating) return;
+    _historyHydrating = true;
+    try {
+      final history = await piService.loadCurrentHistory();
+      if (history.isEmpty) return;
+      _loadHistory(history);
+      _notifyNow();
+    } catch (_) {
+      // A backend without get_messages, or a socket that went away mid-request:
+      // an empty chat is the honest fallback, not a half-built one.
+    } finally {
+      _historyHydrating = false;
     }
   }
 

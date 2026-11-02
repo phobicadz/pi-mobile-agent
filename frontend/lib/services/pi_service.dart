@@ -255,6 +255,23 @@ class PiService {
     }
   }
 
+  /// The conversation the live Pi session is actually holding.
+  ///
+  /// The backend's Pi process outlives the browser: closing the tab leaves the
+  /// session running in its directory, and reconnecting joins that same session.
+  /// An app that never asks what it contains shows an empty chat over a
+  /// conversation with a history in it - while the app bar, which is fed from
+  /// the backend's state, correctly reports that session's directory and its
+  /// context figures. The numbers then look like they belong to a conversation
+  /// that was never loaded.
+  Future<List<Map<String, dynamic>>> loadCurrentHistory() async {
+    final response = await _sendCommand('get_messages');
+    final data = unwrapData(response, command: 'get_messages');
+    return (data['messages'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
+  }
+
   /// Loads a saved session into the live Pi runtime. Returns the restored
   /// conversation history so the UI can hydrate it.
   Future<List<Map<String, dynamic>>> resumeSession(String sessionPath) async {
@@ -265,11 +282,9 @@ class PiService {
     if (!response['success']) {
       throw Exception('Resume failed: ${response['error']}');
     }
-    final history = await _sendCommand('get_messages');
-    final data = unwrapData(history, command: 'get_messages');
-    return (data['messages'] as List<dynamic>? ?? [])
-        .map((e) => e as Map<String, dynamic>)
-        .toList();
+    // After the switch, "the current session" *is* the one being resumed, so the
+    // history is read the same way rather than duplicated here.
+    return loadCurrentHistory();
   }
 
   /// Report what the browser and Flutter each think the screen is, along with

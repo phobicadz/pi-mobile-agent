@@ -80,6 +80,12 @@ method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
   `Icons.*` name only fails at the web compile step, with `Error: Member not found:`.
 - **Do not use `Theme.of(context).colorScheme.onAppBar`** — it isn't a ColorScheme member.
   AppBar children inherit the right foreground colour; leave icon colours unset.
+- **Don't put `Expanded`/`Flexible` inside a `Tooltip`'s child.** The widget a
+  `Tooltip` keeps in place is laid out with no width constraint of its own, so a
+  flex child inside that Row throws `RenderFlex children have non-zero flex but
+  incoming width constraints are unbounded`. Put the flex in the outer Row and the
+  `Tooltip` inside it, wrapping the `Text` directly. Only visible when the branch
+  data is actually present, so a test that supplies a `gitBranch` is what catches it.
 - `flutter build web` prints a harmless `Expected to find fonts for ... cupertino_icons`
   warning and a wasm dry-run notice. Success is the final `✓ Built build/web`.
 - `systemctl --user …` from a non-login shell may need `XDG_RUNTIME_DIR`; the service
