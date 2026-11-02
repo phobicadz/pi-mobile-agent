@@ -521,26 +521,51 @@ class _HomeScreenState extends State<HomeScreen> {
                 // widget a Tooltip keeps in place is laid out with no width
                 // constraint of its own, and a flex child inside an unconstrained
                 // Row throws rather than degrading.
+                // Tapping it opens the same browser the menu offers as
+                // "Browse files & set working directory". Which directory a run
+                // happens in is decided while the chat is being read, and the
+                // folder is already on screen saying it - sending the user to a
+                // hamburger to change it is a second place to learn the same
+                // thing.
                 Expanded(
-                  child: Row(
-                    children: [
-                      const Icon(
-                        Icons.folder_open,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Tooltip(
-                          message:
-                              cwd.isEmpty ? 'No directory selected' : cwd,
-                          child: Text(
-                            dirName,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
+                  // A click cursor is the only thing that says "this is a
+                  // control" on a laptop browser, where there is no press to
+                  // find it by.
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.click,
+                    child: InkWell(
+                      onTap: () => _showFileBrowser(context),
+                    // The ripple wants a little more than the text's own box,
+                    // and on a phone the whole strip is what the thumb has to
+                    // be able to land on.
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 10,
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.folder_open,
+                              size: 18,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Tooltip(
+                                message: cwd.isEmpty
+                                    ? 'No directory selected'
+                                    : cwd,
+                                child: Text(
+                                  dirName,
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 1,
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
                 // Right: Git icon + branch name (if available), with the state
