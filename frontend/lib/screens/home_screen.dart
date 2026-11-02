@@ -250,6 +250,16 @@ class _HomeScreenState extends State<HomeScreen> {
                                     tooltip: isLive
                                         ? 'This is the session you are in'
                                         : 'Delete',
+                                    // Red, and only where it can be pressed: the
+                                    // colour is saying "this one can be thrown
+                                    // away", and painting the one that cannot be
+                                    // red as well would make the colour mean
+                                    // nothing. colorScheme.error rather than a red,
+                                    // so it is the same red the rest of the app uses
+                                    // for a thing that can cost you something.
+                                    color: isLive
+                                        ? null
+                                        : Theme.of(context).colorScheme.error,
                                     onPressed: isLive
                                         ? null
                                         : () => _confirmDeleteSession(

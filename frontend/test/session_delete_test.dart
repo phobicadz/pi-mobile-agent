@@ -153,6 +153,26 @@ void main() {
     viewModel.dispose();
   });
 
+  testWidgets('the bin is red where it can be pressed, and not where it cannot',
+      (tester) async {
+    final (_, viewModel) = await pumpHome(tester);
+
+    final theme = Theme.of(tester.element(sheetRow(tester, 'the one that finished')));
+    final deletable =
+        tester.widget<IconButton>(deleteButtonFor(tester, 'the one that finished'));
+    final live =
+        tester.widget<IconButton>(deleteButtonFor(tester, 'the one being had'));
+
+    expect(deletable.color, theme.colorScheme.error,
+        reason: 'the colour says "this one can be thrown away", which is the one '
+            'thing worth saying before someone presses it');
+    expect(live.color, isNull,
+        reason: 'painting the one that cannot be deleted red too would make the '
+            'colour mean nothing');
+
+    viewModel.dispose();
+  });
+
   testWidgets('deleting asks first, and keeping it keeps it', (tester) async {
     final (service, viewModel) = await pumpHome(tester);
 
