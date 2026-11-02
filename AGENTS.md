@@ -80,6 +80,11 @@ method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
   `Icons.*` name only fails at the web compile step, with `Error: Member not found:`.
 - **Do not use `Theme.of(context).colorScheme.onAppBar`** — it isn't a ColorScheme member.
   AppBar children inherit the right foreground colour; leave icon colours unset.
+- **The AppBar's title box is width-limited by the AppBar itself**, so a flex in the
+  `title` can only fill that box — never reach the right edge of the bar. Anything that
+  belongs at the right end (the git chip) goes in `actions`, which is what the bar actually
+  right-aligns. Measured positions are the way to check this: `tester.getRect(...)` at both a
+  phone width and a desktop width, because centring only shows up when the window is wide.
 - **Don't put `Expanded`/`Flexible` inside a `Tooltip`'s child.** The widget a
   `Tooltip` keeps in place is laid out with no width constraint of its own, so a
   flex child inside that Row throws `RenderFlex children have non-zero flex but

@@ -10,6 +10,7 @@ import '../widgets/attachment_tray.dart';
 import '../widgets/chat_list.dart';
 import '../widgets/context_meter.dart';
 import '../widgets/file_browser.dart';
+import '../widgets/git_status_chip.dart';
 import '../widgets/model_selector.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -507,8 +508,6 @@ class _HomeScreenState extends State<HomeScreen> {
             final dirName = cwd.isEmpty
                 ? 'Pi Agent'
                 : cwd.split(RegExp(r'[\\/]')).where((e) => e.isNotEmpty).last;
-            final branchName = viewModel.gitBranch;
-            final git = viewModel.gitStatus;
 
             return Row(
               children: [
@@ -568,40 +567,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                 ),
-                // Right: Git icon + branch name (if available), with the state
-                // behind the name in a tooltip. The bar has room for the branch
-                // and nothing else; whether it is dirty, mid-conflict, or
-                // unpushed is worth a press or a hover.
-                if (branchName != null && branchName.isNotEmpty) ...[
-                  const SizedBox(width: 12),
-                  Icon(
-                    Icons.merge_type,
-                    size: 16,
-                    // A conflict is the one state the colour should say on its
-                    // own: unlike "dirty", it blocks the next commit.
-                    color: (git?.conflicted ?? 0) > 0
-                        ? Theme.of(context).colorScheme.error
-                        : null,
-                  ),
-                  const SizedBox(width: 4),
-                  Flexible(
-                    child: Tooltip(
-                      message: git?.describe() ?? branchName,
-                      child: Text(
-                        branchName,
-                        overflow: TextOverflow.ellipsis,
-                        maxLines: 1,
-                        style: Theme.of(context).textTheme.labelMedium,
-                      ),
-                    ),
-                  ),
-                ],
               ],
             );
           },
         ),
         elevation: 0,
         actions: [
+          // The branch belongs here rather than in the title: the title box is
+          // width-limited by the AppBar, so a flex in it can only fill that box -
+          // which put the branch in the middle of a wide window with half the bar
+          // empty behind it. Actions are what the bar right-aligns.
+          const GitStatusChip(),
           // How full this conversation is, from Pi's own measurement. Ahead of
           // the connection dot: this is the one you act on - start a new session
           // or compact - while the dot only tells you the app is talking.
