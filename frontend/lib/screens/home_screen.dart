@@ -207,22 +207,32 @@ class _HomeScreenState extends State<HomeScreen> {
                             // says so instead of the backend throwing at it.
                             final isLive = vm.liveSessionPath != null &&
                                 vm.liveSessionPath == session.path;
-                            final title =
-                                session.name != null && session.name!.isNotEmpty
-                                    ? session.name!
-                                    : (session.preview.isNotEmpty
-                                        ? session.preview
-                                        : '(empty session)');
+                            
+                            // Distinguish between a set name and the session's content
+                            final hasName = session.name != null && session.name!.isNotEmpty;
+                            final title = hasName
+                                ? session.name!
+                                : (session.preview.isNotEmpty
+                                    ? session.preview
+                                    : '(empty session)');
+                            
                             return ListTile(
                               leading: const Icon(Icons.chat_bubble_outline),
                               title: Text(
                                 title,
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
+                                style: hasName
+                                    ? null
+                                    : Theme.of(context).textTheme.bodyMedium?.copyWith(
+                                          fontStyle: FontStyle.italic,
+                                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                                        ),
                               ),
                               subtitle: Text(
                                 '${session.messageCount} messages  •  '
-                                '${_formatAge(session.modified)}  •  ${session.cwd}',
+                                '${_formatAge(session.modified)}  •  ${session.cwd}'
+                                '${!hasName && session.preview.isNotEmpty ? '  •  (No session name set)' : ''}',
                                 maxLines: 2,
                                 overflow: TextOverflow.ellipsis,
                               ),
@@ -309,7 +319,8 @@ class _HomeScreenState extends State<HomeScreen> {
     PiViewModel viewModel,
     PiSessionInfo session,
   ) async {
-    final title = session.name?.trim().isNotEmpty == true
+    final hasName = session.name?.trim().isNotEmpty == true;
+    final title = hasName
         ? session.name!.trim()
         : (session.preview.isNotEmpty ? session.preview : '(empty session)');
 
@@ -321,11 +332,32 @@ class _HomeScreenState extends State<HomeScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              title,
-              style: Theme.of(context).textTheme.titleMedium,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontStyle: !hasName ? FontStyle.italic : null,
+                        color: !hasName 
+                            ? Theme.of(context).colorScheme.onSurfaceVariant
+                            : null,
+                      ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (!hasName && session.preview.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text(
+                      '(No session name set)',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 8),
             Text(
@@ -686,6 +718,15 @@ class _HomeScreenState extends State<HomeScreen> {
             void openPicker() => _showSessionPicker(context);
             final pickerEnabled = !viewModel.resumingSession;
 
+            // The chat bubble icon that always appears before the session name.
+            final sessionIcon = Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Icon(
+                Icons.chat_bubble_outline,
+                size: 18,
+              ),
+            );
+
             final nameControl = MouseRegion(
               cursor: SystemMouseCursors.click,
               child: InkWell(
@@ -703,22 +744,30 @@ class _HomeScreenState extends State<HomeScreen> {
                     horizontal: 6,
                     vertical: 10,
                   ),
-                  child: Tooltip(
-                    message: pickerEnabled
-                        ? 'Session: $sessionName — tap to switch or rename it'
-                        : 'Session: $sessionName — restoring a session first',
-                    child: Text(
-                      sessionName,
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                      // Bold, and one step up from the label size the git chip uses:
-                      // this is the centre of the bar and the name of the thing the
-                      // rest of the screen is about, not a caption on the directory.
-                      style: Theme.of(context)
-                          .textTheme
-                          .titleSmall
-                          ?.copyWith(fontWeight: FontWeight.bold),
-                    ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      sessionIcon,
+                      Flexible(
+                        child: Tooltip(
+                          message: pickerEnabled
+                              ? 'Session: $sessionName — tap to switch or rename it'
+                              : 'Session: $sessionName — restoring a session first',
+                          child: Text(
+                            sessionName,
+                            overflow: TextOverflow.ellipsis,
+                            maxLines: 1,
+                            // Bold, and one step up from the label size the git chip uses:
+                            // this is the centre of the bar and the name of the thing the
+                            // rest of the screen is about, not a caption on the directory.
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -772,22 +821,31 @@ class _HomeScreenState extends State<HomeScreen> {
               );
             }
 
+            // Responsive flex ratios: on small screens, prioritize the session name
+            // visibility by reducing folder width. On desktop, center it more.
+            final screenWidth = MediaQuery.of(context).size.width;
+            final isSmallScreen = screenWidth < ResponsiveSizes.phoneMaxWidth;
+            
+            final (folderFlex, nameFlex, spacerFlex) = isSmallScreen
+                ? (2, 5, 2)      // Small screens: name gets more space
+                : (4, 3, 4);     // Larger screens: keep the centered design
+            
             return Row(
               children: [
-                Expanded(flex: 4, child: folderControl),
+                Expanded(flex: folderFlex, child: folderControl),
                 // Centred: the box is centred, and Center puts the text in the middle
                 // of a box it does not have to fill. Loose-fit, so a short name costs
                 // the bar nothing and a long one ellipsizes inside its own share.
                 Flexible(
-                  flex: 3,
+                  flex: nameFlex,
                   fit: FlexFit.loose,
                   child: Center(child: nameControl),
                 ),
                 // The counterweight. Without an identical share on the right there is
                 // no centre to put anything in.
-                const Expanded(
-                  flex: 4,
-                  child: SizedBox.shrink(),
+                Expanded(
+                  flex: spacerFlex,
+                  child: const SizedBox.shrink(),
                 ),
               ],
             );
