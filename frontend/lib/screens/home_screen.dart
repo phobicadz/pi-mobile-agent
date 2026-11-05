@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
 import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
+import '../utils/notification_store.dart';
 import '../utils/prompt_reference.dart';
 import '../utils/responsive.dart';
 import '../widgets/attachment_tray.dart';
@@ -33,6 +36,31 @@ class _HomeScreenState extends State<HomeScreen> {
   /// keyboard landing over the reply that just finished.
   bool _refocusAfterRun = false;
 
+  /// Whether to say so when a run this screen started comes to an end.
+  ///
+  /// On by default: the reason a long task is worth starting on a phone is that
+  /// you can put the phone down and come back, and that only works if something
+  /// tells you the answer is there. The toggle exists because the same notice is
+  /// noise while you are watching the reply stream in.
+  ///
+  /// Held here rather than in a controller of its own: this screen is the only
+  /// thing that both shows the notice and offers the switch. The appearance
+  /// settings are a provider because `MaterialApp` has to be built with them;
+  /// a notice has no such requirement, and a provider above the whole app for
+  /// one switch is a dependency the tree does not need.
+  bool _notificationsEnabled = true;
+
+  /// A prompt this screen sent is still running.
+  ///
+  /// The notice is armed by sending, not by watching the busy flag flip: a run
+  /// can end without the user asking for one (a reconnect settling the state,
+  /// a session being restored) and those are not things to announce.
+  bool _awaitingRunEnd = false;
+
+  /// The view model this State is listening to, so the listener can be detached
+  /// from the same instance it was attached to.
+  PiViewModel? _observed;
+
   /// Whether this is a context with a physical keyboard: a desktop, or a desktop
   /// browser (on the web `defaultTargetPlatform` reports the browser's OS).
   ///
@@ -55,6 +83,57 @@ class _HomeScreenState extends State<HomeScreen> {
       // A keyboard handler makes the two keys mean the same thing everywhere.
       HardwareKeyboard.instance.addHandler(_scrollChatWithPageKeys);
     }
+    unawaited(_restoreNotificationPreference());
+  }
+
+  /// Read back whatever this browser stored, before the first run ends, so a
+  /// phone that was silenced yesterday is still silenced today.
+  Future<void> _restoreNotificationPreference() async {
+    final stored = await loadNotificationsEnabled();
+    if (stored == null || !mounted) return;
+    setState(() => _notificationsEnabled = stored);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Subscribed rather than watched in `build`: the view model notifies for
+    // every streamed token, and a `watch` here would rebuild the whole screen -
+    // bar, composer and all - at that rate. The chat list goes to some trouble
+    // to avoid exactly that; this screen should not reintroduce it from the top.
+    final viewModel = context.read<PiViewModel>();
+    if (identical(viewModel, _observed)) return;
+    _observed?.removeListener(_onViewModelChanged);
+    _observed = viewModel;
+    viewModel.addListener(_onViewModelChanged);
+  }
+
+  /// Notice the run this screen asked for coming to an end.
+  ///
+  /// Fires on the view model's own update, which is not necessarily between
+  /// frames, so the notice is deferred to the frame after: the chat has to have
+  /// taken the reply in before something points at it.
+  void _onViewModelChanged() {
+    final viewModel = _observed;
+    if (viewModel == null || !_awaitingRunEnd) return;
+    if (viewModel.isLoading) return;
+
+    _awaitingRunEnd = false;
+    if (!_notificationsEnabled) return;
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          // Floating rather than full-width: the notice is about the reply above
+          // it, and a bar stapled to the bottom of the screen covers the send
+          // field, which is where the next prompt is being typed.
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+          content: const Text('Agent finished'),
+        ),
+      );
+    });
   }
 
   /// Scrolls the chat a viewport per press. Handing the key back as unhandled
@@ -87,12 +166,16 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       _inputFocus.unfocus();
     }
+    // Arm the notice for this run. Set here rather than inferred from the busy
+    // flag going true, so a run the app did not start is never announced.
+    _awaitingRunEnd = true;
     _chatKey.currentState?.stickToBottom();
   }
 
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_scrollChatWithPageKeys);
+    _observed?.removeListener(_onViewModelChanged);
     _inputController.dispose();
     _inputFocus.dispose();
     super.dispose();
@@ -607,6 +690,39 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
+                const Divider(),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                  child: Text('Notifications',
+                      style: theme.textTheme.labelSmall?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant)),
+                ),
+                ListTile(
+                  // The icon is the state the switch is in, so the row can be
+                  // read at a glance before anything is pressed.
+                  leading: Icon(_notificationsEnabled
+                      ? Icons.notifications_active
+                      : Icons.notifications_off),
+                  title: Text(_notificationsEnabled
+                      ? 'Notify me when the agent finishes'
+                      : 'No notice when the agent finishes'),
+                  // Said plainly what turning it off costs, because the notice is
+                  // the thing that makes a long task worth starting away from the
+                  // keyboard.
+                  subtitle: Text(_notificationsEnabled
+                      ? 'A short notice in the chat when a run ends'
+                      : 'You will have to watch the chat to see when a run ends'),
+                  // A Switch rather than a tap-anywhere row: this row is a
+                  // setting with two states, not an action, and the switch is the
+                  // part that says which one it is in.
+                  trailing: Switch(
+                    value: _notificationsEnabled,
+                    onChanged: (enabled) {
+                      setState(() => _notificationsEnabled = enabled);
+                      saveNotificationsEnabled(enabled);
+                    },
+                  ),
+                ),
               ],
             ),
           ),
@@ -1098,7 +1214,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                 child: FloatingActionButton(
                                   mini: true,
                                   backgroundColor: Colors.red,
-                                  onPressed: viewModel.abortCurrentTask,
+                                  // Stopping a run is not a run finishing: the
+                                  // person pressing stop is the one thing that
+                                  // already knows it ended.
+                                  onPressed: () {
+                                    _awaitingRunEnd = false;
+                                    viewModel.abortCurrentTask();
+                                  },
                                   child: const Icon(Icons.stop),
                                 ),
                               ),
