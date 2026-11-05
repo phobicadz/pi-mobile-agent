@@ -564,6 +564,58 @@ sent only so the app can retire the request; nothing acts on it.
 
 ---
 
+### set_notifications
+
+Whether a finished run announces itself. The switch in the app's menu sends this;
+the backend is the one that owns the setting.
+
+```json
+{ "id": "req-11", "command": "set_notifications", "enabled": false }
+```
+
+```json
+{
+  "id": "req-11",
+  "type": "response",
+  "command": "set_notifications",
+  "success": true,
+  "data": { "enabled": false, "stored": true }
+}
+```
+
+`stored: false` means the choice applies to this session and the backend could not
+write it anywhere, so the next launch starts at the default again.
+
+The backend also pushes the current value on its own — to each client the moment
+it connects, and to every client after any device changes it:
+
+```json
+{ "type": "notifications_state", "enabled": false }
+```
+
+That push is what makes the switch open on the agent's real state rather than on
+each browser's own guess. There is no localStorage copy of this setting: the
+notice it gates is mostly not the app's.
+
+**What it actually silences.** The `notify-completion` extension in the
+`pi-setup` Pi package (`~/.pi/agent/git/github.com/phobicadz/pi-setup/`) calls
+Home Assistant's `notify.mobile_app_adams_iphone` on `agent_settled`, with a
+summary of the reply and a `?session=` link back to the conversation. That runs
+inside the Pi child process, which has no socket back to the app — so the setting
+travels as a file both sides can read:
+
+```
+~/.pi/agent/pi-mobile-notifications.json     # { "enabled": true | false }
+```
+
+The backend writes it, the extension reads it at notify time, and both honour
+`PI_NOTIFY_PREFS` if you want it somewhere else. A missing or unreadable file
+means **on**. Because the extension reads it per run, moving the switch applies
+to the next run that ends — and it applies to runs started in a terminal too,
+which is the point of it being one setting rather than two.
+
+---
+
 ## Streaming events
 
 The backend forwards every Pi record to all connected clients as

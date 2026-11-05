@@ -16,6 +16,10 @@ import {
   setSessionNameOnDisk,
 } from "./session-store.js";
 import { listDirectory, listFiles, createDirectory, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
+import {
+  loadNotificationsEnabled,
+  saveNotificationsEnabled,
+} from "./notification-prefs.js";
 
 const app = express();
 const server = createServer(app);
@@ -28,6 +32,28 @@ app.use(express.json());
 let piClient: PiRpcClient | null = null;
 let piProcess: ReturnType<typeof spawn> | null = null;
 const connectedClients: Set<WebSocket> = new Set();
+
+/**
+ * Whether a finished run announces itself, mirrored from the file the Pi
+ * extension reads (see `notification-prefs.ts`).
+ *
+ * Held in memory as well as on disk because the app asks for the current value
+ * the moment it connects, and a switch that answers from a file read on every
+ * connect is a switch that can fail to answer for a reason the user cannot see.
+ * The file is still the thing that matters: it is what the extension acts on.
+ */
+let notificationsEnabled = loadNotificationsEnabled();
+
+function sendToClients(payload: unknown) {
+  const message = JSON.stringify(payload);
+  for (const wsClient of connectedClients) {
+    if (wsClient.readyState === WebSocket.OPEN) wsClient.send(message);
+  }
+}
+
+function sendNotificationsState(ws: WebSocket) {
+  ws.send(JSON.stringify({ type: "notifications_state", enabled: notificationsEnabled }));
+}
 
 // Pi's cwd is fixed at spawn time (RPC has no runtime cwd command), so changing
 // the working directory means respawning the Pi child process with a new cwd.
@@ -223,6 +249,11 @@ async function initializePi(cwd: string = currentCwd) {
 wss.on("connection", (ws: WebSocket) => {
   console.log("New WebSocket client connected");
   connectedClients.add(ws);
+
+  // The switch has to open in the state the agent is actually in, including on a
+  // second device: the setting is one thing the extension acts on, not a
+  // preference each browser keeps for itself.
+  sendNotificationsState(ws);
 
   ws.on("message", async (data: string) => {
     try {
@@ -637,6 +668,45 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         })
       );
     }
+    return;
+  }
+
+  // Whether a finished run announces itself.
+  //
+  // Handled here rather than through Pi: the notice it controls is sent by the
+  // `notify-completion` extension inside the Pi process, but the setting is not
+  // something Pi itself carries — there is no RPC for it, and a run started in a
+  // terminal should honour the same switch as one started from the app.
+  if (command === "set_notifications") {
+    if (typeof params.enabled !== "boolean") {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: "set_notifications needs a boolean enabled",
+        })
+      );
+      return;
+    }
+
+    notificationsEnabled = params.enabled;
+    // The choice applies either way; only remembering it can fail, and that is
+    // worth saying because the next launch is where it would show up.
+    const stored = saveNotificationsEnabled(notificationsEnabled);
+
+    // Every client, not just this one: two devices showing two different states
+    // of one switch is how a setting starts getting pressed twice.
+    sendToClients({ type: "notifications_state", enabled: notificationsEnabled });
+    ws.send(
+      JSON.stringify({
+        type: "response",
+        id,
+        command,
+        success: true,
+        data: { enabled: notificationsEnabled, stored },
+      })
+    );
     return;
   }
 

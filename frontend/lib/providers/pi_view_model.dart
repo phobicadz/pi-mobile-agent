@@ -27,6 +27,14 @@ class PiViewModel extends ChangeNotifier {
   bool _isLoading = false;
   bool _loadingSessions = false;
 
+  /// Whether a finished run announces itself.
+  ///
+  /// Mirrored from the backend, which owns it — see `PiService.notificationUpdates`.
+  /// It starts at the app's own default rather than nothing, because the switch
+  /// has to render before the first reply arrives and "off" is not a state worth
+  /// guessing at.
+  bool _notificationsEnabled = true;
+
   /// A saved conversation is being loaded back into the live Pi session.
   ///
   /// Kept apart from [_isLoading] because the two need saying differently: the
@@ -159,6 +167,9 @@ class PiViewModel extends ChangeNotifier {
   String? get liveSessionPath => _liveSessionPath;
   bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
+
+  /// What the notice switch is currently set to, as the backend said it.
+  bool get notificationsEnabled => _notificationsEnabled;
   bool get isLoading => _isLoading;
   bool get resumingSession => _resumingSession;
   String? get error => _error;
@@ -247,6 +258,14 @@ class PiViewModel extends ChangeNotifier {
     // Subscribe to Pi service events
     piService.events.listen(_handleEvent);
 
+    // The backend pushes this on connect and after any device moves the switch,
+    // so a phone and a laptop cannot end up showing two settings of one switch.
+    piService.notificationUpdates.listen((enabled) {
+      if (_disposed || _notificationsEnabled == enabled) return;
+      _notificationsEnabled = enabled;
+      notifyListeners();
+    });
+
     piService.stateUpdates.listen((state) {
       _state = state;
       // The backend reports Pi's working directory in every state update, so the
@@ -329,6 +348,20 @@ class PiViewModel extends ChangeNotifier {
   /// does not notify: notifying here rebuilt the whole chat on every keystroke.
   void setUserInput(String input) {
     _userInput = input;
+  }
+
+  /// Move the notice switch.
+  ///
+  /// Applied locally as well as sent: a switch that only changes when the answer
+  /// comes back is a switch that appears not to have been pressed, on a LAN that
+  /// can be slow or asleep. The backend's own value arrives on
+  /// `notificationUpdates` either way and is what the switch settles on.
+  Future<void> setNotificationsEnabled(bool enabled) async {
+    if (_notificationsEnabled != enabled) {
+      _notificationsEnabled = enabled;
+      _notifyNow();
+    }
+    await piService.setNotifications(enabled);
   }
 
   void _notifyNow() {

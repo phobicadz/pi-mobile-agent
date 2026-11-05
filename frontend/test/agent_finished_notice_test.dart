@@ -16,11 +16,21 @@ import 'support/app_menu.dart';
 class FinishableService extends PiService {
   final _states = StreamController<PiState>.broadcast();
 
+  /// What the app asked the backend to set, in order.
+  final requested = <bool>[];
+
   @override
   Stream<PiState> get stateUpdates => _states.stream;
 
   @override
   Stream<PiEvent> get events => const Stream.empty();
+
+  /// The backend's own value, which a test can move to show what the switch
+  /// does when a *different* device changes the setting.
+  final _notificationsController = StreamController<bool>.broadcast();
+
+  @override
+  Stream<bool> get notificationUpdates => _notificationsController.stream;
 
   @override
   Future<List<PiModel>> getAvailableModels() async => const [];
@@ -33,12 +43,24 @@ class FinishableService extends PiService {
       {List<PiImage> images = const []}) async {}
 
   @override
+  Future<void> setNotifications(bool enabled) async {
+    requested.add(enabled);
+  }
+
+  @override
   Future<void> refreshState() async {}
 
   /// The frame Pi sends when a run is over.
   void endRun() => _states.add(PiState(isProcessing: false));
 
-  void close() => _states.close();
+  /// What the backend pushes on connect and after any device moves the switch.
+  void reportNotifications(bool enabled) =>
+      _notificationsController.add(enabled);
+
+  void close() {
+    _states.close();
+    _notificationsController.close();
+  }
 }
 
 Future<void> settle(WidgetTester tester) async {
@@ -162,5 +184,35 @@ void main() {
     expect(find.text('Agent finished'), findsNothing,
         reason: 'the person who pressed stop is the one thing that already '
             'knows the run ended');
+  });
+
+  testWidgets('pressing the switch asks the backend, which is what the agent acts on',
+      (tester) async {
+    final (service, _) = await pumpHome(tester);
+
+    await openAppMenu(tester);
+    await scrollMenuIntoView(tester, find.textContaining('when the agent finishes'));
+    await tester.tap(find.byType(Switch));
+    await settle(tester);
+
+    expect(service.requested, [false],
+        reason: 'the notice is sent by the agent process, not this one, so a '
+            'switch that only changed locally would silence nothing');
+  });
+
+  testWidgets('the switch shows what the backend says, including what another device set',
+      (tester) async {
+    final (service, _) = await pumpHome(tester);
+
+    service.reportNotifications(false);
+    await settle(tester);
+
+    await openAppMenu(tester);
+    await scrollMenuIntoView(tester, find.textContaining('when the agent finishes'));
+
+    expect(find.text('No notice when the agent finishes'), findsOneWidget,
+        reason: 'the setting is one thing the agent acts on, so a second device '
+            'has to open on its real state rather than on its own default');
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
   });
 }

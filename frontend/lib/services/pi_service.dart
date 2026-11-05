@@ -9,6 +9,7 @@ class PiService {
   final String serverUrl;
   final _messageController = StreamController<PiEvent>.broadcast();
   final _stateController = StreamController<PiState>.broadcast();
+  final _notificationsController = StreamController<bool>.broadcast();
   final Map<String, Completer> _pendingRequests = {};
   bool _isConnected = false;
   Timer? _reconnectTimer;
@@ -18,6 +19,15 @@ class PiService {
 
   Stream<PiEvent> get events => _messageController.stream;
   Stream<PiState> get stateUpdates => _stateController.stream;
+
+  /// Whether a finished run announces itself, as the backend says it is set.
+  ///
+  /// The backend is the owner of this one and not the browser: the notice it
+  /// gates is sent by the `notify-completion` Pi extension in the agent's own
+  /// process, so the setting has to be one thing every device reads the same way.
+  /// The backend sends it unprompted on connect, which is what makes a switch
+  /// opened on a second device show the truth rather than its own guess.
+  Stream<bool> get notificationUpdates => _notificationsController.stream;
   bool get isConnected => _isConnected;
 
   /// Every backend reply is an envelope:
@@ -80,6 +90,10 @@ class PiService {
         if (data['event']['type'] == 'agent_settled') {
           _fetchState();
         }
+      } else if (type == 'notifications_state') {
+        // The backend's own state, pushed on connect and after any device
+        // changes it. Not a command reply: nothing asked for it a moment ago.
+        _notificationsController.add(data['enabled'] == true);
       } else if (type == 'error') {
         print('Pi backend error: ${data['error']}');
       }
@@ -356,6 +370,16 @@ class PiService {
     await _sendCommand('client_metrics', params: {'metrics': metrics});
   }
 
+  /// Move the switch the agent acts on.
+  ///
+  /// Sent to the backend rather than held here: the notice this controls is the
+  /// one the Pi extension sends to Home Assistant, which is a different process
+  /// that only the backend can talk to.
+  Future<void> setNotifications(bool enabled) async {
+    if (!_isConnected) return;
+    await _sendCommand('set_notifications', params: {'enabled': enabled});
+  }
+
   /// Ask the backend for its current state (model, working directory, ...).
   /// The reply arrives on [stateUpdates]. Safe to call from tests: it does
   /// nothing while the socket is down.
@@ -383,5 +407,6 @@ class PiService {
     }
     _messageController.close();
     _stateController.close();
+    _notificationsController.close();
   }
 }

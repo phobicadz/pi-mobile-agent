@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,7 +5,6 @@ import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
 import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
-import '../utils/notification_store.dart';
 import '../utils/prompt_reference.dart';
 import '../utils/responsive.dart';
 import '../widgets/attachment_tray.dart';
@@ -35,20 +32,6 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Never set on a touch platform, where focus would mean an on-screen
   /// keyboard landing over the reply that just finished.
   bool _refocusAfterRun = false;
-
-  /// Whether to say so when a run this screen started comes to an end.
-  ///
-  /// On by default: the reason a long task is worth starting on a phone is that
-  /// you can put the phone down and come back, and that only works if something
-  /// tells you the answer is there. The toggle exists because the same notice is
-  /// noise while you are watching the reply stream in.
-  ///
-  /// Held here rather than in a controller of its own: this screen is the only
-  /// thing that both shows the notice and offers the switch. The appearance
-  /// settings are a provider because `MaterialApp` has to be built with them;
-  /// a notice has no such requirement, and a provider above the whole app for
-  /// one switch is a dependency the tree does not need.
-  bool _notificationsEnabled = true;
 
   /// A prompt this screen sent is still running.
   ///
@@ -83,15 +66,6 @@ class _HomeScreenState extends State<HomeScreen> {
       // A keyboard handler makes the two keys mean the same thing everywhere.
       HardwareKeyboard.instance.addHandler(_scrollChatWithPageKeys);
     }
-    unawaited(_restoreNotificationPreference());
-  }
-
-  /// Read back whatever this browser stored, before the first run ends, so a
-  /// phone that was silenced yesterday is still silenced today.
-  Future<void> _restoreNotificationPreference() async {
-    final stored = await loadNotificationsEnabled();
-    if (stored == null || !mounted) return;
-    setState(() => _notificationsEnabled = stored);
   }
 
   @override
@@ -119,7 +93,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (viewModel.isLoading) return;
 
     _awaitingRunEnd = false;
-    if (!_notificationsEnabled) return;
+    // Read from the view model rather than anything held here: the notice this
+    // switch gates is mostly not the app's — the Pi extension sends a Home
+    // Assistant push for the same event, and both follow the backend's setting.
+    if (!viewModel.notificationsEnabled) return;
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -700,27 +677,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 ListTile(
                   // The icon is the state the switch is in, so the row can be
                   // read at a glance before anything is pressed.
-                  leading: Icon(_notificationsEnabled
+                  leading: Icon(viewModel.notificationsEnabled
                       ? Icons.notifications_active
                       : Icons.notifications_off),
-                  title: Text(_notificationsEnabled
+                  title: Text(viewModel.notificationsEnabled
                       ? 'Notify me when the agent finishes'
                       : 'No notice when the agent finishes'),
-                  // Said plainly what turning it off costs, because the notice is
-                  // the thing that makes a long task worth starting away from the
-                  // keyboard.
-                  subtitle: Text(_notificationsEnabled
-                      ? 'A short notice in the chat when a run ends'
-                      : 'You will have to watch the chat to see when a run ends'),
+                  // Said plainly what turning it off costs, and what it actually
+                  // reaches: the same switch silences the Home Assistant push the
+                  // agent's own extension sends, not just this line in the chat.
+                  subtitle: Text(viewModel.notificationsEnabled
+                      ? 'A notice when a run ends, here and on your phone'
+                      : 'No notice when a run ends, here or on your phone'),
                   // A Switch rather than a tap-anywhere row: this row is a
                   // setting with two states, not an action, and the switch is the
                   // part that says which one it is in.
                   trailing: Switch(
-                    value: _notificationsEnabled,
-                    onChanged: (enabled) {
-                      setState(() => _notificationsEnabled = enabled);
-                      saveNotificationsEnabled(enabled);
-                    },
+                    value: viewModel.notificationsEnabled,
+                    onChanged: viewModel.setNotificationsEnabled,
                   ),
                 ),
               ],

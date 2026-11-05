@@ -53,7 +53,8 @@ frontend/lib/widgets/                 chat_list, chat_bubble, file_browser, mode
 ```
 
 Adding a command end-to-end: `pi-rpc-client.ts` method → `case` in `index.ts` →
-method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
+method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`. A command
+Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` instead.
 
 ## Non-obvious constraints (read before editing)
 
@@ -83,6 +84,15 @@ method in `pi_service.dart` → `PiViewModel` → widget. See `DEVELOPMENT.md`.
   conversation without putting it in an argument. Wrap what you pipe in delimiters (the
   backend uses `<conversation>…</conversation>`): a bare block of text on stdin reads to
   a model as something to answer rather than something to name.
+- **The "agent finished" notification is not the app's.** It is sent by the
+  `notify-completion` extension in the `pi-setup` Pi package
+  (`~/.pi/agent/git/github.com/phobicadz/pi-setup/extensions/`), on `agent_settled`,
+  from inside the Pi child process. The app's switch reaches it through a file both
+  sides can read: `~/.pi/agent/pi-mobile-notifications.json` (`PI_NOTIFY_PREFS` to move
+  it), written by `backend/src/notification-prefs.ts` and read by the extension at notify
+  time — so it is **one setting for every device and every Pi session on this box**, not a
+  per-browser preference. Missing or unreadable means on. Editing that extension only
+  takes effect after a service restart: Pi loads extensions when it starts.
 - **Port 3000 is unauthenticated LAN HTTP.** Don't expose it beyond the LAN without a
   reverse proxy with auth/WSS.
 
