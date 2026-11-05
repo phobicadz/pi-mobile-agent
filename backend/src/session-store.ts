@@ -1,4 +1,6 @@
-import { existsSync, readdirSync, readFileSync, statSync } from "fs";
+import { spawnSync } from "child_process";
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { randomUUID } from "crypto";
 import os from "os";
 import path from "path";
 
@@ -67,8 +69,11 @@ function parseSessionFile(filePath: string): PiSessionInfo | null {
         created = record.timestamp ?? "";
         continue;
       }
-      if (record.type === "session_info" && typeof record.name === "string") {
-        name = record.name;
+      if (record.type === "session_info") {
+        // A later entry without a name is Pi clearing one ("an absent name means
+        // it was cleared"), so it has to unset what an earlier entry set - last
+        // entry in the file wins, exactly as it does for the conversation.
+        name = typeof record.name === "string" ? record.name : undefined;
         continue;
       }
       if (record.type === "message" && record.message) {
@@ -169,4 +174,122 @@ export function listPiSessions(options: { cwd?: string; limit?: number } = {}): 
   sessions.sort((a, b) => b.modified.localeCompare(a.modified));
   const limit = options.limit ?? 50;
   return sessions.slice(0, limit);
+}
+
+/**
+ * What a session is about, for naming it: the text of its user messages, oldest
+ * first, cut off at `maxChars`. A title only needs enough of a conversation to
+ * tell it apart from the others in the list, not all of it.
+ */
+export function sessionPromptExcerpt(filePath: string, maxChars = 2000): string {
+  const parts: string[] = [];
+  let used = 0;
+
+  for (const line of readFileSync(filePath, "utf8").split("\n")) {
+    if (!line.trim()) continue;
+    let record: any;
+    try {
+      record = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (record.type !== "message" || record.message?.role !== "user") continue;
+
+    const text = textOf(record.message.content).trim();
+    if (!text) continue;
+
+    const room = maxChars - used;
+    if (room <= 0) break;
+    parts.push(text.slice(0, room));
+    used += Math.min(text.length, room);
+  }
+
+  return parts.join("\n\n");
+}
+
+/**
+ * Name a session that is not the one Pi is running (`session_info` on disk).
+ *
+ * Pi's own format is an appended entry rather than an edited header: a
+ * `session_info` hanging off the last entry, with a fresh id. Appending keeps
+ * every existing entry byte-for-byte where it was, which is the safe thing to
+ * do to a file someone else may still be reading.
+ *
+ * Pass null to clear the name, which is what Pi does with an empty `name`.
+ * Returns false when the file cannot be rewritten.
+ */
+export function setSessionNameOnDisk(filePath: string, name: string | null): boolean {
+  try {
+    const content = readFileSync(filePath, "utf8");
+    const lines = content.split("\n").filter((line) => line.trim());
+
+    let parentId: string | null = null;
+    for (const line of lines) {
+      let record: any;
+      try {
+        record = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (typeof record?.id === "string" && record.id) parentId = record.id;
+    }
+
+    const id = randomUUID().replace(/-/g, "").slice(0, 8);
+    const entry: Record<string, unknown> = {
+      type: "session_info",
+      id,
+      parentId,
+      timestamp: new Date().toISOString(),
+    };
+    if (name) entry.name = name;
+
+    const prefix = content.endsWith("\n") || content === "" ? "" : "\n";
+    writeFileSync(filePath, `${content}${prefix}${JSON.stringify(entry)}\n`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Remove a session file, trying `trash` first and falling back to unlink.
+ *
+ * The same order Pi's own session picker uses, on purpose: a session deleted
+ * from the app and one deleted from the TUI should end up in the same place,
+ * and where a trashing tool exists that place is recoverable. A conversation is
+ * the one thing here that cannot be re-derived.
+ *
+ * The caller is responsible for not handing it the file Pi is running - that one
+ * is still open, and its history is still being appended to.
+ */
+export function deleteSessionOnDisk(
+  filePath: string,
+): { ok: boolean; method: "trash" | "unlink"; error?: string } {
+  // A path beginning with "-" would otherwise read to trash as an option.
+  const args = filePath.startsWith("-") ? ["--", filePath] : [filePath];
+  const trashResult = spawnSync("trash", args, { encoding: "utf-8" });
+
+  // Success from trash, or the file simply not being there afterwards.
+  if (trashResult.status === 0 || !existsSync(filePath)) {
+    return { ok: true, method: "trash" };
+  }
+
+  const trashHint = [
+    trashResult.error?.message,
+    trashResult.stderr?.trim()?.split("\n")[0],
+  ]
+    .filter((part): part is string => typeof part === "string" && part.length > 0)
+    .join(" · ");
+
+  try {
+    unlinkSync(filePath);
+    return { ok: true, method: "unlink" };
+  } catch (err) {
+    const unlinkError = err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      method: "unlink",
+      error: trashHint ? `${unlinkError} (trash: ${trashHint.slice(0, 200)})` : unlinkError,
+    };
+  }
 }

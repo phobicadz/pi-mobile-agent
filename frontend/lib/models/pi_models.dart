@@ -15,6 +15,22 @@ class PiState {
 
   /// Same directory, shortened to "~" / "~/..." for display.
   final String? cwdDisplay;
+
+  /// Current git branch name, if the directory is a git repository, or null.
+  final String? gitBranch;
+
+  /// The rest of the git state behind that branch name - how the working tree
+  /// actually looks. Shown in the app bar tooltip.
+  final GitStatus? gitStatus;
+
+  /// The display name of the conversation the live Pi is in, or null when it has
+  /// none. Pi reports it in `get_state` as `sessionName` (omitted when unset),
+  /// and it is what `rename_session` changes.
+  final String? sessionName;
+
+  /// The file the live Pi session is backed by. It is how the session picker
+  /// knows which row is the conversation being had — the one it must not delete.
+  final String? sessionFile;
   final Map<String, dynamic>? raw;
 
   PiState({
@@ -25,6 +41,10 @@ class PiState {
     this.systemPrompt,
     this.cwd,
     this.cwdDisplay,
+    this.gitBranch,
+    this.gitStatus,
+    this.sessionName,
+    this.sessionFile,
     this.raw,
   });
 
@@ -44,6 +64,12 @@ class PiState {
       systemPrompt: json['systemPrompt'] as String?,
       cwd: json['cwd'] as String?,
       cwdDisplay: json['cwdDisplay'] as String?,
+      gitBranch: json['gitBranch'] as String?,
+      gitStatus: json['gitStatus'] is Map
+          ? GitStatus.fromJson(Map<String, dynamic>.from(json['gitStatus'] as Map))
+          : null,
+      sessionName: json['sessionName'] as String?,
+      sessionFile: json['sessionFile'] as String?,
       raw: json,
     );
   }
@@ -56,6 +82,10 @@ class PiState {
     String? systemPrompt,
     String? cwd,
     String? cwdDisplay,
+    String? gitBranch,
+    GitStatus? gitStatus,
+    String? sessionName,
+    String? sessionFile,
   }) {
     return PiState(
       currentModel: currentModel ?? this.currentModel,
@@ -65,8 +95,115 @@ class PiState {
       systemPrompt: systemPrompt ?? this.systemPrompt,
       cwd: cwd ?? this.cwd,
       cwdDisplay: cwdDisplay ?? this.cwdDisplay,
+      gitBranch: gitBranch ?? this.gitBranch,
+      gitStatus: gitStatus ?? this.gitStatus,
+      sessionName: sessionName ?? this.sessionName,
+      sessionFile: sessionFile ?? this.sessionFile,
       raw: raw,
     );
+  }
+}
+
+/// The working-tree state of a git repository, as the backend read it from
+/// `git status --branch --porcelain`.
+///
+/// Counts, not paths: the app bar has room for "3 files changed", and a list of
+/// paths belongs in the file browser. The one thing worth naming in full is the
+/// branch itself.
+class GitStatus {
+  final String branch;
+
+  /// No branch is checked out - a detached HEAD. The branch name is empty then.
+  final bool detached;
+
+  /// The remote-tracking branch this one is compared against, e.g. `origin/main`.
+  final String? upstream;
+
+  /// Commits this branch has that upstream does not, and the other way round.
+  final int ahead;
+  final int behind;
+
+  /// Files with something recorded in the index, files changed in the working
+  /// tree, and files git has never seen. A file in both counts once per column:
+  /// half-committed work is genuinely two things.
+  final int staged;
+  final int modified;
+  final int untracked;
+
+  /// Files a merge or rebase left for a human to settle.
+  final int conflicted;
+
+  GitStatus({
+    required this.branch,
+    this.detached = false,
+    this.upstream,
+    this.ahead = 0,
+    this.behind = 0,
+    this.staged = 0,
+    this.modified = 0,
+    this.untracked = 0,
+    this.conflicted = 0,
+  });
+
+  factory GitStatus.fromJson(Map<String, dynamic> json) {
+    int count(Object? value) => value is int ? value : 0;
+    return GitStatus(
+      branch: json['branch'] as String? ?? '',
+      detached: json['detached'] as bool? ?? false,
+      upstream: json['upstream'] as String?,
+      ahead: count(json['ahead']),
+      behind: count(json['behind']),
+      staged: count(json['staged']),
+      modified: count(json['modified']),
+      untracked: count(json['untracked']),
+      conflicted: count(json['conflicted']),
+    );
+  }
+
+  int get changedFiles => staged + modified + untracked;
+
+  bool get clean => changedFiles == 0 && conflicted == 0;
+
+  /// The tooltip text: what the branch is doing, then what the tree holds.
+  ///
+  /// Built as sentences rather than a table because a tooltip is one short
+  /// block of text, and the interesting part comes first - a branch that is
+  /// mid-rebase or 5 commits ahead is the thing you want to know before you
+  /// ask how many files are dirty.
+  String describe() {
+    final parts = <String>[];
+
+    parts.add(detached
+        ? 'Detached HEAD - no branch checked out'
+        : 'Branch ${branch.isEmpty ? '(unknown)' : branch}');
+    if (upstream != null && upstream!.isNotEmpty) {
+      if (ahead > 0 && behind > 0) {
+        parts.add('$upstream: $ahead ahead, $behind behind');
+      } else if (ahead > 0) {
+        parts.add('$ahead committed, not pushed to $upstream');
+      } else if (behind > 0) {
+        parts.add('$behind behind $upstream - pull to catch up');
+      } else {
+        parts.add('up to date with $upstream');
+      }
+    } else if (!detached) {
+      parts.add('no upstream configured');
+    }
+
+    if (conflicted > 0) {
+      parts.add('$conflicted file${conflicted == 1 ? '' : 's'} in conflict');
+    }
+    if (clean) {
+      parts.add('working tree clean');
+    } else {
+      final bits = <String>[];
+      if (staged > 0) bits.add('$staged staged');
+      if (modified > 0) bits.add('$modified modified');
+      if (untracked > 0) bits.add('$untracked untracked');
+      parts.add(bits.join(', '));
+    }
+
+    return parts.join('\n');
   }
 }
 
@@ -213,6 +350,22 @@ class PiMessage {
   /// True while Pi is still streaming this reply.
   bool streaming;
 
+  /// Images carried with this message.
+  ///
+  /// For a message the app sent, they are the ones the user picked, so the
+  /// thumbnail stays next to the text the model saw. For a resumed session they
+  /// come out of Pi's own transcript, which stores the image inline.
+  final List<PiImage> images;
+
+  /// A line the app wrote itself, not something Pi said.
+  ///
+  /// Used for the one case Pi's own output cannot express: a run that ended
+  /// having produced no reply at all. Rendered as a muted status line instead of
+  /// a reply bubble, so it never reads as a message from the model. It lives
+  /// only in this view - resuming the session reloads Pi's transcript and the
+  /// note is gone, which is correct for a status line.
+  bool localNote;
+
   PiMessage({
     required this.id,
     required this.role,
@@ -223,7 +376,10 @@ class PiMessage {
     this.stopReason,
     this.errorMessage,
     this.streaming = false,
-  }) : toolCalls = toolCalls ?? [];
+    this.localNote = false,
+    List<PiImage>? images,
+  })  : toolCalls = toolCalls ?? [],
+        images = images ?? [];
 
   factory PiMessage.fromJson(Map<String, dynamic> json) {
     // Pi serialises message content as a list of blocks; join the text ones.
@@ -243,6 +399,12 @@ class PiMessage {
       id: json['id'] as String? ?? '',
       role: json['role'] as String? ?? 'user',
       content: text,
+      images: rawContent is List
+          ? (rawContent
+              .map(PiImage.fromContentBlock)
+              .whereType<PiImage>()
+              .toList())
+          : const [],
       timestamp: json['timestamp'] is int
           ? DateTime.fromMillisecondsSinceEpoch(json['timestamp'] as int)
           : DateTime.now(),
@@ -305,11 +467,20 @@ class PiModel {
   final String provider;
   final bool available;
 
+  /// What this model accepts, exactly as Pi reports it: `["text", "image"]`.
+  ///
+  /// Pi sends this on every model it offers, so "can this model take a photo?"
+  /// is answered by the model list rather than guessed from the model's name.
+  final List<String> input;
+
+  bool get acceptsImages => input.contains('image');
+
   PiModel({
     required this.id,
     required this.name,
     required this.provider,
     this.available = true,
+    this.input = const [],
   });
 
   factory PiModel.fromJson(Map<String, dynamic> json) {
@@ -318,6 +489,61 @@ class PiModel {
       name: json['name'] as String? ?? '',
       provider: json['provider'] as String? ?? '',
       available: json['available'] as bool? ?? true,
+      input: switch (json['input']) {
+        final List list => list.map((entry) => entry.toString()).toList(),
+        _ => const [],
+      },
+    );
+  }
+}
+
+/// An image the app carries into a prompt, or reads back out of a transcript.
+///
+/// `base64Data` is the payload Pi's RPC expects (no `data:` prefix); `bytes`
+/// is the size of those decoded bytes, which is what the model is actually
+/// charged for and what the app shows on the attachment chip.
+class PiImage {
+  final String name;
+  final String mimeType;
+  final String base64Data;
+  final int width;
+  final int height;
+
+  PiImage({
+    required this.name,
+    required this.mimeType,
+    required this.base64Data,
+    this.width = 0,
+    this.height = 0,
+  });
+
+  int get bytes => (base64Data.length * 3) ~/ 4;
+
+  String get sizeLabel {
+    const kb = 1024;
+    if (bytes < kb) return '$bytes B';
+    if (bytes < 1024 * kb) return '${(bytes / kb).toStringAsFixed(0)} KB';
+    return '${(bytes / kb / kb).toStringAsFixed(1)} MB';
+  }
+
+  /// The shape Pi's `prompt` command takes for one image.
+  Map<String, dynamic> toJson() => {
+        'type': 'image',
+        'data': base64Data,
+        'mimeType': mimeType,
+      };
+
+  /// An image block from Pi's own transcript (`ImageContent`).
+  static PiImage? fromContentBlock(dynamic block) {
+    if (block is! Map) return null;
+    if (block['type'] != 'image') return null;
+    final data = block['data'];
+    final mimeType = block['mimeType'];
+    if (data is! String || data.isEmpty || mimeType is! String) return null;
+    return PiImage(
+      name: 'image',
+      mimeType: mimeType,
+      base64Data: data,
     );
   }
 }
@@ -358,13 +584,85 @@ class PiSessionInfo {
 class DirEntry {
   final String name;
   final String path;
+  final bool? isDirectory;
+  final int? size;
 
-  DirEntry({required this.name, required this.path});
+  DirEntry({
+    required this.name,
+    required this.path,
+    this.isDirectory,
+    this.size,
+  });
 
   factory DirEntry.fromJson(Map<String, dynamic> json) {
     return DirEntry(
       name: json['name'] as String? ?? '',
       path: json['path'] as String? ?? '',
+      isDirectory: json['isDirectory'] as bool?,
+      size: json['size'] as int?,
+    );
+  }
+}
+
+class FileListing {
+  final String path;
+  final String? parent;
+  final List<DirEntry> roots;
+  final List<DirEntry> entries;
+  final String? current;
+
+  /// [current] shortened to "~" / "~/..." for display.
+  final String? cwdDisplay;
+  final List<String> recent;
+
+  FileListing({
+    required this.path,
+    this.parent,
+    required this.roots,
+    required this.entries,
+    this.current,
+    this.cwdDisplay,
+    required this.recent,
+  });
+
+  factory FileListing.fromJson(Map<String, dynamic> json) {
+    return FileListing(
+      path: json['path'] as String? ?? '',
+      parent: json['parent'] as String?,
+      roots: (json['roots'] as List<dynamic>? ?? [])
+          .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      entries: (json['entries'] as List<dynamic>? ?? [])
+          .map((e) => DirEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      current: json['current'] as String?,
+      cwdDisplay: json['cwdDisplay'] as String?,
+      recent: (json['recent'] as List<dynamic>? ?? [])
+          .map((e) => e as String)
+          .toList(),
+    );
+  }
+}
+
+class FileContent {
+  final String content;
+  final int size;
+  final bool isText;
+  final String encoding;
+
+  FileContent({
+    required this.content,
+    required this.size,
+    required this.isText,
+    required this.encoding,
+  });
+
+  factory FileContent.fromJson(Map<String, dynamic> json) {
+    return FileContent(
+      content: json['content'] as String? ?? '',
+      size: json['size'] as int? ?? 0,
+      isText: json['isText'] as bool? ?? true,
+      encoding: json['encoding'] as String? ?? 'utf-8',
     );
   }
 }

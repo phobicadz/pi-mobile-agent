@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 import 'services/pi_service.dart';
 import 'providers/pi_view_model.dart';
 import 'screens/home_screen.dart';
+import 'providers/appearance_controller.dart';
 import 'utils/browser_viewport.dart';
 import 'utils/client_diagnostics.dart';
 
@@ -54,7 +55,20 @@ void main() async {
       },
     }));
   });
-  runApp(MyApp(service: service, safeArea: safeArea));
+  // Restored before the first frame, so the app does not open at one size and
+  // theme and then change to another.
+  final appearance = AppearanceController();
+  await appearance.restore();
+
+  // Provided above MyApp rather than inside it: MyApp is what builds
+  // MaterialApp, and MaterialApp is the thing that has to be told which theme
+  // to build with.
+  runApp(
+    ChangeNotifierProvider<AppearanceController>.value(
+      value: appearance,
+      child: MyApp(service: service, safeArea: safeArea),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -64,14 +78,17 @@ class MyApp extends StatelessWidget {
   /// where the platform already reports them to Flutter.
   final ValueNotifier<EdgeInsets> safeArea;
 
-  MyApp(
-      {super.key,
-      required this.service,
-      ValueNotifier<EdgeInsets>? safeArea})
+  MyApp({super.key, required this.service, ValueNotifier<EdgeInsets>? safeArea})
       : safeArea = safeArea ?? ValueNotifier<EdgeInsets>(EdgeInsets.zero);
 
   @override
   Widget build(BuildContext context) {
+    // The theme is watched here because this is the widget that builds
+    // MaterialApp, and themeMode is a property of MaterialApp - not of anything
+    // below it. A toggle deeper in the tree could change the colours of a
+    // screen but not the theme the screens are built from.
+    final themeMode = context.watch<AppearanceController>().themeMode;
+
     return MultiProvider(
       providers: [
         Provider<PiService>.value(value: service),
@@ -97,10 +114,28 @@ class MyApp extends StatelessWidget {
             brightness: Brightness.dark,
           ),
         ),
-        themeMode: ThemeMode.system,
+        themeMode: themeMode,
         home: const HomeScreen(),
-        builder: (context, child) =>
-            applyBrowserSafeArea(context, child, safeArea),
+        builder: (context, child) {
+          // Paint the page behind the canvas with the theme that is actually in
+          // force right now.
+          //
+          // On iOS the canvas can end up shorter than the screen it is drawn on
+          // (see web/index.html), and whatever is left over is the browser's to
+          // paint - white by default, which is a band across the bottom of a
+          // phone. This is the part of that gap the app can still account for:
+          // make it the colour the app paints its own bottom edge with, and there
+          // is nothing there for the eye to find.
+          //
+          // The builder is the one place in the app with both the theme and the
+          // page in reach, and it re-runs when the theme changes - including when
+          // the phone's own appearance changes while the app is following it. A
+          // DOM write during build is not something to be casual about, but this
+          // one is idempotent and it is the only moment the page is guaranteed to
+          // be painted before the frame that sits on it.
+          paintPageBehindCanvas(Theme.of(context).scaffoldBackgroundColor);
+          return applyBrowserSafeArea(context, child, safeArea);
+        },
       ),
     );
   }

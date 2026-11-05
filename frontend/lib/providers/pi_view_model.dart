@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart'
+    show kIsWeb, visibleForTesting;
 import 'package:flutter/material.dart';
 import '../services/pi_service.dart';
 import '../models/pi_models.dart';
 import '../models/turn_progress.dart';
+import '../utils/image_attachment.dart' show maxImagesPerPrompt, preparePickedImage, ImageAttachmentError;
+import '../utils/image_picking.dart';
 
 class PiViewModel extends ChangeNotifier {
   final PiService piService;
@@ -14,11 +19,45 @@ class PiViewModel extends ChangeNotifier {
   List<PiSessionInfo> _sessions = [];
   String? _workingDirectory;
   String? _workingDirectoryDisplay;
+  String? _gitBranch;
+  GitStatus? _gitStatus;
+  String? _sessionName;
+  String? _liveSessionPath;
   bool _loadingDirectories = false;
   bool _isLoading = false;
   bool _loadingSessions = false;
+
+  /// A saved conversation is being loaded back into the live Pi session.
+  ///
+  /// Kept apart from [_isLoading] because the two need saying differently: the
+  /// chat shows "restoring session" for this one, and the app must not put a
+  /// running-turn status line over a chat that is only being read off disk.
+  /// [_isLoading] is still set as well, because every action that would start a
+  /// new turn has to be closed while the old one is being restored.
+  bool _resumingSession = false;
+
+  /// A session path from `?session=<path>` in the page URL.
+  ///
+  /// Set when the app is opened from a Pi completion notification link. Held
+  /// until the backend is known reachable, then cleared before use so a reload
+  /// or a second frame does not resume the same conversation again.
+  String? _pendingSessionLink =
+      kIsWeb ? Uri.base.queryParameters['session'] : null;
+
   String? _error;
   String _userInput = '';
+
+  /// Images held for the next prompt.
+  ///
+  /// They live here rather than going straight out: picking an image on a phone
+  /// is often accidental, and the user has to be able to see what is about to
+  /// be sent and take it back out before it is.
+  final List<PiImage> _attachments = [];
+
+  /// Where this view gets images from. Swapped in tests, which have no browser
+  /// and therefore no file picker to open.
+  Future<List<PickedImage>> Function() _pickImages = pickImagesFromDevice;
+  bool _devicePickerAvailable = deviceImagePickerSupported;
 
   /// The assistant reply currently being streamed, if any.
   PiMessage? _streamingMessage;
@@ -40,6 +79,15 @@ class PiViewModel extends ChangeNotifier {
 
   /// Usage of the responses already completed in this run.
   PiUsage _runUsage = PiUsage.zero;
+
+  /// Milliseconds the model spent generating the responses already completed in
+  /// this run - Pi's own per-response `durationMs` where it reported one.
+  int _runModelMs = 0;
+
+  /// Clock for the response currently in flight, started when that response
+  /// begins. A finished response reports its own duration; a streaming one has
+  /// nothing else to measure against.
+  Stopwatch? _responseClock;
 
   /// Characters streamed for the response in flight. Providers that report
   /// usage only at completion would otherwise show nothing while working.
@@ -89,13 +137,79 @@ class PiViewModel extends ChangeNotifier {
   /// Same directory, shortened to "~" / "~/..." for the app bar.
   String? get workingDirectoryDisplay =>
       _workingDirectoryDisplay ?? _workingDirectory;
+  String? get gitBranch => _gitBranch;
+
+  /// Branch name plus working-tree counts, for the app bar tooltip.
+  GitStatus? get gitStatus => _gitStatus;
+
+  /// The name of the conversation the live Pi is in, or null when it has none.
+  ///
+  /// Only Pi can say this: the live session is the one its process is holding,
+  /// and a name is whatever the last `session_info` in that file said. It is
+  /// refreshed with the rest of the state, so renaming the live session shows up
+  /// in the bar as soon as the state is asked for again.
+  String? get sessionName => _sessionName;
+
+  /// The file the live Pi session is backed by, or null when it has none (a
+  /// conversation with no turns yet has no file).
+  ///
+  /// The session picker needs it for one decision: which row is the conversation
+  /// being had, and therefore must not be deleted out from under the agent that
+  /// is still writing it.
+  String? get liveSessionPath => _liveSessionPath;
   bool get loadingDirectories => _loadingDirectories;
   bool get loadingSessions => _loadingSessions;
   bool get isLoading => _isLoading;
+  bool get resumingSession => _resumingSession;
   String? get error => _error;
   String get userInput => _userInput;
   int get messagesVersion => _messagesVersion;
   bool get awaitingModel => _awaitingModel;
+
+  /// Images waiting to be sent with the next prompt.
+  List<PiImage> get attachments => List.unmodifiable(_attachments);
+  int get attachmentLimit => maxImagesPerPrompt;
+
+  /// The model Pi is answering with, when it is one Pi offered.
+  ///
+  /// Null when the current model is one Pi was started with but does not offer,
+  /// or before any state has arrived.
+  PiModel? get currentModel {
+    final id = _state?.currentModel;
+    if (id == null) return null;
+    final provider = _state?.currentModelProvider;
+    for (final candidate in _availableModels) {
+      if (candidate.id == id &&
+          (provider == null || candidate.provider == provider)) {
+        return candidate;
+      }
+    }
+    return null;
+  }
+
+  /// Whether the current model can be sent an image.
+  ///
+  /// Unknown is treated as yes: refusing to attach a photo because the app could
+  /// not match the running model against the list Pi offered would hide the
+  /// feature for a model that can in fact see it, and the provider says so in
+  /// the reply if it cannot.
+  bool get attachmentsAccepted => currentModel?.acceptsImages ?? true;
+
+  /// Whether this build can open the device's picker at all.
+  bool get deviceImagePickerAvailable => _devicePickerAvailable;
+
+  /// Whether the attach control should be offered at all.
+  bool get canAttachImages => _devicePickerAvailable && attachmentsAccepted;
+
+  /// Why it is not offered, in the words the app shows.
+  String? get attachmentUnavailableReason {
+    if (!_devicePickerAvailable) return 'This app build cannot open the device’s file picker.';
+    if (!attachmentsAccepted) {
+      final name = _state?.currentModel ?? 'the current model';
+      return '$name does not accept images. Switch to one that can.';
+    }
+    return null;
+  }
 
   /// Live view of the run in flight, shown in the streaming chat bubble.
   TurnProgress get progress {
@@ -113,7 +227,17 @@ class PiViewModel extends ChangeNotifier {
       contextTokens: _sessionStats?.contextTokens,
       contextWindow: _sessionStats?.contextWindow,
       contextPercent: _sessionStats?.contextPercent,
+      modelSeconds: _modelSeconds(),
     );
+  }
+
+  /// Seconds the model has spent generating in this run, including the response
+  /// still in flight. Tool time is not in it - see [TurnProgress.modelSeconds].
+  double _modelSeconds() {
+    final liveMs = _responseClock?.isRunning == true
+        ? _responseClock!.elapsed.inMilliseconds
+        : 0;
+    return (_runModelMs + liveMs) / 1000.0;
   }
 
   PiSessionStats? get sessionStats => _sessionStats;
@@ -132,6 +256,15 @@ class PiViewModel extends ChangeNotifier {
         _workingDirectory = state.cwd;
         _workingDirectoryDisplay = state.cwdDisplay ?? state.cwd;
       }
+      // Capture git branch for display in the app bar
+      _gitBranch = state.gitBranch;
+      _gitStatus = state.gitStatus;
+      // Assigned rather than kept when absent, because Pi omits sessionName when
+      // the session has no name - and a bar still showing the old name after a
+      // rename to nothing, or after a new session, is describing a session it is
+      // no longer in.
+      _sessionName = state.sessionName;
+      _liveSessionPath = state.sessionFile;
       // Pi's state is the only thing that can say whether a run is still in
       // flight after the socket dropped mid-run - a backend restart, a phone
       // sleeping, a walk out of wifi range. The agent_end that would have
@@ -145,10 +278,44 @@ class PiViewModel extends ChangeNotifier {
         _bumpMessages();
         _setActivity(ActivityKind.idle, '');
       }
+
+      // A notification deep link has to wait for this first state update: it is
+      // the only proof the socket is open, and resume_session over a closed one
+      // would fail before the app ever had a chance to retry.
+      final deepLink = _pendingSessionLink;
+      if (deepLink != null) {
+        _pendingSessionLink = null;
+        unawaited(resumeSession(deepLink));
+      }
+
       // The first state fetch can beat the initial model load (the socket may
       // not be open yet), so retry once we know the backend is reachable.
       if (_availableModels.isEmpty) {
         unawaited(_loadModels());
+      }
+      // The same reasoning covers the context meter: it renders nothing until Pi
+      // has measured a figure, and nothing asks for that measurement on connect.
+      // Keying on "unmeasured" rather than "first update" is what makes a
+      // reconnect, and a session switch that dropped the old numbers, ask for it
+      // too instead of leaving the bar blank until the next run happens to end.
+      if (_sessionStats == null) {
+        unawaited(_refreshSessionStats());
+      }
+      // And the same goes for the conversation itself. Reopening the app after
+      // closing it starts nothing: the backend's Pi process has been alive the
+      // whole time, in its own directory, with its own history and its own token
+      // totals - and the state above tells the app bar all three. Loading what
+      // that session actually contains is what makes the chat agree with the bar
+      // instead of showing an empty one beside another conversation's numbers.
+      //
+      // Not while a run is in flight: Pi is mid-answer, the chat is being built
+      // from the live event stream, and swapping in the messages persisted so far
+      // would drop the reply arriving right now.
+      if (_messages.isEmpty &&
+          !state.isProcessing &&
+          !_resumingSession &&
+          !_historyHydrating) {
+        unawaited(_hydrateCurrentSession());
       }
       _notifyNow();
     });
@@ -219,6 +386,9 @@ class PiViewModel extends ChangeNotifier {
             // is kept separately in [_runUsage].
             _liveUsage = PiUsage.zero;
             _responseChars = 0;
+            // Generation has started: this is the window a rate is measured over.
+            _responseClock?.stop();
+            _responseClock = Stopwatch()..start();
             _setActivity(ActivityKind.thinking, 'thinking');
           }
           _addMessage(PiMessage.fromJson(message),
@@ -244,6 +414,17 @@ class PiViewModel extends ChangeNotifier {
             _responseChars = 0;
           }
           final text = _textOf(message);
+          // Pi times every response it streamed, and that is the honest
+          // denominator for a generation rate. Where it reported none, the clock
+          // started when this response began stands in for it.
+          final reportedMs = message['durationMs'];
+          if (reportedMs is int && reportedMs > 0) {
+            _runModelMs += reportedMs;
+          } else if (_responseClock != null && _responseClock!.isRunning) {
+            _runModelMs += _responseClock!.elapsed.inMilliseconds;
+          }
+          _responseClock?.stop();
+          _responseClock = null;
           if (_streamingMessage != null) {
             if (text.isNotEmpty) _streamingMessage!.content = text;
             // The bubble Pi just finished writing carries its own usage, so the
@@ -306,6 +487,11 @@ class PiViewModel extends ChangeNotifier {
       case 'agent_end':
         _streamingMessage?.streaming = false; // never leave a spinner spinning
         _streamingMessage = null;
+        _responseClock?.stop();
+        _responseClock = null;
+        // Before the chat is rebuilt: a run that produced no reply has to say
+        // so, or the turn ends as visible silence.
+        _noteEmptyRun(data['messages']);
         _bumpMessages();
         _awaitingModel = false;
         _isLoading = false;
@@ -322,9 +508,17 @@ class PiViewModel extends ChangeNotifier {
         unawaited(_refreshSessionStats());
         break;
 
+      case 'turn_end':
+        // One model request and its tool calls are done. Without this the
+        // context meter only moves when the whole run settles, which for a run
+        // that reads and writes its way through a codebase means the number you
+        // act on is as stale as the run is long. agent_settled still does the
+        // authoritative one; this is the meter keeping up in between.
+        unawaited(_refreshSessionStats());
+        return;
+
       default:
-        // Other lifecycle events (turn_end/...) are not rendered as chat
-        // bubbles.
+        // Other lifecycle events are not rendered as chat bubbles.
         return;
     }
 
@@ -401,6 +595,9 @@ class PiViewModel extends ChangeNotifier {
   void _resetRunCounters() {
     _liveUsage = PiUsage.zero;
     _runUsage = PiUsage.zero;
+    _runModelMs = 0;
+    _responseClock?.stop();
+    _responseClock = null;
     _responseChars = 0;
     _toolOutputChars = 0;
     _toolOutputByCall.clear();
@@ -495,12 +692,57 @@ class PiViewModel extends ChangeNotifier {
     return text.isEmpty ? name : '$name $text';
   }
 
+  /// Ask Pi for its own session totals and hand them to the app bar.
+  ///
+  /// Held to one call at a time: turn_end fires once per model request, and a
+  /// run can be many of them, so the same question would otherwise be asked
+  /// several times over while an answer is already on its way.
+  bool _statsInFlight = false;
+
   Future<void> _refreshSessionStats() async {
+    if (_statsInFlight) return;
+    _statsInFlight = true;
     try {
       _sessionStats = await piService.getSessionStats();
+      // The app bar's context meter reads these. Without saying so, a number Pi
+      // has just measured waits for the next run before it is shown.
+      _notifyNow();
     } catch (_) {
       // A backend without get_session_stats simply means the progress line
       // shows this run's numbers only.
+    } finally {
+      _statsInFlight = false;
+    }
+  }
+
+  /// Load the conversation the live Pi session is holding.
+  ///
+  /// This is what makes reopening the app mean what it looks like it means. The
+  /// backend's Pi process is not restarted when the last tab closes, so coming
+  /// back joins a session that kept running - in its own directory, with its own
+  /// history and its own token totals. The app bar is fed from the backend's
+  /// state and knows all three; only the chat was left to start empty, which is
+  /// the point where "my last folder and my last context are back" turns into
+  /// "...but the conversation isn't".
+  ///
+  /// An empty answer is left alone rather than loaded: a fresh session genuinely
+  /// has nothing, and clearing a chat to put nothing back in it is a rebuild for
+  /// no visible reason.
+  bool _historyHydrating = false;
+
+  Future<void> _hydrateCurrentSession() async {
+    if (_historyHydrating) return;
+    _historyHydrating = true;
+    try {
+      final history = await piService.loadCurrentHistory();
+      if (history.isEmpty) return;
+      _loadHistory(history);
+      _notifyNow();
+    } catch (_) {
+      // A backend without get_messages, or a socket that went away mid-request:
+      // an empty chat is the honest fallback, not a half-built one.
+    } finally {
+      _historyHydrating = false;
     }
   }
 
@@ -590,6 +832,64 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// Say so in the chat when a run ends without any reply text.
+  ///
+  /// Pi hands the whole run to `agent_end`, which is the only place that can
+  /// tell "nothing to show" apart from the two cases that already have their own
+  /// rendering: a run the user stopped, and a model that refused and said why.
+  /// Repeating those as a bare "no reply" would be worse than the silence it
+  /// replaces, so both are left alone here.
+  void _noteEmptyRun(dynamic rawMessages) {
+    if (rawMessages is! List) return;
+
+    var sawAssistant = false;
+    var stopReason = '';
+
+    for (final raw in rawMessages) {
+      if (raw is! Map<String, dynamic> || raw['role'] != 'assistant') continue;
+      sawAssistant = true;
+
+      final content = raw['content'];
+      if (content is String && content.trim().isNotEmpty) return;
+      if (content is List) {
+        for (final block in content) {
+          if (block is! Map<String, dynamic>) continue;
+          // Running commands is an answer of its own; a run that did work is
+          // not a run that said nothing.
+          if (block['type'] == 'toolCall') return;
+          if (block['type'] == 'text' &&
+              (block['text'] as String? ?? '').trim().isNotEmpty) {
+            return;
+          }
+        }
+      }
+
+      // A refusal already renders its own reason on its own bubble.
+      if (raw['errorMessage'] is String) return;
+      final reason = raw['stopReason'] as String? ?? '';
+      if (reason.isNotEmpty) stopReason = reason;
+    }
+
+    // Nothing to report about a run that never reached the model.
+    if (!sawAssistant) return;
+    // Stopping a run is the user's own action, and the partial reply plus the
+    // stopped state already carry it.
+    if (stopReason == 'aborted') return;
+
+    _messages.add(PiMessage(
+      id: 'no-reply-${DateTime.now().microsecondsSinceEpoch}',
+      role: 'assistant',
+      content: switch (stopReason) {
+        'length' => 'Pi finished with no reply: the model ran out of tokens.',
+        'error' => 'Pi finished with no reply: the provider returned an error.',
+        _ => 'Pi finished with no reply.',
+      },
+      timestamp: DateTime.now(),
+      localNote: true,
+    ));
+    _trimMessages();
+  }
+
   static String _textOf(Map<String, dynamic> message) {
     final content = message['content'];
     if (content is List) {
@@ -602,6 +902,17 @@ class PiViewModel extends ChangeNotifier {
     return content as String? ?? '';
   }
 
+  /// The images a stored message carries.
+  ///
+  /// Pi keeps an attached image inside the user message it stored, base64 and
+  /// all, so a resumed session shows the same photos the user sent rather than
+  /// the text half of them.
+  static List<PiImage> _imagesOf(Map<String, dynamic> message) {
+    final content = message['content'];
+    if (content is! List) return const [];
+    return content.map(PiImage.fromContentBlock).whereType<PiImage>().toList();
+  }
+
   static String _resultText(dynamic result) {
     if (result is Map && result['content'] is List) {
       return (result['content'] as List)
@@ -612,10 +923,99 @@ class PiViewModel extends ChangeNotifier {
     return result?.toString() ?? '';
   }
 
+  /// Open the device's picker and queue whatever it returns.
+  ///
+  /// Images are prepared here rather than at send time so the size and type
+  /// problems surface while the user still has the picker's file in front of
+  /// them, not after they pressed send.
+  Future<void> attachImagesFromDevice() async {
+    if (!canAttachImages) {
+      _error = attachmentUnavailableReason;
+      _notifyNow();
+      return;
+    }
+    _error = null;
+    _notifyNow();
+
+    try {
+      // A picker the user closes without choosing answers immediately in some
+      // browsers and not at all in others, so this does not wait on one forever.
+      final picked = await _pickImages().timeout(const Duration(minutes: 5));
+      for (final image in picked) {
+        await addAttachmentBytes(
+          bytes: image.bytes,
+          name: image.name,
+          notify: false,
+        );
+      }
+    } on TimeoutException {
+      _error = 'No image was chosen.';
+    } on UnsupportedError catch (error) {
+      _error = error.message;
+    } on ImageAttachmentError catch (error) {
+      _error = error.message;
+    } catch (error) {
+      _error = 'That image could not be read: $error';
+    }
+    _notifyNow();
+  }
+
+  /// Prepare one image and queue it. The error it produces, if any, is the
+  /// advice from `preparePickedImage`, shown as it is.
+  Future<void> addAttachmentBytes({
+    required Uint8List bytes,
+    required String name,
+    bool notify = true,
+  }) async {
+    if (_attachments.length >= maxImagesPerPrompt) {
+      _error = 'A prompt can carry at most $maxImagesPerPrompt images.';
+      if (notify) _notifyNow();
+      return;
+    }
+    try {
+      _attachments.add(await preparePickedImage(bytes: bytes, name: name));
+      _error = null;
+    } on ImageAttachmentError catch (error) {
+      _error = error.message;
+    }
+    if (notify) _notifyNow();
+  }
+
+  void removeAttachmentAt(int index) {
+    if (index < 0 || index >= _attachments.length) return;
+    _attachments.removeAt(index);
+    _notifyNow();
+  }
+
+  void clearAttachments() {
+    if (_attachments.isEmpty) return;
+    _attachments.clear();
+    _notifyNow();
+  }
+
+  @visibleForTesting
+  void useImagePickerForTest(
+    Future<List<PickedImage>> Function() picker, {
+    bool supported = true,
+  }) {
+    _pickImages = picker;
+    _devicePickerAvailable = supported;
+  }
+
   Future<void> submitPrompt([String? input]) async {
     final prompt = (input ?? _userInput).trim();
     if (prompt.isEmpty) return;
 
+    // An image the model cannot see is not worth dropping quietly: the message
+    // would read one way to the user and be sent another, and the reply would
+    // never mention what it never saw.
+    if (_attachments.isNotEmpty && !attachmentsAccepted) {
+      _error = attachmentUnavailableReason;
+      _notifyNow();
+      return;
+    }
+
+    final images = List<PiImage>.from(_attachments);
     _userInput = '';
     _isLoading = true;
     _awaitingModel = true;
@@ -626,13 +1026,18 @@ class PiViewModel extends ChangeNotifier {
       role: 'user',
       content: prompt,
       timestamp: DateTime.now(),
+      images: images,
     ));
     _bumpMessages();
     _trimMessages();
     _notifyNow();
 
     try {
-      await piService.sendPrompt(prompt);
+      await piService.sendPrompt(prompt, images: images);
+      // Only once the turn actually started. A send that failed left the images
+      // where the user can see them and try again, which is the whole point of
+      // showing them before sending.
+      _attachments.clear();
     } catch (e) {
       _error = 'Error: $e';
       _isLoading = false;
@@ -658,7 +1063,73 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
-  /// Start a fresh session in the current working directory (like `/new` in the
+  /// Give a saved session a display name, and bring back the list the picker is
+  /// showing.
+  ///
+  /// The list is reloaded rather than patched in place: the backend goes through
+  /// Pi for the session that is live and edits the file for the others, and the
+  /// picker should show what is actually recorded rather than what this app
+  /// assumed it would become.
+  ///
+  /// A null or blank [name] clears the name, which leaves the first message as
+  /// what the picker shows - the session is not renamed, just unnamed again.
+  Future<bool> renameSession(PiSessionInfo session, String? name) async {
+    _error = null;
+    _notifyNow();
+    try {
+      final trimmed = name?.trim() ?? '';
+      await piService.renameSession(session.path, trimmed.isEmpty ? null : trimmed);
+      await piService.listSessions().then((value) => _sessions = value);
+      // And ask what is live now. Renaming the session the app is sitting in
+      // changes the app bar, and the only thing that can report that is Pi.
+      await piService.refreshState();
+      _notifyNow();
+      return true;
+    } catch (e) {
+      _error = 'Could not rename that session: $e';
+      _notifyNow();
+      return false;
+    }
+  }
+
+  /// Ask the model what [session] should be called.
+  ///
+  /// Returns the suggestion without applying it, so the person sees it in the
+  /// rename field and can keep it, change it, or ignore it. null when the model
+  /// could not be asked, with the reason left in [error] for the dialog to show.
+  Future<String?> suggestSessionTitle(PiSessionInfo session) async {
+    _error = null;
+    _notifyNow();
+    try {
+      return await piService.suggestSessionTitle(session.path);
+    } catch (e) {
+      _error = 'The model could not name it: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
+  /// Remove a saved session and its conversation from the list.
+  ///
+  /// The list is reloaded rather than dropped locally, so what the picker shows
+  /// is what is on disk — including the case where the backend trashed the file
+  /// instead of unlinking it and someone wants it back.
+  Future<bool> deleteSession(PiSessionInfo session) async {
+    _error = null;
+    _notifyNow();
+    try {
+      await piService.deleteSession(session.path);
+      _sessions = await piService.listSessions();
+      _notifyNow();
+      return true;
+    } catch (e) {
+      _error = 'Could not delete that session: $e';
+      _notifyNow();
+      return false;
+    }
+  }
+
+  /// Start a fresh Pi session in the current working directory (like `/new` in the
   /// TUI): the chat is emptied, the directory, model and token counters are left
   /// as they are. The conversation being replaced stays on disk and is still
   /// reachable from the session picker.
@@ -678,6 +1149,10 @@ class PiViewModel extends ChangeNotifier {
       // Ask the backend what is live now: the new session has its own token
       // totals, and a fresh chat must not keep showing the old context bar.
       await piService.refreshState();
+      // ...and then measure them. Setting the numbers to null above is only half
+      // of not showing the old bar; without asking, the meter stays blank for
+      // the whole of the new conversation until some run happens to settle.
+      await _refreshSessionStats();
       _notifyNow();
       return true;
     } catch (e) {
@@ -691,6 +1166,7 @@ class PiViewModel extends ChangeNotifier {
   /// the live runtime and restore its conversation in the chat.
   Future<void> resumeSession(String sessionPath) async {
     _isLoading = true;
+    _resumingSession = true;
     _error = null;
     _notifyNow();
     try {
@@ -704,10 +1180,16 @@ class PiViewModel extends ChangeNotifier {
       _resetRunCounters();
       _sessionStats = null;
       await piService.refreshState();
+      // The conversation being resumed is the one whose context matters now, and
+      // it is usually the long one. Without this the bar keeps the numbers of
+      // the session that was just left behind, or shows nothing at all.
+      await _refreshSessionStats();
       _isLoading = false;
+      _resumingSession = false;
       _notifyNow();
     } catch (e) {
       _isLoading = false;
+      _resumingSession = false;
       _error = 'Failed to resume session: $e';
       _notifyNow();
     }
@@ -759,6 +1241,45 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// List all files and directories in a path.
+  Future<FileListing?> listFiles({String? path}) async {
+    _error = null;
+    try {
+      final listing = await piService.listFiles(path: path);
+      return listing;
+    } catch (e) {
+      _error = 'Failed to list files: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
+  /// Create a new directory inside [path]. Returns the created path, or null
+  /// on failure (with [error] set).
+  Future<String?> createDirectory({required String name, String? path}) async {
+    _error = null;
+    try {
+      return await piService.createDirectory(name: name, path: path);
+    } catch (e) {
+      _error = 'Failed to create directory: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
+  /// Read the contents of a text file.
+  Future<FileContent?> readFile(String path) async {
+    _error = null;
+    try {
+      final content = await piService.readFile(path);
+      return content;
+    } catch (e) {
+      _error = 'Failed to read file: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
   /// Rebuild the chat from messages returned by Pi after a session switch.
   void _loadHistory(List<Map<String, dynamic>> history) {
     _messages.clear();
@@ -776,12 +1297,17 @@ class PiViewModel extends ChangeNotifier {
 
       if (role == 'user') {
         final text = _textOf(raw);
-        if (text.isEmpty) continue;
+        final images = _imagesOf(raw);
+        // A message that is only an image is still a message the user sent, and
+        // dropping it here would make an image-only turn look like it never
+        // happened when the session is opened again.
+        if (text.isEmpty && images.isEmpty) continue;
         _messages.add(PiMessage(
           id: raw['id'] as String? ?? 'user-history',
           role: 'user',
           content: text,
           timestamp: when,
+          images: images,
         ));
       } else if (role == 'assistant') {
         final message = PiMessage(

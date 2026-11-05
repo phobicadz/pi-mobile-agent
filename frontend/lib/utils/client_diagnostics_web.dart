@@ -15,10 +15,15 @@ Map<String, dynamic> browserMetrics() {
   return {
     'browser': {
       ...geometry.report(),
+      // The height Flutter's canvas is being asked to fill. Compared with the
+      // canvas's own height in `client_diagnostics.dart`, this is the size of the
+      // band of screen nothing is painted on.
+      'hostHeight': geometry.hostRect?.height ?? -1,
       // The visible part of the page minus the part of Flutter's element that is
-      // inside it: how much of the canvas is off screen, which on iOS is what the
-      // keyboard takes away.
-      'canvasOffScreenBottom': geometry.hostRect == null
+      // inside it: how much of the host is off screen, which on iOS is what the
+      // keyboard takes away. This one is the *host*, which agrees with the
+      // viewport even when the canvas drawn inside it does not.
+      'hostOffScreenBottom': geometry.hostRect == null
           ? 0
           : (geometry.hostRect!.bottom -
                   (geometry.visualOffsetTop + geometry.visualHeight))

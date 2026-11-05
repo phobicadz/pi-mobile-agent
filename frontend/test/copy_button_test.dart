@@ -30,8 +30,8 @@ PiMessage _assistant(String content) => PiMessage(
       timestamp: DateTime.utc(2026, 1, 1),
     );
 
-Future<void> _pump(WidgetTester tester, PiMessage message,
-    _FakeClipboard clipboard) async {
+Future<void> _pump(
+    WidgetTester tester, PiMessage message, _FakeClipboard clipboard) async {
   tester.binding.defaultBinaryMessenger
       .setMockMethodCallHandler(SystemChannels.platform, clipboard.handle);
   await tester.pumpWidget(
@@ -149,13 +149,14 @@ void main() {
       final buttonRect = tester.getRect(button);
 
       // Top-right corner, inside the bubble's 12 x 8 padding.
-      expect(buttonRect.right, moreOrLessEquals(bubbleRect.right - 12, epsilon: 1));
+      expect(buttonRect.right,
+          moreOrLessEquals(bubbleRect.right - 12, epsilon: 1));
       expect(buttonRect.top, moreOrLessEquals(bubbleRect.top + 8, epsilon: 1));
       // It lives in the header band, so nothing it can cover: the label stops
       // short of it and the reply starts underneath.
       expect(tester.getRect(find.text('Pi')).right,
           lessThanOrEqualTo(buttonRect.left));
-      expect(tester.getTopLeft(find.byType(SelectableText)).dy,
+      expect(tester.getTopLeft(find.text('Hello world')).dy,
           greaterThanOrEqualTo(buttonRect.bottom));
     });
   });

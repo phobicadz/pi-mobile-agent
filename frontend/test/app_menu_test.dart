@@ -1,0 +1,192 @@
+import 'dart:async';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
+import 'package:pi_mobile_agent/providers/pi_view_model.dart';
+import 'package:pi_mobile_agent/screens/home_screen.dart';
+import 'package:pi_mobile_agent/services/pi_service.dart';
+import 'package:pi_mobile_agent/widgets/file_browser.dart';
+import 'package:provider/provider.dart';
+
+import 'support/app_menu.dart';
+
+/// A connected backend that reports a working directory, which is what the menu
+/// describes in its header.
+class _MenuService extends PiService {
+  final _states = StreamController<PiState>.broadcast();
+
+  @override
+  Stream<PiState> get stateUpdates => _states.stream;
+
+  @override
+  Stream<PiEvent> get events => const Stream.empty();
+
+  @override
+  Future<List<PiModel>> getAvailableModels() async => const [];
+
+  @override
+  bool get isConnected => true;
+
+  @override
+  Future<void> refreshState() async {}
+
+  void reportDirectory(String cwd, String cwdDisplay) {
+    _states.add(PiState(cwd: cwd, cwdDisplay: cwdDisplay));
+  }
+}
+
+Future<(PiViewModel, _MenuService)> pumpHome(WidgetTester tester) async {
+  final service = _MenuService();
+  final viewModel = PiViewModel(piService: service);
+  await tester.pumpWidget(
+    ChangeNotifierProvider<AppearanceController>(
+      create: (_) => AppearanceController(),
+      child: ChangeNotifierProvider<PiViewModel>.value(
+        value: viewModel,
+        child: const MaterialApp(home: HomeScreen()),
+      ),
+    ),
+  );
+  for (var i = 0; i < 8; i++) {
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+  return (viewModel, service);
+}
+
+void main() {
+  testWidgets('the menu carries every control the bar used to carry',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    await openAppMenu(tester);
+
+    for (final label in const [
+      'New session',
+      'Chat text size',
+      'Switch to dark mode',
+    ]) {
+      expect(find.text(label), findsOneWidget,
+          reason: 'the menu replaced the icons, so it has to say in words what '
+              'each icon meant');
+    }
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the sessions are reached from the bar, not from the menu',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    // The bar is asked for before the menu is opened, because an open drawer
+    // covers it and a tap there hits the drawer.
+    expect(
+      find.descendant(
+          of: find.byType(AppBar), matching: find.byIcon(Icons.forum_outlined)),
+      findsOneWidget,
+      reason: 'a session with no name has nothing to show in the centre of the '
+          'bar, and switching the menu row off is only safe while the way in is '
+          'still somewhere');
+
+    await openAppMenu(tester);
+
+    expect(find.text('Resume a previous session'), findsNothing,
+        reason: 'the centre of the bar is the conversation - its name when it has '
+            'one, and the way to the list of them when it has none - which is one '
+            'tap from the chat it would replace instead of a menu away');
+    expect(
+      find.descendant(
+          of: find.byType(Drawer), matching: find.byIcon(Icons.history)),
+      findsNothing,
+      reason: 'and the menu is left with the settings that need room to explain '
+          'themselves, which a session list does not');
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the directory is chosen from the bar, not from the menu',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    await openAppMenu(tester);
+
+    expect(find.text('Browse files & set working directory'), findsNothing,
+        reason: 'the folder in the bar opens the same browser, and it is already '
+            'on screen naming the directory this row could only have repeated');
+    expect(
+      find.descendant(
+          of: find.byType(Drawer), matching: find.byIcon(Icons.folder_open)),
+      findsNothing,
+      reason: 'the menu keeps the things that need room to explain themselves, '
+          'and a folder does not');
+
+    viewModel.dispose();
+  });
+  testWidgets('the bar carries the menu and the connection state, nothing else',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    for (final icon in const [
+      Icons.add,
+      Icons.history,
+      Icons.dark_mode,
+      Icons.light_mode,
+      Icons.text_decrease,
+      Icons.text_increase,
+    ]) {
+      expect(
+        find.descendant(of: find.byType(AppBar), matching: find.byIcon(icon)),
+        findsNothing,
+        reason: '$icon is in the menu now',
+      );
+    }
+
+    expect(find.byIcon(Icons.menu), findsOneWidget);
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the menu states what the app is currently set to',
+      (tester) async {
+    final (viewModel, service) = await pumpHome(tester);
+    service.reportDirectory('/home/adam/source/repos/pi-mobile-agent',
+        '~/source/repos/pi-mobile-agent');
+    for (var i = 0; i < 4; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    await openAppMenu(tester);
+
+    expect(find.text('Connected'), findsOneWidget,
+        reason: 'the dot in the bar is a colour with no words attached to it; '
+            'the menu is where those words exist');
+    expect(find.text('~/source/repos/pi-mobile-agent'), findsWidgets,
+        reason:
+            'which directory a new session would be started in is the thing '
+            'a person is deciding when they open this menu');
+    await scrollMenuIntoView(tester, find.textContaining('% of the size'));
+    expect(find.textContaining('100% of the size the chat was designed at'),
+        findsOneWidget,
+        reason:
+            'a size control that does not say the current size is a control '
+            'with no idea what it is set to');
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the file browser opens from the bar, with no menu involved',
+      (tester) async {
+    final (viewModel, _) = await pumpHome(tester);
+
+    await openFileBrowser(tester);
+
+    expect(find.byType(FileBrowser), findsOneWidget);
+    expect(find.byType(Drawer), findsNothing,
+        reason: 'changing the directory is reached from the thing already naming '
+            'it, so no menu has to be opened to find it and none is left standing '
+            'over the sheet on a phone');
+
+    viewModel.dispose();
+  });
+}

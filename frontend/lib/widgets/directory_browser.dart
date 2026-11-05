@@ -21,7 +21,12 @@ class _DirectoryBrowserState extends State<DirectoryBrowser> {
   @override
   void initState() {
     super.initState();
-    _browse(null);
+    // Not straight away: this sheet is mounted while the framework is building,
+    // and the first thing _browse does is tell the view model it is loading -
+    // which marks the provider above this widget dirty in the middle of a build.
+    // The listing is fetched once the frame that put this sheet on screen is
+    // finished, which is also when there is a spinner worth showing.
+    WidgetsBinding.instance.addPostFrameCallback((_) => _browse(null));
   }
 
   Future<void> _browse(String? path) async {

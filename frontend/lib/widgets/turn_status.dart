@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/turn_progress.dart';
 import '../providers/pi_view_model.dart';
-import '../utils/format.dart';
 
 /// The busy indicator, inside the streaming chat bubble: an icon that matches
 /// what Pi is actually doing (brain while it reasons, pad and pen while it
@@ -82,27 +81,19 @@ class TurnStatusRow extends StatelessWidget {
     }
   }
 
-  /// `1.2k tok out · 34k ctx · 12.4k chars · 30%`
+  /// `85 tok/s`
   ///
-  /// Only the parts that carry information are shown: an estimate is marked
-  /// with `~` so it is never mistaken for Pi's numbers, and tool output appears
-  /// only once a tool has produced some.
+  /// Generation speed, and nothing else. The earlier line reported tokens out,
+  /// context used, tool output and context percentage; those were read from
+  /// figures the backend does not report reliably, so a run could show numbers
+  /// that were not describing it. Speed is the one figure that can be measured
+  /// from Pi's own timings, so it is the one worth putting in front of someone.
   static String counters(TurnProgress progress) {
-    final parts = <String>[];
-    final produced = progress.producedTokens;
-    if (produced > 0) {
-      parts.add(
-        '${progress.estimated ? '~' : ''}${formatTokens(produced)} tok out',
-      );
-    }
-    final consumed = progress.consumedTokens;
-    if (consumed > 0) parts.add('${formatTokens(consumed)} ctx');
-    if (progress.toolOutputChars > 0) {
-      parts.add('${formatCount(progress.toolOutputChars)} chars');
-    }
-    final percent = progress.contextPercent;
-    if (percent != null && percent > 0) parts.add('${percent.round()}%');
-    if (parts.isEmpty) return 'starting…';
-    return parts.join(' · ');
+    final rate = progress.tokensPerSecond;
+    // Nothing to divide by yet: the request is sent, the model has not started.
+    if (rate <= 0) return 'starting…';
+    // One decimal only while the number is small enough that the difference
+    // matters; a whole number is easier to read at any real speed.
+    return '${rate.toStringAsFixed(rate < 10 ? 1 : 0)} tok/s';
   }
 }

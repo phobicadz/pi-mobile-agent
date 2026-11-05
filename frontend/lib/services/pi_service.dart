@@ -108,6 +108,7 @@ class PiService {
   Future<Map<String, dynamic>> _sendCommand(
     String command, {
     Map<String, dynamic>? params,
+    Duration? timeout,
   }) async {
     if (!_isConnected) {
       throw Exception('Not connected to Pi backend');
@@ -128,7 +129,7 @@ class PiService {
     try {
       _channel.sink.add(jsonEncode(message));
       return await completer.future.timeout(
-        const Duration(seconds: 30),
+        timeout ?? const Duration(seconds: 30),
         onTimeout: () {
           _pendingRequests.remove(id);
           throw Exception('Command timeout: $command');
@@ -140,10 +141,20 @@ class PiService {
     }
   }
 
-  Future<void> sendPrompt(String message) async {
+  /// Send a prompt, optionally with images attached.
+  ///
+  /// The images are Pi's own `ImageContent` shape (`toJson` on [PiImage] is
+  /// that shape). Whether the model in play accepts them is decided before this
+  /// is called - the backend validates the payload but does not know which model
+  /// the user picked, and a model that cannot see would reject the whole prompt.
+  Future<void> sendPrompt(String message, {List<PiImage> images = const []}) async {
     final response = await _sendCommand(
       'prompt',
-      params: {'message': message},
+      params: {
+        'message': message,
+        if (images.isNotEmpty)
+          'images': images.map((image) => image.toJson()).toList(),
+      },
     );
     if (!response['success']) {
       throw Exception('Prompt failed: ${response['error']}');
@@ -183,6 +194,32 @@ class PiService {
     return DirListing.fromJson(unwrapData(response, command: 'list_dir'));
   }
 
+  /// List all files and directories in a path. Omit [path] to list the
+  /// current working directory.
+  Future<FileListing> listFiles({String? path}) async {
+    final response = await _sendCommand('list_files', params: {
+      if (path != null) 'path': path,
+    });
+    return FileListing.fromJson(unwrapData(response, command: 'list_files'));
+  }
+
+  /// Create a new directory inside [path]. Omit [path] to create it in the
+  /// current working directory. Returns the created path.
+  Future<String> createDirectory({required String name, String? path}) async {
+    final response = await _sendCommand('create_dir', params: {
+      'name': name,
+      if (path != null) 'path': path,
+    });
+    final data = unwrapData(response, command: 'create_dir');
+    return data['path'] as String? ?? name;
+  }
+
+  /// Read the contents of a text file.
+  Future<FileContent> readFile(String path) async {
+    final response = await _sendCommand('read_file', params: {'path': path});
+    return FileContent.fromJson(unwrapData(response, command: 'read_file'));
+  }
+
   /// Point Pi at a new working directory. Pi restarts with a fresh session, so
   /// the current chat history no longer applies.
   Future<String> setWorkingDirectory(String path) async {
@@ -209,6 +246,65 @@ class PiService {
         .toList();
   }
 
+  /// Give a saved session a display name (`rename_session`).
+  ///
+  /// The backend decides how: the session the live Pi is in goes through Pi, so
+  /// its own idea of the name stays in step with the file, and every other one
+  /// is a file nobody has open and is appended to directly. Either way the name
+  /// is what the picker shows instead of the first message, and what Pi's own
+  /// `/resume` shows too.
+  ///
+  /// A null [name] clears it, which is what Pi's `/name` does with an empty one.
+  Future<void> renameSession(String sessionPath, String? name) async {
+    final response = await _sendCommand(
+      'rename_session',
+      params: {'sessionPath': sessionPath, 'name': name},
+    );
+    if (response['success'] == false) {
+      throw Exception('Rename failed: ${response['error']}');
+    }
+  }
+
+  /// Ask the model what a session should be called (`generate_session_title`).
+  ///
+  /// A suggestion, never an applied name: what a model guessed about a
+  /// conversation is worth showing someone before it becomes that conversation's
+  /// label. It is a model call rather than a socket read, so it is given longer
+  /// than the 30 seconds a command over a LAN link normally needs.
+  Future<String> suggestSessionTitle(String sessionPath) async {
+    final response = await _sendCommand(
+      'generate_session_title',
+      params: {'sessionPath': sessionPath},
+      timeout: const Duration(seconds: 100),
+    );
+    if (response['success'] == false) {
+      throw Exception('Naming failed: ${response['error']}');
+    }
+    final data = unwrapData(response, command: 'generate_session_title');
+    final title = (data['title'] as String? ?? '').trim();
+    if (title.isEmpty) {
+      throw Exception('The model returned no name');
+    }
+    return title;
+  }
+
+  /// Remove a saved session (`delete_session`).
+  ///
+  /// The backend tries `trash` and falls back to unlinking, which is the order
+  /// Pi's own session picker uses — so a session removed from the app and one
+  /// removed from the TUI end up in the same place, and where a trashing tool
+  /// exists that place is recoverable. It refuses the session the live Pi is in:
+  /// that file is open and still being written to.
+  Future<void> deleteSession(String sessionPath) async {
+    final response = await _sendCommand(
+      'delete_session',
+      params: {'sessionPath': sessionPath},
+    );
+    if (response['success'] == false) {
+      throw Exception('Delete failed: ${response['error']}');
+    }
+  }
+
   /// Start a fresh Pi session in the directory Pi is already working in (like
   /// `/new` in the TUI). The conversation being left behind stays on disk, so
   /// the session picker can load it again.
@@ -217,6 +313,23 @@ class PiService {
     if (response['success'] == false) {
       throw Exception('New session failed: ${response['error']}');
     }
+  }
+
+  /// The conversation the live Pi session is actually holding.
+  ///
+  /// The backend's Pi process outlives the browser: closing the tab leaves the
+  /// session running in its directory, and reconnecting joins that same session.
+  /// An app that never asks what it contains shows an empty chat over a
+  /// conversation with a history in it - while the app bar, which is fed from
+  /// the backend's state, correctly reports that session's directory and its
+  /// context figures. The numbers then look like they belong to a conversation
+  /// that was never loaded.
+  Future<List<Map<String, dynamic>>> loadCurrentHistory() async {
+    final response = await _sendCommand('get_messages');
+    final data = unwrapData(response, command: 'get_messages');
+    return (data['messages'] as List<dynamic>? ?? [])
+        .map((e) => e as Map<String, dynamic>)
+        .toList();
   }
 
   /// Loads a saved session into the live Pi runtime. Returns the restored
@@ -229,11 +342,9 @@ class PiService {
     if (!response['success']) {
       throw Exception('Resume failed: ${response['error']}');
     }
-    final history = await _sendCommand('get_messages');
-    final data = unwrapData(history, command: 'get_messages');
-    return (data['messages'] as List<dynamic>? ?? [])
-        .map((e) => e as Map<String, dynamic>)
-        .toList();
+    // After the switch, "the current session" *is* the one being resumed, so the
+    // history is read the same way rather than duplicated here.
+    return loadCurrentHistory();
   }
 
   /// Report what the browser and Flutter each think the screen is, along with

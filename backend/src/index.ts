@@ -2,13 +2,20 @@ import express from "express";
 import cors from "cors";
 import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
-import { spawn } from "child_process";
+import { spawn, spawnSync } from "child_process";
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import os from "os";
 import path from "path";
 import PiRpcClient from "./pi-rpc-client.js";
-import { listPiSessions, sessionCwdOf } from "./session-store.js";
-import { listDirectory, resolveExistingDir, shrinkHome } from "./fs-browser.js";
+import type { PromptImage } from "./pi-rpc-client.js";
+import {
+  deleteSessionOnDisk,
+  listPiSessions,
+  sessionCwdOf,
+  sessionPromptExcerpt,
+  setSessionNameOnDisk,
+} from "./session-store.js";
+import { listDirectory, listFiles, createDirectory, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
 
 const app = express();
 const server = createServer(app);
@@ -34,6 +41,118 @@ let currentCwd =
 // not the mutable currentCwd, which a resume can move. Keeping the two apart is
 // what lets the backend follow Pi instead of guessing.
 let piProcessCwd = currentCwd;
+
+// Git state for a directory, or null when it is not a git repository (or git is
+// unavailable). One `git status --branch --porcelain` answers the branch name and
+// the working-tree counts in a single call, which is what the app bar tooltip shows.
+type GitStatus = {
+  branch: string;
+  detached: boolean;
+  upstream: string | null;
+  ahead: number;
+  behind: number;
+  staged: number;
+  modified: number;
+  untracked: number;
+  conflicted: number;
+};
+
+// get_state is asked for on every connect and after any directory change, and a
+// resume can ask twice in the same breath. Repeating git for each of those is
+// pointless work, so the answer is held briefly per directory.
+const gitStatusCache = new Map<string, { at: number; status: GitStatus | null }>();
+const GIT_STATUS_TTL_MS = 1000;
+
+function gitStatus(cwd: string): GitStatus | null {
+  const cached = gitStatusCache.get(cwd);
+  if (cached && Date.now() - cached.at < GIT_STATUS_TTL_MS) return cached.status;
+
+  let status: GitStatus | null = null;
+  try {
+    const result = spawnSync(
+      "git",
+      ["status", "--branch", "--porcelain=v1"],
+      {
+        cwd,
+        encoding: "utf-8",
+        timeout: 2000,
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    // Non-zero here means "not a repository", "not a work tree", or git missing -
+    // all of which mean there is no branch to show.
+    if (result.status === 0) status = parseGitStatus(result.stdout ?? "");
+  } catch (err) {
+    status = null;
+  }
+
+  gitStatusCache.set(cwd, { at: Date.now(), status });
+  return status;
+}
+
+function parseGitStatus(output: string): GitStatus | null {
+  const lines = output.split("\n").filter((line) => line.length > 0);
+  const header = lines[0];
+  if (!header || !header.startsWith("## ")) return null;
+
+  const status: GitStatus = {
+    branch: "",
+    detached: false,
+    upstream: null,
+    ahead: 0,
+    behind: 0,
+    staged: 0,
+    modified: 0,
+    untracked: 0,
+    conflicted: 0,
+  };
+
+  // `## HEAD (no branch)` is what a detached HEAD looks like; `## main` is a
+  // branch with no upstream; `## main...origin/main [ahead 1, behind 2]` is a
+  // branch with one. The counts are what a `git status` header line would say.
+  const body = header.slice(3);
+  if (body.startsWith("HEAD ")) {
+    status.detached = true;
+  } else {
+    const [branchPart, trackingPart] = body.split("...", 2);
+    status.branch = branchPart.trim();
+    if (trackingPart) {
+      const [upstream, ...rest] = trackingPart.split("]");
+      status.upstream = upstream.trim();
+      const notes = rest.join("]");
+      const ahead = /ahead (\d+)/.exec(notes);
+      const behind = /behind (\d+)/.exec(notes);
+      if (ahead) status.ahead = Number(ahead[1]);
+      if (behind) status.behind = Number(behind[1]);
+    }
+  }
+
+  // Every remaining line is `XY path`; the two status columns say what changed.
+  for (const line of lines.slice(1)) {
+    const index = line[0] ?? " ";
+    const worktree = line[1] ?? " ";
+    if (index === "?" && worktree === "?") {
+      status.untracked += 1;
+    } else if (index === "U" || worktree === "U" || (index === "A" && worktree === "A") || (index === "D" && worktree === "D")) {
+      status.conflicted += 1;
+    } else {
+      if (index !== " ") status.staged += 1;
+      if (worktree !== " ") status.modified += 1;
+    }
+  }
+
+  // A detached HEAD still has something worth showing, but the app labels a
+  // branch, so only answer when there is one (or a detached head to name).
+  if (!status.branch && !status.detached) return null;
+  return status;
+}
+
+// Kept for the places that only ever needed the name.
+function getGitBranch(cwd: string): string | null {
+  const status = gitStatus(cwd);
+  if (!status) return null;
+  return status.detached ? "HEAD" : status.branch;
+}
 
 // Directories recently used by Pi sessions, most recent first (deduplicated).
 function recentDirectories(): string[] {
@@ -130,6 +249,155 @@ wss.on("connection", (ws: WebSocket) => {
   });
 });
 
+const MAX_IMAGES_PER_PROMPT = 8;
+const MAX_IMAGE_BASE64_CHARS = 8 * 1024 * 1024;
+
+/**
+ * Validate the images the app sent, before any of it reaches Pi.
+ *
+ * A base64 image is the one part of this protocol that arrives unbounded: a
+ * phone photo is several megabytes of text, and a model that cannot take images
+ * rejects the whole prompt rather than the image. Saying which one is wrong, in
+ * a sentence the app can show, beats a provider error several hops away.
+ */
+function toPromptImages(raw: unknown): PromptImage[] | undefined {
+  if (raw === undefined || raw === null) return undefined;
+  if (!Array.isArray(raw)) throw new Error("images must be a list");
+  if (raw.length === 0) return undefined;
+  if (raw.length > MAX_IMAGES_PER_PROMPT) {
+    throw new Error(`At most ${MAX_IMAGES_PER_PROMPT} images per prompt`);
+  }
+
+  return raw.map((entry, index) => {
+    if (typeof entry !== "object" || entry === null) {
+      throw new Error(`image ${index + 1} is not an object`);
+    }
+    const { data, mimeType } = entry as Record<string, unknown>;
+    if (typeof data !== "string" || data.length === 0) {
+      throw new Error(`image ${index + 1} has no data`);
+    }
+    if (data.length > MAX_IMAGE_BASE64_CHARS) {
+      throw new Error(
+        `image ${index + 1} is too large (${Math.round(
+          data.length / 1024 / 1024,
+        )} MB)`,
+      );
+    }
+    if (typeof mimeType !== "string" || !mimeType.startsWith("image/")) {
+      throw new Error(`image ${index + 1} is not an image`);
+    }
+    return { data, mimeType };
+  });
+}
+
+/**
+ * The session file the running Pi has open, or null when it has none.
+ *
+ * Asked for rather than remembered, because the running Pi is the only thing
+ * that knows: it opens a new file on the first prompt, and resuming swaps it.
+ * Renaming has to know which file is live in order to go through Pi for that
+ * one and straight to disk for the rest - appending to a file Pi is itself
+ * appending to is how a half-written line gets into a session.
+ */
+async function liveSessionFile(): Promise<string | null> {
+  if (!piClient) return null;
+  try {
+    const state = await piClient.getState();
+    const file = (state.data as Record<string, unknown> | undefined)?.sessionFile;
+    return typeof file === "string" && file ? path.resolve(file) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Trim what a model says into something a session list can show. */
+function cleanSessionTitle(text: string): string {
+  const line =
+    text
+      .split("\n")
+      .map((l) => l.trim())
+      .find((l) => l.length > 0) ?? "";
+
+  const title = line
+    .replace(/^[-*•\d.)\s]+/, "")
+    .replace(/^["'`]+|["'`]+$/g, "")
+    .replace(/[.,;:]+$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  return title.length > 80 ? `${title.slice(0, 79).trim()}…` : title;
+}
+
+/**
+ * Ask the model for a short name for a conversation (`pi --print`).
+ *
+ * A separate one-shot Pi rather than the app's own child: asking the live
+ * session to name itself would put both the request and its answer inside the
+ * conversation being named. `--no-session` keeps the call out of the session
+ * list too, so asking what a session should be called never adds one.
+ */
+function titleWithModel(excerpt: string): Promise<string> {
+  // PI_COMMAND is the same override the RPC child honours.
+  const piCommand = process.env.PI_COMMAND || "pi";
+  const instruction =
+    "The text between <conversation> and </conversation> on stdin is the user " +
+    "side of one saved conversation. Name that conversation. Reply with the name " +
+    "only: two to five words, lower case, no quotes, no sentence, no " +
+    "explanation - it is a label in a list of saved sessions, so it has to say " +
+    "what this particular conversation is about.";
+
+  return new Promise((resolve, reject) => {
+    // On Windows "pi" is a pi.cmd shim that needs a shell, and a shell would
+    // also split the instruction into separate words, so there it is quoted.
+    const onWindows = process.platform === "win32";
+
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(
+        piCommand,
+        ["--no-session", "--print", onWindows ? `"${instruction}"` : instruction],
+        { cwd: currentCwd, shell: onWindows },
+      );
+    } catch (err) {
+      reject(err);
+      return;
+    }
+
+    let out = "";
+    let errText = "";
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error("The model took too long to name this session"));
+    }, 90_000);
+
+    child.stdout?.on("data", (chunk) => (out += chunk.toString()));
+    child.stderr?.on("data", (chunk) => (errText += chunk.toString()));
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      reject(err);
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const title = cleanSessionTitle(out);
+      if (title) {
+        resolve(title);
+        return;
+      }
+      reject(
+        new Error(
+          errText.trim() || `No name came back (pi exited with ${code ?? "no code"})`,
+        ),
+      );
+    });
+
+    // Delimited, because a bare block of text on stdin reads to a model as an
+    // instruction to answer rather than as the thing to be named.
+    child.stdin?.write(`<conversation>\n${excerpt}\n</conversation>\n`);
+    child.stdin?.end();
+  });
+}
+
 async function handleClientMessage(ws: WebSocket, message: any) {
   const { id, command, ...params } = message;
 
@@ -164,6 +432,132 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             cwdDisplay: shrinkHome(currentCwd),
             recent: recentDirectories(),
           },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "list_files") {
+    try {
+      const requested = params.path
+        ? resolveExistingDir(params.path)
+        : resolveExistingDir(currentCwd) ?? os.homedir();
+      if (!requested) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      const listing = listFiles(requested);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: {
+            ...listing,
+            current: currentCwd,
+            cwdDisplay: shrinkHome(currentCwd),
+            recent: recentDirectories(),
+          },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "create_dir") {
+    try {
+      const parent = params.path
+        ? resolveExistingDir(params.path)
+        : resolveExistingDir(currentCwd) ?? os.homedir();
+      if (!parent) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      const created = createDirectory(parent, params.name);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: {
+            path: created,
+            parent,
+            name: params.name.trim(),
+          },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "read_file") {
+    try {
+      if (!params.path) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: "Missing path parameter",
+          })
+        );
+        return;
+      }
+      const result = readFile(params.path);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: result,
         })
       );
     } catch (err) {
@@ -217,6 +611,9 @@ async function handleClientMessage(ws: WebSocket, message: any) {
         piClient = null;
       }
       currentCwd = target;
+      // A new directory is a different repository; anything held for the old one
+      // is not an answer about this one.
+      gitStatusCache.clear();
       await initializePi(target);
       ws.send(
         JSON.stringify({
@@ -276,7 +673,7 @@ async function handleClientMessage(ws: WebSocket, message: any) {
 
     switch (command) {
       case "prompt":
-        response = await piClient.prompt(params.message);
+        response = await piClient.prompt(params.message, toPromptImages(params.images));
         break;
       case "new_session":
         // A fresh conversation in the directory Pi is already working in. The
@@ -300,6 +697,8 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             ...response.data,
             cwd: currentCwd,
             cwdDisplay: shrinkHome(currentCwd),
+            gitBranch: getGitBranch(currentCwd),
+            gitStatus: gitStatus(currentCwd),
           };
         }
         break;
@@ -347,15 +746,83 @@ async function handleClientMessage(ws: WebSocket, message: any) {
           // Same order Pi uses: the directory recorded in the session file, and
           // if it records none, the directory the Pi process was started in.
           currentCwd = resolved ?? piProcessCwd;
+          gitStatusCache.clear();
           if (response.data) {
             response.data = {
               ...response.data,
+              gitBranch: getGitBranch(currentCwd),
+              gitStatus: gitStatus(currentCwd),
               cwd: currentCwd,
               cwdDisplay: shrinkHome(currentCwd),
             };
           }
         }
         break;
+      case "rename_session": {
+        // A name is a `session_info` entry, which is what Pi's own /name and
+        // set_session_name write. The live session goes through Pi so its own
+        // idea of the name stays in step with the file; every other session is
+        // a file nobody has open, so it is edited directly.
+        const target = typeof params.sessionPath === "string" ? params.sessionPath : "";
+        const name =
+          typeof params.name === "string" && params.name.trim()
+            ? params.name.trim().slice(0, 120)
+            : null;
+        if (!target) throw new Error("rename_session needs a sessionPath");
+        if (!existsSync(target)) throw new Error("That session is no longer here");
+
+        const live = await liveSessionFile();
+        if (live && path.resolve(target) === live) {
+          response = await piClient.setSessionName(name);
+        } else if (setSessionNameOnDisk(target, name)) {
+          response = { success: true, data: { renamed: true } };
+        } else {
+          throw new Error("The session file could not be rewritten");
+        }
+        break;
+      }
+      case "delete_session": {
+        // A saved conversation, not the one being had: the live session's file is
+        // open and still being appended to, so removing it from under Pi would
+        // leave an app that is in a conversation that no longer exists. The
+        // caller starts a new session first, which is what the picker says.
+        const target = typeof params.sessionPath === "string" ? params.sessionPath : "";
+        if (!target) throw new Error("delete_session needs a sessionPath");
+
+        // Asked before the file is looked for, because a session Pi has just
+        // started has a path and no file yet - and "that is no longer here" about
+        // the conversation the app is sitting in is the wrong wrong answer.
+        const live = await liveSessionFile();
+        if (live && path.resolve(target) === live) {
+          throw new Error(
+            "That is the session you are in. Start a new one and it can be deleted.",
+          );
+        }
+
+        if (!existsSync(target)) throw new Error("That session is no longer here");
+
+        const deleted = deleteSessionOnDisk(target);
+        if (!deleted.ok) {
+          throw new Error(deleted.error ?? "The session file could not be removed");
+        }
+        response = { success: true, data: { deleted: true, method: deleted.method } };
+        break;
+      }
+      case "generate_session_title": {
+        // Suggest, never apply: what a model guessed is worth showing someone
+        // before it becomes the name of a conversation they were in.
+        const target = typeof params.sessionPath === "string" ? params.sessionPath : "";
+        if (!target) throw new Error("generate_session_title needs a sessionPath");
+        if (!existsSync(target)) throw new Error("That session is no longer here");
+
+        const excerpt = sessionPromptExcerpt(target);
+        if (!excerpt.trim()) {
+          throw new Error("That session has no messages to name");
+        }
+        const title = await titleWithModel(excerpt);
+        response = { success: true, data: { title } };
+        break;
+      }
       default:
         ws.send(
           JSON.stringify({
@@ -440,8 +907,8 @@ app.post("/api/prompt", async (req, res) => {
     if (!piClient) {
       return res.status(503).json({ error: "Pi not initialized" });
     }
-    const { message } = req.body;
-    const response = await piClient.prompt(message);
+    const { message, images } = req.body;
+    const response = await piClient.prompt(message, toPromptImages(images));
     res.json({ success: response.success, data: response.data });
   } catch (err) {
     res.status(500).json({ error: (err as Error).message });
@@ -457,8 +924,17 @@ app.use(
   express.static(webBuildDir, {
     // Always revalidate so browsers pick up new builds immediately after
     // `npm run build:web` instead of serving a stale cached main.dart.js.
-    setHeaders: (res) => {
-      res.setHeader("Cache-Control", "no-cache");
+    //
+    // The app shell is not cached at all. A cached index.html is how a phone ends
+    // up running an old page while main.dart.js is new - the two halves of one
+    // build coming from two different places - and that is not a stale build, it
+    // is a build that does not exist: the page and the code disagree about what
+    // the page is.
+    setHeaders: (res, filePath) => {
+      res.setHeader(
+        "Cache-Control",
+        path.basename(filePath) === "index.html" ? "no-store" : "no-cache",
+      );
     },
   }),
 );

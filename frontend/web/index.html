@@ -39,7 +39,203 @@
   -->
 
   <!-- Favicon -->
+  <link rel="icon" type="image/svg+xml" href="favicon.svg"/>
   <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <!--
+    Pin the page to the visual viewport.
+
+    Without this, on iOS the layout viewport, the document element and Flutter's
+    own element end up three different sizes: the last measurement on a phone
+    read `inner 428x926`, `client 428x879`, `visual 428x926 offsetTop -47`, and
+    `flutter-view` sitting at `top 47`. Pointer events arrive relative to the
+    visual viewport, so a canvas that starts 47px below it makes every tap land
+    somewhere other than the thing it was aimed at - buttons and list rows feel
+    like their hit area is a little below where they are drawn. Nothing else in
+    the app can correct that, because hit testing happens inside the engine.
+
+    Making the document exactly the visual viewport, with no page scroll, is what
+    removes the mismatch rather than compensating for it: `offsetTop` stays 0 and
+    the canvas starts at 0. The chat scrolls inside Flutter, so the page having
+    its own scroll was never something the app used - it only ever changed what
+    the browser reported about where the canvas was.
+
+    `!important` because the engine writes inline sizes onto its own element, and
+    an inline style outranks a stylesheet rule without it.
+
+    `100vh` first as the fallback, then `100dvh` where the browser understands
+    dynamic viewport units - `dvh` is the one that tracks Safari's toolbars
+    instead of ignoring them.
+  -->
+  <!--
+    The height of the document is what Flutter Web sizes its canvas from, and on
+    iOS it is not the height of the window. Measured on a phone, in one sample,
+    in the same frame:
+
+      window.innerHeight        428 x 926   the whole screen
+      documentElement.clientHeight 428 x 879
+      flutter-view (fixed, inset 0)  height 926
+      Flutter's canvas          428 x 879   drawn at the top of that host
+
+    So 47px of the host has no canvas in it and the page paints it: a white band
+    across the bottom, 47px being the status-bar inset - `100dvh` on iOS is the
+    screen minus the status bar, while `window.innerHeight` is the screen. Two
+    rules for one box, and the app cannot argue with which one the browser chose.
+
+    What it can use is the number the browser gives for its own window. This
+    script runs before Flutter loads, so the first measurement Flutter takes is
+    already the right one, and it re-applies on the events that change the
+    window. The `100vh`/`100dvh` rules above stay as the fallback for the moments
+    before this runs, and an inline style outranks a stylesheet rule without
+    needing `!important`.
+  -->
+  <script>
+    (function () {
+      function pinDocumentToWindow() {
+        var height = window.innerHeight;
+        if (!height) return;
+        document.documentElement.style.height = height + 'px';
+      }
+
+      pinDocumentToWindow();
+      window.addEventListener('resize', pinDocumentToWindow);
+      // Rotation reports the new orientation before it reports the new size.
+      window.addEventListener('orientationchange', function () {
+        setTimeout(pinDocumentToWindow, 250);
+      });
+      // The app rewrites the viewport meta at startup to add viewport-fit=cover,
+      // which is exactly the kind of change a browser applies on its own
+      // schedule; the settled size is the one the layout has to match.
+      setTimeout(pinDocumentToWindow, 500);
+      setTimeout(pinDocumentToWindow, 2000);
+    })();
+  </script>
+
+  <!--
+    A clipboard for a page served over plain http.
+
+    `navigator.clipboard` only exists in a secure context - https, or localhost.
+    This app is served over `http://<lan-ip>:3000`, so on iOS Safari and on
+    Android Chrome there is no `navigator.clipboard` at all.
+
+    The app's own copy buttons already know this and fall back to a DOM copy
+    (`lib/utils/clipboard_web.dart`). A text selection's Copy does not, because
+    that call is made by the engine - `Clipboard.setData` goes straight to
+    `navigator.clipboard.writeText` and throws when it is missing - and nothing
+    in this app is in that path. So selecting text and tapping Copy appeared to
+    work and put nothing anywhere.
+
+    Defining `navigator.clipboard` when the browser has none puts the safety net
+    where the engine looks for it, which fixes every copy at once instead of only
+    the ones this app writes itself. `Object.defineProperty` rather than an
+    assignment because `clipboard` is an accessor on Navigator's prototype, and
+    assigning to it is silently ignored.
+
+    `document.execCommand('copy')` is deprecated and remains the only thing that
+    copies in an insecure context. The promise is rejected when it fails, so a
+    copy that did not happen is not reported as one that did.
+  -->
+  <script>
+    (function () {
+      if (navigator.clipboard) return;
+
+      var lastCopied = '';
+
+      function copyThroughDom(text) {
+        var area = document.createElement('textarea');
+        area.value = text;
+        // On-screen but invisible: a display:none element has no selection to
+        // copy, and an unpositioned one scrolls the page to reach it.
+        area.style.position = 'fixed';
+        area.style.top = '0';
+        area.style.left = '0';
+        area.style.opacity = '0';
+        document.body.appendChild(area);
+        area.select();
+        var copied = false;
+        try {
+          copied = document.execCommand('copy') === true;
+        } catch (e) {
+          copied = false;
+        }
+        document.body.removeChild(area);
+        if (copied) lastCopied = text;
+        return copied;
+      }
+
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        get: function () {
+          return {
+            writeText: function (text) {
+              var value = String(text === undefined || text === null ? '' : text);
+              return copyThroughDom(value)
+                ? Promise.resolve()
+                : Promise.reject(new Error('copy failed'));
+            },
+            // What this clipboard knows is what it was given. Without this half,
+            // reading the clipboard would fail on a page that can write it, and
+            // a paste menu would offer nothing to paste.
+            readText: function () {
+              return Promise.resolve(lastCopied);
+            },
+          };
+        },
+      });
+    })();
+  </script>
+
+  <style>
+    html,
+    body {
+      height: 100vh;
+      height: 100dvh;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
+
+    /* Follows whatever the document ends up being, rather than resolving its own
+       viewport unit that could disagree with it. */
+    body {
+      height: 100%;
+    }
+
+    flutter-view {
+      /*
+       * The canvas is never going to be the height of the screen on iOS.
+       *
+       * The root element was measured at `height: 926px` inline, and
+       * `getComputedStyle` agreed it was 926px - while `clientHeight` reported
+       * 879, which is 926 minus the 47px status-bar inset. iOS carves the status
+       * bar out of the root element's client area whatever its box says, and
+       * `clientHeight` is exactly what the engine reads on iOS (see
+       * `full_page_dimensions_provider.dart`, which does that on purpose). So the
+       * drawing surface is 879 tall, and no amount of resizing the page changes
+       * that.
+       *
+       * What can change is where those 879 pixels sit. Pinned to `inset: 0` they
+       * start at the top of the screen and stop 47px short of the bottom, which
+       * is why the prompt field sits above the bottom edge with a strip of page
+       * below it. Inset by the status bar instead, the canvas covers exactly the
+       * area the browser considers usable - top edge to home indicator - and the
+       * engine's measurement and the screen agree for the first time.
+       *
+       * The app then reserves only the safe areas that fall *inside* its own
+       * canvas, which is what `PageGeometry.overlappedInsets` measures; the
+       * status bar is outside it, so reserving it again would push the app bar
+       * down twice.
+       */
+      position: fixed !important;
+      top: env(safe-area-inset-top) !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      left: 0 !important;
+      width: auto !important;
+      height: auto !important;
+    }
+  </style>
 
   <title>pi_mobile_agent</title>
   <link rel="manifest" href="manifest.json">

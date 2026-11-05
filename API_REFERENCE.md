@@ -114,13 +114,32 @@ Get the current state of the Pi agent.
   "command": "get_state",
   "success": true,
   "data": {
-    "model": "claude-3-5-sonnet-20241022",
+    "model": { "id": "claude-3-5-sonnet-20241022", "provider": "anthropic" },
     "messageCount": 5,
     "isProcessing": false,
-    "systemPrompt": "You are a helpful coding assistant..."
+    "systemPrompt": "You are a helpful coding assistant...",
+    "sessionFile": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl",
+    "sessionId": "01a19b80-df2c-7665-8787-d98cf0a23c29",
+    "sessionName": "refactor auth module",
+    "cwd": "/home/adam/projects/other",
+    "cwdDisplay": "~/projects/other",
+    "gitBranch": "main",
+    "gitStatus": {
+      "branch": "main",
+      "upstream": "origin/main",
+      "ahead": 2,
+      "modified": 3,
+      "untracked": 1
+    }
   }
 }
 ```
+
+`sessionFile`, `sessionId` and `sessionName` come from Pi. The name is omitted
+when the session has none, which is how the app knows to show nothing rather
+than an empty label. `cwd`, `cwdDisplay`, `gitBranch` and `gitStatus` are
+injected by the backend: Pi's own RPC state has no working directory, and the
+app bar shows both the directory and the branch. See `rename_session`.
 
 ---
 
@@ -350,6 +369,121 @@ reports it too. Afterwards call `get_messages` for the restored conversation.
 and nothing moved. If the directory the session was recorded in no longer exists,
 Pi refuses the resume and the error names both the missing directory and the one
 still in use.
+
+---
+
+### rename_session
+
+Give a saved session a display name. The name is shown in the app's session
+picker and in Pi's own `/resume` instead of the first message. This is the
+backend for the pencil icon on each row of the picker.
+
+The backend picks the route. The session the live Pi is in is renamed through
+Pi (`set_session_name`), so Pi's own idea of the name stays in step with its
+file; every other session is a file nobody has open and gets a `session_info`
+entry appended to it directly — the same record Pi's `/name` writes, hanging off
+the last entry so the tree is left intact.
+
+**Request:**
+```json
+{
+  "id": "req-9",
+  "command": "rename_session",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl",
+  "name": "refactor auth module"
+}
+```
+
+`"name": null` clears the name, which is what Pi's `/name` does with an empty
+one; the session shows its first message again. A name is trimmed and capped at
+120 characters.
+
+**Response:**
+```json
+{
+  "id": "req-9",
+  "type": "response",
+  "command": "rename_session",
+  "success": true,
+  "data": { "renamed": true }
+}
+```
+
+---
+
+### delete_session
+
+Remove a saved session. This is the backend for the trash icon on each row of
+the session picker.
+
+It refuses the session the live Pi is in: that file is open and still being
+appended to, so removing it would leave the app sitting in a conversation that no
+longer exists. The picker switches that row's delete off and says why, so the
+refusal is normally never seen.
+
+The file goes the way Pi's own session picker sends it: `trash` first where the
+machine has one, then unlinking. That is reported back, because whether a
+conversation is recoverable is worth knowing.
+
+**Request:**
+```json
+{
+  "id": "req-11",
+  "command": "delete_session",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-11",
+  "type": "response",
+  "command": "delete_session",
+  "success": true,
+  "data": { "deleted": true, "method": "trash" }
+}
+```
+
+An unknown path, a session already gone, and the live session are all errors with
+a sentence each.
+
+---
+
+### generate_session_title
+
+Ask the model what a session should be called, and suggest it to the person
+rather than applying it. This backs the "Suggest a name" button in the rename
+dialog; `rename_session` is what actually names the session.
+
+The prompt is the session's own user messages, oldest first, capped at 2000
+characters. It is sent to a separate one-shot Pi (`pi --no-session --print`) so
+that neither the request nor the answer lands inside the conversation being
+named, and so a title request never appears in the session list as a session of
+its own. Allow well over the usual 30 seconds — this is a model call.
+
+**Request:**
+```json
+{
+  "id": "req-10",
+  "command": "generate_session_title",
+  "sessionPath": "/home/adam/.pi/agent/sessions/--home-adam--/2026-01-02.jsonl"
+}
+```
+
+**Response:**
+```json
+{
+  "id": "req-10",
+  "type": "response",
+  "command": "generate_session_title",
+  "success": true,
+  "data": { "title": "refactor auth module" }
+}
+```
+
+A session with no user messages, or a model that returned nothing usable, is an
+error rather than an empty name.
 
 ---
 

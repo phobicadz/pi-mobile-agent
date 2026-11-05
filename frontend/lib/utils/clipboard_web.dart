@@ -13,6 +13,12 @@ import 'clipboard.dart';
 /// The DOM fallback below works in either context, which is why it is a fallback
 /// rather than the first attempt: the Clipboard API is the modern path and this
 /// is only the safety net.
+///
+/// `web/index.html` installs the same safety net as `navigator.clipboard` itself
+/// when the browser has none, because a text selection's Copy is issued by the
+/// engine and nothing in this app is in that path. That is why the first attempt
+/// below normally succeeds on a plain-http page: the fallback here is what a
+/// browser that refuses to copy at all lands on.
 Future<CopyOutcome> copyImpl(String text) async {
   try {
     await Clipboard.setData(ClipboardData(text: text));

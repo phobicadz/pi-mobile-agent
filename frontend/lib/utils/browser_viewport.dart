@@ -12,6 +12,14 @@ import 'browser_viewport_native.dart'
 /// becomes full height on a phone - see `browser_viewport_web.dart`.
 ValueNotifier<EdgeInsets> useBrowserSafeArea() => impl.useBrowserSafeArea();
 
+/// Paint the page that sits behind Flutter's canvas, so any part of the screen
+/// the canvas does not cover is the app's own colour rather than the browser's
+/// default white.
+///
+/// A no-op on native platforms, where the canvas is the screen and there is no
+/// page behind it.
+void paintPageBehindCanvas(Color colour) => impl.paintPageBehindCanvas(colour);
+
 /// Re-establish the [MediaQuery] that [child] sits under, with the browser's
 /// safe areas added to its insets.
 ///

@@ -3,10 +3,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/screens/home_screen.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
 import 'package:provider/provider.dart';
+
+import 'support/app_menu.dart';
 
 /// Answers prompts, reports a live connection (HomeScreen shows nothing but a
 /// spinner otherwise), and records the new_session command the add button sends.
@@ -27,7 +30,8 @@ class FakeNewSessionService extends PiService {
   Future<List<PiModel>> getAvailableModels() async => const [];
 
   @override
-  Future<void> sendPrompt(String message) async {}
+  Future<void> sendPrompt(String message,
+      {List<PiImage> images = const []}) async {}
 
   @override
   Future<void> newSession() async {
@@ -54,9 +58,14 @@ void main() {
     final service = FakeNewSessionService();
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
-      ChangeNotifierProvider<PiViewModel>.value(
-        value: viewModel,
-        child: const MaterialApp(home: HomeScreen()),
+      // HomeScreen reads the appearance settings, so a test that builds it has
+      // to supply them the way main.dart does.
+      ChangeNotifierProvider<AppearanceController>(
+        create: (_) => AppearanceController(),
+        child: ChangeNotifierProvider<PiViewModel>.value(
+          value: viewModel,
+          child: const MaterialApp(home: HomeScreen()),
+        ),
       ),
     );
     await settle(tester);
@@ -69,29 +78,42 @@ void main() {
     return (viewModel, service);
   }
 
-  testWidgets('the app bar carries a new-session button at the top left',
+  testWidgets('the app bar opens a menu, and the menu carries new session',
       (tester) async {
     final (viewModel, _) = await pumpChat(tester);
 
-    final add = find.descendant(
+    // The one control on the bar: the hamburger. Top left - the leftmost thing
+    // on the screen, and level with the title.
+    final menu = find.descendant(
       of: find.byType(AppBar),
-      matching: find.byIcon(Icons.add),
+      matching: find.byIcon(Icons.menu),
     );
-    expect(add, findsOneWidget, reason: 'the button lives in the app bar');
+    expect(menu, findsOneWidget, reason: 'the menu is operated from the bar');
+    expect(tester.widget<IconButton>(
+            find.ancestor(of: menu, matching: find.byType(IconButton)))
+        .onPressed,
+        isNotNull);
 
-    final button = tester.widget<IconButton>(
-      find.ancestor(of: add, matching: find.byType(IconButton)),
-    );
-    expect(button.onPressed, isNotNull);
-
-    // Top left: the leftmost thing on the screen, and level with the title.
-    final left = tester.getTopLeft(add);
+    final left = tester.getTopLeft(menu);
     final titleTop = tester.getTopLeft(find.text('Pi Agent')).dy;
     expect(left.dx, lessThan(60));
     expect(left.dy, closeTo(titleTop, 40));
 
-    await tester.tap(add);
-    await settle(tester);
+    // Nothing else on the bar that does something.
+    expect(
+        tester
+            .widgetList<IconButton>(find.descendant(
+                of: find.byType(AppBar), matching: find.byType(IconButton)))
+            .where((b) => b.onPressed != null)
+            .length,
+        1,
+        reason: 'the controls are in the menu now, not crowded along the bar');
+
+    await openAppMenu(tester);
+    expect(find.text('New session'), findsOneWidget);
+    expect(tester.widget<ListTile>(menuRow(Icons.add)).onTap, isNotNull);
+
+    await tapMenuRow(tester, Icons.add);
     expect(tester.takeException(), isNull);
 
     viewModel.dispose();
@@ -104,7 +126,8 @@ void main() {
     expect(viewModel.messages, isNotEmpty);
     final directoryBefore = viewModel.workingDirectory;
 
-    await tester.tap(find.byIcon(Icons.add));
+    await openAppMenu(tester);
+    await tapMenuRow(tester, Icons.add);
     await settle(tester);
 
     expect(service.newSessionCalls, 1);
@@ -121,9 +144,14 @@ void main() {
     final service = FakeNewSessionService();
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
-      ChangeNotifierProvider<PiViewModel>.value(
-        value: viewModel,
-        child: const MaterialApp(home: HomeScreen()),
+      // HomeScreen reads the appearance settings, so a test that builds it has
+      // to supply them the way main.dart does.
+      ChangeNotifierProvider<AppearanceController>(
+        create: (_) => AppearanceController(),
+        child: ChangeNotifierProvider<PiViewModel>.value(
+          value: viewModel,
+          child: const MaterialApp(home: HomeScreen()),
+        ),
       ),
     );
     await settle(tester);
@@ -133,18 +161,17 @@ void main() {
     await settle(tester);
     expect(viewModel.isLoading, isTrue);
 
-    final button = tester.widget<IconButton>(
-      find.ancestor(
-        of: find.byIcon(Icons.add),
-        matching: find.byType(IconButton),
-      ),
-    );
-    expect(button.onPressed, isNull);
+    await openAppMenu(tester);
+    expect(
+        tester.widget<ListTile>(menuRow(Icons.add)).onTap,
+        isNull,
+        reason: 'starting over mid-run would throw away a reply that is still '
+            'being written');
 
-    await tester.tap(find.byIcon(Icons.add));
+    await tester.tap(menuRow(Icons.add));
     await settle(tester);
     expect(service.newSessionCalls, isZero,
-        reason: 'a disabled button must not start a session');
+        reason: 'a closed control must not start a session');
 
     viewModel.dispose();
   });
