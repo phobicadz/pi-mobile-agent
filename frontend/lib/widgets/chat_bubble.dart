@@ -604,10 +604,18 @@ class ChatBubble extends StatelessWidget {
                 isDark: palette.isDark,
                 // Smaller than a fenced block in a reply: this is one line of
                 // what the agent ran, inside a card, not a block someone wrote.
+                // Its text colour is the theme's, so the parts of a command the
+                // grammar leaves alone - a path, a subcommand - are as legible
+                // as the parts it colours.
                 textStyle: TextStyle(
                   fontFamily: 'JetBrainsMono',
                   fontSize: _font(12),
+                  color: palette.commandForeground,
                 ),
+                // The card's own surfaces, inset one step, rather than a code
+                // theme's grey: a fixed dark block inside a card the scheme
+                // already painted is two palettes in the same box.
+                background: palette.commandBackground,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               )
             else

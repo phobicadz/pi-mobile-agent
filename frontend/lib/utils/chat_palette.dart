@@ -33,6 +33,8 @@ class ChatPalette {
     required this.userBody,
     required this.muted,
     required this.toolCard,
+    required this.commandBackground,
+    required this.commandForeground,
     required this.toolResult,
     required this.link,
     required this.error,
@@ -64,6 +66,22 @@ class ChatPalette {
   /// Tool output. Not derived from the scheme - see the class comment.
   final Color toolResult;
 
+  /// The block a tool call's command is painted on, and its un-tokened text.
+  ///
+  /// In the theme's own surfaces rather than a code theme's background: the card
+  /// it sits in is already painted from the scheme, and a block of one-dark grey
+  /// inside a Dracula card is two palettes in the same box.
+  ///
+  /// Recessed *toward the page* at either brightness - which is a different
+  /// token per theme, because the surface scale runs the other way in dark. A
+  /// block that goes the same direction in both would sit proud of its card at
+  /// one brightness and sunk into it at the other.
+  ///
+  /// The syntax colours on top of it are still the code theme's. Those are what
+  /// make a command read as a command at a glance; the surface is not.
+  final Color commandBackground;
+  final Color commandForeground;
+
   final Color link;
   final Color error;
 
@@ -94,6 +112,10 @@ class ChatPalette {
           ? scheme.surfaceContainerHighest
           : scheme.surfaceContainerLow,
       toolResult: isDark ? const Color(0xFF7FCBA5) : const Color(0xFF2E6B4F),
+      commandBackground: isDark
+          ? scheme.surfaceContainer
+          : scheme.surfaceContainerLowest,
+      commandForeground: scheme.onSurface,
       link: scheme.primary,
       error: scheme.error,
       outline: scheme.outlineVariant,
@@ -125,6 +147,8 @@ class ChatPalette {
         muted,
         toolCard,
         toolResult,
+        commandBackground,
+        commandForeground,
         link,
         error,
         outline,

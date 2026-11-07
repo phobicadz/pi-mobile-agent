@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/models/pi_models.dart';
+import 'package:pi_mobile_agent/utils/chat_palette.dart';
 import 'package:pi_mobile_agent/utils/code_highlight.dart';
 import 'package:pi_mobile_agent/utils/dracula_scheme.dart';
 import 'package:pi_mobile_agent/widgets/chat_bubble.dart';
@@ -58,6 +59,43 @@ void main() {
     expect(block.textStyle?.fontFamily, 'JetBrainsMono');
     expect(block.isDark, isTrue,
         reason: 'the code theme follows the appearance the app is in');
+
+    // The card it sits in is painted from the scheme, so the block inside it has
+    // to be too - a fixed one-dark grey in a Dracula card is two palettes in
+    // the same box.
+    expect(block.background, Dracula.background,
+        reason: 'the command sits on Dracula\'s own background, inset from the '
+            'card it is painted into');
+    expect(block.background, isNot(codePalette(true).background),
+        reason: 'not the code theme\'s background, which is the same colour in '
+            'every scheme the app offers');
+    expect(block.textStyle?.color, Dracula.foreground,
+        reason: 'the parts of a command the grammar leaves alone - a path, a '
+            'subcommand - are text, and they are the theme\'s text colour');
+  });
+
+  testWidgets('the command block is inset from the card it sits in, in either '
+      'appearance', (tester) async {
+    // Same claim at the other brightness: the surface scale runs the other way
+    // in dark, so "one step in" is a different token per theme.
+    for (final dark in [true, false]) {
+      final scheme = dark
+          ? Dracula.darkScheme()
+          : ColorScheme.fromSeed(
+              seedColor: Dracula.purple, brightness: Brightness.light);
+      final palette = ChatPalette.from(
+          ThemeData(useMaterial3: true, colorScheme: scheme));
+
+      final step = palette.commandBackground.computeLuminance() -
+          palette.toolCard.computeLuminance();
+      expect(step.abs(), greaterThan(0.004),
+        reason: 'a block the same colour as the card around it is not a block, '
+            'it is the card (${dark ? 'dark' : 'light'})');
+      // In dark it goes down from the card (toward the page), in light it goes
+      // up toward the page. Either way the card reads as raised off the page.
+      expect(step.isNegative, dark,
+          reason: 'inset means toward the page at both brightnesses');
+    }
   });
 
   testWidgets('the shell command is actually coloured, not just monospaced',
