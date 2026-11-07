@@ -559,7 +559,18 @@ class ChatBubble extends StatelessWidget {
           if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: _buildToolResult(tool.result!, palette),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // The other half of the exchange, named the way the half above
+                  // it is. Without a label the block under a command is just
+                  // more text in the card, and "what it ran" and "what came
+                  // back" read as one undifferentiated blob.
+                  _toolLabel('output', palette),
+                  const SizedBox(height: 3),
+                  _buildToolResult(tool.result!, palette),
+                ],
+              ),
             ),
         ],
       ),
@@ -579,6 +590,19 @@ class ChatBubble extends StatelessWidget {
   /// Only a shell command is coloured. The rest are paths and line numbers, and
   /// guessing a language for `/home/adam/...` is guessing about a string that
   /// has no language.
+  /// A small label naming a block inside a tool card - a parameter name, or the
+  /// output the call produced. One style, because they are the same kind of
+  /// thing: a saying about the block below it, not part of the block.
+  Widget _toolLabel(String text, ChatPalette palette) => Text(
+        text,
+        style: TextStyle(
+          fontSize: _font(10.5),
+          fontWeight: FontWeight.w600,
+          letterSpacing: 0.4,
+          color: palette.muted,
+        ),
+      );
+
   List<Widget> _buildToolArgs(PiTool tool, ChatPalette palette) {
     final shell = isShellTool(tool.name);
     final blocks = <Widget>[];
@@ -590,15 +614,7 @@ class ChatBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              entry.key,
-              style: TextStyle(
-                fontSize: _font(10.5),
-                fontWeight: FontWeight.w600,
-                letterSpacing: 0.4,
-                color: palette.muted,
-              ),
-            ),
+            _toolLabel(entry.key, palette),
             const SizedBox(height: 3),
             if (shell)
               HighlightedCode(

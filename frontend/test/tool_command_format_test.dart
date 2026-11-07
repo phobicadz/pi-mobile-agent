@@ -128,6 +128,42 @@ void main() {
     }
   });
 
+  testWidgets('the output is labelled the way the command is', (tester) async {
+    await pumpBubble(
+        tester,
+        withTool(PiTool(
+          name: 'bash',
+          arguments: {'command': _command},
+          result: '{"status":"ok","pi_connected":true}',
+        )));
+
+    final label = tester.widget<Text>(find.text('output'));
+    final commandLabel = tester.widget<Text>(find.text('command'));
+    expect(label.style?.fontSize, commandLabel.style?.fontSize);
+    expect(label.style?.fontWeight, commandLabel.style?.fontWeight);
+    expect(label.style?.letterSpacing, commandLabel.style?.letterSpacing);
+    expect(label.style?.color, commandLabel.style?.color,
+        reason: 'two sayings about a block, in the same voice - or the reader '
+            'reads the second one as part of the block above it');
+
+    final commandBlock = find.byWidget(tester.widget<HighlightedCode>(
+        find.byWidgetPredicate(
+            (w) => w is HighlightedCode && w.source == _command)));
+    expect(tester.getRect(find.text('output')).top,
+        greaterThan(tester.getRect(commandBlock).bottom),
+        reason: 'it belongs to the block below it, not to the command');
+
+    // A result that is prose rather than code is still the tool's output.
+    await pumpBubble(
+        tester,
+        withTool(PiTool(
+          name: 'bash',
+          arguments: {'command': 'true'},
+          result: '✓ Built build/web',
+        )));
+    expect(find.text('output'), findsOneWidget);
+  });
+
   testWidgets('the shell command is actually coloured, not just monospaced',
       (tester) async {
     final spans =
