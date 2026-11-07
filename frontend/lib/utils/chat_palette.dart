@@ -33,8 +33,8 @@ class ChatPalette {
     required this.userBody,
     required this.muted,
     required this.toolCard,
-    required this.commandBackground,
-    required this.commandForeground,
+    required this.codeBackground,
+    required this.codeForeground,
     required this.toolResult,
     required this.link,
     required this.error,
@@ -66,11 +66,13 @@ class ChatPalette {
   /// Tool output. Not derived from the scheme - see the class comment.
   final Color toolResult;
 
-  /// The block a tool call's command is painted on, and its un-tokened text.
+  /// The block a piece of code is painted on inside a reply - a fenced block,
+  /// a tool call's command, a tool's output - and its un-tokened text.
   ///
-  /// In the theme's own surfaces rather than a code theme's background: the card
-  /// it sits in is already painted from the scheme, and a block of one-dark grey
-  /// inside a Dracula card is two palettes in the same box.
+  /// In the theme's own surfaces rather than a code theme's background: the
+  /// bubble and the tool card around them are already painted from the scheme,
+  /// and a block of one-dark grey inside a Dracula card is two palettes in the
+  /// same box.
   ///
   /// Recessed *toward the page* at either brightness - which is a different
   /// token per theme, because the surface scale runs the other way in dark. A
@@ -78,9 +80,11 @@ class ChatPalette {
   /// one brightness and sunk into it at the other.
   ///
   /// The syntax colours on top of it are still the code theme's. Those are what
-  /// make a command read as a command at a glance; the surface is not.
-  final Color commandBackground;
-  final Color commandForeground;
+  /// make a command or a source file read as one at a glance; the surface is not.
+  /// The code theme's own backgrounds are near-neutral greys, and so are these
+  /// surfaces whatever the seed, so its token colours stay legible on them.
+  final Color codeBackground;
+  final Color codeForeground;
 
   final Color link;
   final Color error;
@@ -112,10 +116,10 @@ class ChatPalette {
           ? scheme.surfaceContainerHighest
           : scheme.surfaceContainerLow,
       toolResult: isDark ? const Color(0xFF7FCBA5) : const Color(0xFF2E6B4F),
-      commandBackground: isDark
+      codeBackground: isDark
           ? scheme.surfaceContainer
           : scheme.surfaceContainerLowest,
-      commandForeground: scheme.onSurface,
+      codeForeground: scheme.onSurface,
       link: scheme.primary,
       error: scheme.error,
       outline: scheme.outlineVariant,
@@ -147,8 +151,8 @@ class ChatPalette {
         muted,
         toolCard,
         toolResult,
-        commandBackground,
-        commandForeground,
+        codeBackground,
+        codeForeground,
         link,
         error,
         outline,

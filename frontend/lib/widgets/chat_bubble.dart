@@ -477,7 +477,11 @@ class ChatBubble extends StatelessWidget {
           selectable: false,
           // Fenced code blocks get full syntax highlighting.
           builders: {
-            'pre': _HighlightCodeBuilder(isDark: isDark, fontSize: _font(13)),
+            'pre': _HighlightCodeBuilder(
+                isDark: isDark,
+                fontSize: _font(13),
+                background: palette.codeBackground,
+                foreground: palette.codeForeground),
             'a': _LinkBuilder(
                 color: palette.link, fontSize: _font(14)),
           },
@@ -555,8 +559,7 @@ class ChatBubble extends StatelessWidget {
           if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: _buildToolResult(
-                  tool.result!, palette.toolResult, palette.isDark),
+              child: _buildToolResult(tool.result!, palette),
             ),
         ],
       ),
@@ -610,12 +613,12 @@ class ChatBubble extends StatelessWidget {
                 textStyle: TextStyle(
                   fontFamily: 'JetBrainsMono',
                   fontSize: _font(12),
-                  color: palette.commandForeground,
+                  color: palette.codeForeground,
                 ),
                 // The card's own surfaces, inset one step, rather than a code
                 // theme's grey: a fixed dark block inside a card the scheme
                 // already painted is two palettes in the same box.
-                background: palette.commandBackground,
+                background: palette.codeBackground,
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
               )
             else
@@ -660,7 +663,7 @@ class ChatBubble extends StatelessWidget {
   /// Tool results are usually code (JSON, source, command output). Highlight
   /// them when they look like code; otherwise keep the plain green monospace
   /// rendering so prose status messages stay readable.
-  Widget _buildToolResult(String result, Color fallbackColor, bool isDark) {
+  Widget _buildToolResult(String result, ChatPalette palette) {
     final source =
         result.length > 800 ? '${result.substring(0, 800)}…' : result;
 
@@ -670,21 +673,23 @@ class ChatBubble extends StatelessWidget {
         style: TextStyle(
             fontSize: _font(11),
             fontFamily: 'JetBrainsMono',
-            color: fallbackColor),
+            color: palette.toolResult),
       );
     }
 
     return HighlightedCode(
       source,
-      isDark: isDark,
-      // No background and no text colour: a command's output is code like any
-      // other block in the reply, so it gets the same theme the reply uses.
-      // Forcing the card's warm colour over it is what made tool output look
-      // like it belonged to a different app.
+      isDark: palette.isDark,
+      // The same surfaces as every other block in the reply. Forcing a warm
+      // literal over tool output is what used to make it look like it belonged
+      // to a different app; these come off the same palette as the card around
+      // them, which is the only way that could be true.
       textStyle: TextStyle(
         fontFamily: 'JetBrainsMono',
         fontSize: _font(11),
+        color: palette.codeForeground,
       ),
+      background: palette.codeBackground,
     );
   }
 
@@ -720,10 +725,22 @@ class _BubbleBodyCache {
 /// Renders fenced code blocks with syntax highlighting (colour formatting),
 /// using the fence's language info string when present.
 class _HighlightCodeBuilder extends MarkdownElementBuilder {
-  _HighlightCodeBuilder({required this.isDark, required this.fontSize});
+  _HighlightCodeBuilder({
+    required this.isDark,
+    required this.fontSize,
+    this.background,
+    this.foreground,
+  });
 
   final bool isDark;
   final double fontSize;
+
+  /// The bubble's own surfaces, so a fenced block is painted from the scheme the
+  /// rest of the reply is. Left null, the highlighter falls back to the code
+  /// theme's background - which is what the file viewer does, and should keep
+  /// doing: there the code *is* the page.
+  final Color? background;
+  final Color? foreground;
 
   String? _language;
 
@@ -754,7 +771,8 @@ class _HighlightCodeBuilder extends MarkdownElementBuilder {
       text.text,
       language: _language,
       isDark: isDark,
-      textStyle: TextStyle(fontSize: fontSize),
+      textStyle: TextStyle(fontSize: fontSize, color: foreground),
+      background: background,
     );
   }
 }

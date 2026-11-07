@@ -86,7 +86,7 @@ void main() {
       final palette = ChatPalette.from(
           ThemeData(useMaterial3: true, colorScheme: scheme));
 
-      final step = palette.commandBackground.computeLuminance() -
+      final step = palette.codeBackground.computeLuminance() -
           palette.toolCard.computeLuminance();
       expect(step.abs(), greaterThan(0.004),
         reason: 'a block the same colour as the card around it is not a block, '
@@ -95,6 +95,36 @@ void main() {
       // up toward the page. Either way the card reads as raised off the page.
       expect(step.isNegative, dark,
           reason: 'inset means toward the page at both brightnesses');
+    }
+  });
+
+  testWidgets('every block of code in a reply is painted from the scheme',
+      (tester) async {
+    // A fenced block and a tool's output: the two other places a reply gets a
+    // block of code, besides the command. One of them on the theme's surfaces
+    // and the others on a fixed grey is a reply in two palettes.
+    await pumpBubble(
+        tester,
+        PiMessage(
+          id: 'm2',
+          role: 'assistant',
+          content: 'Here is the check:\n\n'
+              '```typescript\nconst ok = health.status === "ok";\n```\n',
+          timestamp: DateTime(2026),
+          toolCalls: [PiTool(name: 'bash', arguments: {'command': 'ls'},
+              result: '{"status":"ok","pi_connected":true}')],
+        ));
+
+    final blocks =
+        tester.widgetList<HighlightedCode>(find.byType(HighlightedCode)).toList();
+    expect(blocks.length, greaterThanOrEqualTo(2),
+        reason: 'one fenced block and one tool result');
+    for (final block in blocks) {
+      expect(block.background, Dracula.background,
+          reason: 'the block is inside a bubble the scheme already painted '
+              '(${block.source.trim()})');
+      expect(block.textStyle?.color, Dracula.foreground,
+          reason: 'and its un-tokened text is the theme\'s text colour');
     }
   });
 
