@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/utils/chat_palette.dart';
+import 'package:pi_mobile_agent/utils/code_theme.dart';
 import 'package:pi_mobile_agent/utils/editor_palettes.dart';
 
 /// The authored editor palettes, and what the app must still be able to promise
@@ -22,6 +23,18 @@ const _authored = <AppColorScheme, (EditorPalette, EditorPalette?)>{
 };
 
 double _hue(Color color) => HSLColor.fromColor(color).hue;
+
+/// A theme built the way `main.dart` builds it.
+///
+/// The code theme travels on the `ThemeData`, so a test that builds a bare one
+/// is testing a chat whose code is always the app default - which is a fact worth
+/// knowing before it is mistaken for the scheme's own.
+ThemeData _themeFor(AppColorScheme scheme, Brightness brightness) => ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme.schemeFor(brightness),
+      brightness: brightness,
+      extensions: [CodeTheme.following(scheme, brightness)],
+    );
 
 void main() {
   test('every editor theme the enum offers is one this file knows', () {
@@ -107,11 +120,7 @@ void main() {
   test('the chat is legible on every palette, at both brightnesses', () {
     for (final scheme in AppColorScheme.values) {
       for (final brightness in Brightness.values) {
-        final theme = ThemeData(
-          useMaterial3: true,
-          colorScheme: scheme.schemeFor(brightness),
-          brightness: brightness,
-        );
+        final theme = _themeFor(scheme, brightness);
         final chat = ChatPalette.from(theme);
         final built = theme.colorScheme;
         final what = '${scheme.displayName} / $brightness';
@@ -167,11 +176,7 @@ void main() {
       () {
     for (final scheme in AppColorScheme.values) {
       for (final brightness in Brightness.values) {
-        final chat = ChatPalette.from(ThemeData(
-          useMaterial3: true,
-          colorScheme: scheme.schemeFor(brightness),
-          brightness: brightness,
-        ));
+        final chat = ChatPalette.from(_themeFor(scheme, brightness));
         final step = (chat.toolCard.computeLuminance() -
                 chat.assistantBubble.computeLuminance())
             .abs();

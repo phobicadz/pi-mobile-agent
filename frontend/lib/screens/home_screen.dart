@@ -666,11 +666,28 @@ class _HomeScreenState extends State<HomeScreen> {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                             Padding(
-                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              padding: const EdgeInsets.only(
+                                  top: 8, bottom: 2, left: 4, right: 4),
                               child: Text('Choose a color scheme',
                                   style: theme.textTheme.titleMedium),
                             ),
+                            // What the choice reaches, said before picking rather
+                            // than after. One line on purpose: this picker is
+                            // judged by how much of the list a phone shows at
+                            // once, and a sentence costs rows.
+                            Padding(
+                              padding: const EdgeInsets.only(
+                                  bottom: 4, left: 4, right: 4),
+                              child: Text(
+                                'Applies to the chat, its code and the file viewer.',
+                                style: theme.textTheme.bodySmall,
+                              ),
+                            ),
+                            // Compact rows: thirteen schemes is the list this
+                            // picker has, and how much of it fits at once is what
+                            // it is judged by.
                             ...AppColorScheme.values.map((scheme) => ListTile(
+                                  visualDensity: VisualDensity.compact,
                                   leading: Container(
                                     width: 32,
                                     height: 32,

@@ -322,4 +322,68 @@ void main() {
     expect(find.text('+ newText'), findsOneWidget);
     expect(blocks(tester).map((b) => b.source), containsAll([_old, _new]));
   });
+
+  testWidgets('text long enough to bury the rest of the chat is folded, and '
+      'says how long it is before you open it', (tester) async {
+    // A `write` of a whole file used to make a card taller than the phone. The
+    // question a card answers is *what changed, roughly*, and the shape of a
+    // change is in its first few lines - the rest is there when you want it.
+    final lines = List.generate(20, (i) => 'final line$i = $i;');
+    final full = lines.join('\n');
+    await pump(tester,
+        editMessage({'path': _dartPath, 'edits': [
+          {'oldText': _old, 'newText': full},
+        ]}));
+
+    final added = blocks(tester).last;
+    expect(added.source, lines.take(12).join('\n'),
+        reason: 'the card shows enough to see what the change is, and no more');
+    expect(find.text('show all 20 lines'), findsOneWidget,
+        reason: 'how much you are about to open is the question you ask before '
+            'you agree to opening it');
+
+    await tester.tap(find.text('show all 20 lines'));
+    await tester.pump();
+
+    expect(blocks(tester).last.source, full);
+    expect(find.text('show the first 12 lines'), findsOneWidget,
+        reason: 'folding is a toggle, not a one-way door: the card has to give '
+            'the chat back');
+  });
+
+  testWidgets('a change that fits is not folded', (tester) async {
+    await pump(tester, editMessage({'path': _dartPath, 'edits': [
+      {'oldText': _old, 'newText': _new},
+    ]}));
+
+    expect(blocks(tester).map((b) => b.source), containsAll([_old, _new]));
+    expect(find.textContaining('show all'), findsNothing,
+        reason: 'a control offering to hide what is already showing is noise');
+  });
+
+  testWidgets('a folded half is still the diff it was: same bar, same tint, '
+      'same language', (tester) async {
+    final lines = List.generate(30, (i) => 'final line$i = $i;');
+    await pump(tester, editMessage({'path': _dartPath, 'edits': [
+      {'oldText': _old, 'newText': lines.join('\n')},
+    ]}));
+
+    final added = blocks(tester).last;
+    expect(added.language, 'dart',
+        reason: 'folding a preview is not a reason to stop colouring it as the '
+            'file it is');
+
+    final borders = tester
+        .widgetList<Container>(find.byType(Container))
+        .whereType<Container>()
+        .map((c) => c.decoration)
+        .whereType<BoxDecoration>()
+        .where((d) => d.border is Border)
+        .map((d) => (d.border as Border).left.width)
+        .where((w) => w == 3.0)
+        .toList();
+    expect(borders.length, 2,
+        reason: 'the bar is how which way the text moved is said while you are '
+            'reading it, folded or not');
+  });
 }

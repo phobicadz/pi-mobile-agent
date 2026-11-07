@@ -7,6 +7,7 @@ import '../providers/appearance_controller.dart';
 import '../providers/pi_view_model.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
+import '../utils/code_theme.dart';
 import '../utils/toast.dart';
 
 /// A modal that displays the contents of a file: line numbers down the left,
@@ -126,6 +127,26 @@ class _FileViewerState extends State<FileViewer> {
     }
   }
 
+  /// The surface the code theme belongs on, and the text colour for it.
+  ///
+  /// Not always the dialog's own. A code theme is a set of colours for one
+  /// surface, and its token colours were chosen against *its* background: paint
+  /// them on some other background and they are the wrong colours for it, which
+  /// is what "the colouring looks wrong, and looks wrong differently in light and
+  /// in dark" used to be. Where the code theme is the app's own palette there is
+  /// no difference to choose - the theme's surface is the app's.
+  ({Color foreground, Color background}) _codeSurface(ThemeData theme) {
+    final code = CodeTheme.of(theme);
+    final background = code.ownsAppSurfaces
+        ? CodeTheme.codeSurface(theme.colorScheme)
+        : code.fixedBackground;
+    return (
+      foreground: code.foregroundFor(background,
+          appText: theme.colorScheme.onSurface),
+      background: background,
+    );
+  }
+
   TextStyle _baseStyle(Color foreground) => TextStyle(
         fontFamily: _monoFamily,
         fontSize: _fontSize,
@@ -135,7 +156,9 @@ class _FileViewerState extends State<FileViewer> {
 
   void _prepare(FileContent content) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final palette = codePalette(isDark);
+    final theme = Theme.of(context);
+    final code = CodeTheme.of(theme);
+    final palette = _codeSurface(theme);
     final baseStyle = _baseStyle(palette.foreground);
     final mapped = languageForPath(widget.filePath);
     final prose = isProsePath(widget.filePath);
@@ -159,6 +182,8 @@ class _FileViewerState extends State<FileViewer> {
         content.content,
         language: mapped,
         isDark: isDark,
+        theme: code.mapFor(palette.background),
+        themeId: code.id,
       );
     }
 
@@ -277,11 +302,8 @@ class _FileViewerState extends State<FileViewer> {
     final lines = _lines;
     if (lines == null || lines.isEmpty) return const SizedBox.shrink();
 
-    // The palette's own surface, because its token colours were chosen against
-    // it. Painting them on the dialog's background instead is what made the
-    // colouring look wrong, and look wrong differently in light and in dark.
-    final palette =
-        _palette ?? codePalette(theme.brightness == Brightness.dark);
+    // The surface the code theme belongs on, which is not always the dialog's.
+    final palette = _palette ?? _codeSurface(theme);
     final codeSize = _fontSize * fontScale;
     final baseStyle =
         _baseStyle(palette.foreground).copyWith(fontSize: codeSize);

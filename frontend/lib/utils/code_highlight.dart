@@ -1,6 +1,6 @@
 import 'dart:collection';
 
-import 'package:flutter/widgets.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_highlight/themes/atom-one-dark.dart';
 import 'package:flutter_highlight/themes/atom-one-light.dart';
 import 'package:highlight/highlight_core.dart' show Highlight, Node;
@@ -28,6 +28,7 @@ import 'package:highlight/languages/sql.dart' show sql;
 import 'package:highlight/languages/typescript.dart' show typescript;
 import 'package:highlight/languages/yaml.dart' show yaml;
 
+import 'code_theme.dart';
 import 'xml_grammar.dart' show xml;
 
 /// Syntax highlighting for chat bubbles.
@@ -103,13 +104,19 @@ const int _maxCachedBlocks = 200;
 ///
 /// When [language] is null the language is auto-detected, which is only cheap
 /// because of the deliberately small language set above.
+///
+/// [theme] is the token map to colour with and [themeId] names it: a rendered
+/// span tree has its colours baked in, so a cache keyed on source and language
+/// alone would hand back the previous theme's colours after a scheme change.
 List<TextSpan> highlightedSpans(
   String source, {
   String? language,
   required bool isDark,
+  Map<String, TextStyle>? theme,
+  String themeId = 'atom-one',
 }) {
   final key =
-      '${isDark ? 'd' : 'l'}|${language ?? 'auto'}|${source.length}|${source.hashCode}';
+      '$themeId|${isDark ? 'd' : 'l'}|${language ?? 'auto'}|${source.length}|${source.hashCode}';
 
   final cached = _spanCache.remove(key);
   if (cached != null) {
@@ -123,7 +130,7 @@ List<TextSpan> highlightedSpans(
 
   final spans = <TextSpan>[
     for (final node in result.nodes ?? const <Node>[])
-      _toTextSpan(node, isDark ? _darkTheme : _lightTheme),
+      _toTextSpan(node, theme ?? (isDark ? _darkTheme : _lightTheme)),
   ];
 
   while (_spanCache.length >= _maxCachedBlocks) {
@@ -338,23 +345,19 @@ List<List<TextSpan>> plainLines(String source, TextStyle style) => [
         line.isEmpty ? <TextSpan>[] : [TextSpan(text: line, style: style)],
     ];
 
-/// The colours the highlight palette expects to be painted with: its own
-/// foreground and its own background.
+/// The colours the app's *default* code theme expects to be painted with: its
+/// own foreground and its own background.
 ///
-/// A palette is a set of colours for one surface, not colours for any surface.
-/// The token colours above are chosen against `root.backgroundColor`; show them
-/// on some other background - the app's own, a dialog's - and they are the
-/// wrong colours for it, which is what "the colouring is wrong, and it does not
-/// follow dark mode" looks like. Anything that renders highlighted text takes
-/// both halves from here instead of picking its own background.
+/// A code theme is a set of colours for one surface, not colours for any surface.
+/// The token colours in the maps above are chosen against `root.backgroundColor`;
+/// show them on some other background - the app's own, a dialog's - and they are
+/// the wrong colours for it, which is what "the colouring is wrong, and it does
+/// not follow dark mode" looks like. Anything that renders highlighted text takes
+/// both halves from the theme it is actually using (`CodeTheme`), and this is the
+/// one to ask when there is no BuildContext to read it from.
 ({Color foreground, Color background}) codePalette(bool isDark) {
-  final theme = isDark ? _darkTheme : _lightTheme;
-  return (
-    foreground: theme['root']?.color ??
-        (isDark ? const Color(0xFFABB2BF) : const Color(0xFF383A42)),
-    background: theme['root']?.backgroundColor ??
-        (isDark ? const Color(0xFF282C34) : const Color(0xFFFAFAFA)),
-  );
+  final code = CodeTheme.atomOne(isDark ? Brightness.dark : Brightness.light);
+  return (foreground: code.fixedForeground, background: code.fixedBackground);
 }
 
 /// A block of highlighted code. Same visual result as `HighlightView`, but the
@@ -381,16 +384,24 @@ class HighlightedCode extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final palette = codePalette(isDark);
+    final theme = Theme.of(context);
+    final code = CodeTheme.of(theme);
+    // The block's surface. In the chat every caller passes one - all code in a
+    // reply is painted from the scheme - so this is only the fallback for a block
+    // asked for without one, resolved the way ChatPalette resolves it.
+    final background = this.background ??
+        (code.ownsAppSurfaces
+            ? CodeTheme.codeSurface(theme.colorScheme)
+            : code.fixedBackground);
     final base = TextStyle(
       fontFamily: 'JetBrainsMono',
       fontSize: 13,
-      color: palette.foreground,
+      color: code.foregroundFor(background, appText: theme.colorScheme.onSurface),
     ).merge(textStyle);
 
     return Container(
       decoration: BoxDecoration(
-        color: background ?? palette.background,
+        color: background,
         borderRadius: borderRadius ?? BorderRadius.circular(6),
       ),
       padding: padding,
@@ -406,6 +417,8 @@ class HighlightedCode extends StatelessWidget {
               source,
               language: language,
               isDark: isDark,
+              theme: code.mapFor(background),
+              themeId: code.id,
             )),
         textDirection: TextDirection.ltr,
       ),

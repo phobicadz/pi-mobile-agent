@@ -86,13 +86,21 @@ extension AppColorSchemeExt on AppColorScheme {
     if (this == AppColorScheme.dracula && brightness == Brightness.dark) {
       return Dracula.darkScheme();
     }
-    final authored = switch (brightness) {
-      Brightness.dark => _family?.dark,
-      Brightness.light => _family?.light,
-    };
+    final authored = authoredAt(brightness);
     if (authored != null) return authored.schemeFor(brightness);
     return ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
   }
+
+  /// The authored palette this choice has at this brightness, or null.
+  ///
+  /// Public because the *code* theme has the same question: a scheme with an
+  /// authored palette at this brightness has that palette's syntax colours too,
+  /// and one without has no syntax palette to follow. `CodeTheme.following` asks
+  /// this rather than guessing from the seed.
+  EditorPalette? authoredAt(Brightness brightness) => switch (brightness) {
+        Brightness.dark => _family?.dark,
+        Brightness.light => _family?.light,
+      };
 
   /// Anything the picker has to say about this choice, or null when the name and
   /// the swatch are the whole of it.

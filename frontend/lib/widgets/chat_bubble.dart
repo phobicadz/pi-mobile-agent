@@ -719,6 +719,8 @@ class ChatBubble extends StatelessWidget {
   /// A half of a diff: the text, drawn as the code it is, with which way it
   /// moved said twice - in the label, and on the edge of the block so it is
   /// still said while you are reading the text rather than above it.
+  ///
+  /// Long text is folded, and said to be folded: see `_FoldedText`.
   Widget _textArgBlock(String key, String value, _Diff direction,
       String? language, ChatPalette palette) {
     final signal =
@@ -733,29 +735,13 @@ class ChatBubble extends StatelessWidget {
         children: [
           _toolLabel('${direction.sign} $key', palette, color: signal),
           const SizedBox(height: 3),
-          // The bar is a border on a wrapper, not a column in a Row: a Row with
-          // `CrossAxisAlignment.stretch` inside a Column is asked for a height it
-          // is never given, and the whole card fails to lay out.
-          Container(
-            decoration: BoxDecoration(
-              border: Border(left: BorderSide(color: signal, width: 3)),
-              borderRadius: _diffRadius,
-            ),
-            child: HighlightedCode(
-              value,
-              language: language,
-              isDark: palette.isDark,
-              textStyle: TextStyle(
-                fontFamily: 'JetBrainsMono',
-                fontSize: _font(12),
-                color: palette.codeForeground,
-              ),
-              background: surface,
-              // Square on the bar's side, rounded on the other: the bar is the
-              // block's edge, not a separate thing standing next to it.
-              borderRadius: _diffRadius,
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-            ),
+          _FoldedText(
+            source: value,
+            language: language,
+            palette: palette,
+            signal: signal,
+            background: surface,
+            fontScale: fontScale,
           ),
         ],
       ),
@@ -1093,6 +1079,106 @@ const BorderRadius _diffRadius = BorderRadius.only(
   topRight: Radius.circular(6),
   bottomRight: Radius.circular(6),
 );
+
+/// How many lines of a tool call's text are shown before the rest is offered.
+///
+/// Long enough to see what a change *is* - the shape of a diff is in its first
+/// few lines - and short enough that a `write` of a 400-line file does not push
+/// the rest of the conversation off a phone screen while you read it.
+const int _previewLines = 12;
+
+/// A block of a tool call's text, folded when it is long.
+///
+/// The card's job is to say what changed. A whole file's worth of text in it says
+/// that worse than the first dozen lines and a number do: you have to scroll the
+/// card to find out how big the change was, and the rest of the chat is off
+/// screen while you do. The count is in the control before you tap it, because
+/// how much you are about to open is the question you ask first.
+///
+/// The bar is a border on a wrapper rather than a column in a Row: a Row with
+/// `CrossAxisAlignment.stretch` inside a Column is asked for a height it is never
+/// given, and the whole card fails to lay out.
+class _FoldedText extends StatefulWidget {
+  const _FoldedText({
+    required this.source,
+    required this.language,
+    required this.palette,
+    required this.signal,
+    required this.background,
+    required this.fontScale,
+  });
+
+  final String source;
+  final String? language;
+  final ChatPalette palette;
+  final Color signal;
+  final Color background;
+  final double fontScale;
+
+  @override
+  State<_FoldedText> createState() => _FoldedTextState();
+}
+
+class _FoldedTextState extends State<_FoldedText> {
+  bool _open = false;
+
+  double _font(double base) => base * widget.fontScale;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.source.split('\n');
+    final long = lines.length > _previewLines;
+
+    // Square against the bar, rounded on the other side: the bar is the block's
+    // edge, not a separate thing standing next to it.
+    final block = Container(
+      decoration: BoxDecoration(
+        border: Border(left: BorderSide(color: widget.signal, width: 3)),
+        borderRadius: _diffRadius,
+      ),
+      child: HighlightedCode(
+        long && !_open ? lines.take(_previewLines).join('\n') : widget.source,
+        language: widget.language,
+        isDark: widget.palette.isDark,
+        textStyle: TextStyle(
+          fontFamily: 'JetBrainsMono',
+          fontSize: _font(12),
+          color: widget.palette.codeForeground,
+        ),
+        background: widget.background,
+        borderRadius: _diffRadius,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      ),
+    );
+
+    if (!long) return block;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        block,
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => setState(() => _open = !_open),
+            style: TextButton.styleFrom(
+              // The scheme's link colour: this is the one thing in the card that
+              // asks you to do something.
+              foregroundColor: widget.palette.link,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              textStyle: TextStyle(
+                  fontSize: _font(11.5), fontWeight: FontWeight.w600),
+            ),
+            child: Text(_open
+                ? 'show the first $_previewLines lines'
+                : 'show all ${lines.length} lines'),
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 /// Which way a piece of text moves in a tool call: into the file, or out of it.
 enum _Diff {

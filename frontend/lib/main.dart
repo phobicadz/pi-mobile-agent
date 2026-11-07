@@ -9,6 +9,7 @@ import 'screens/home_screen.dart';
 import 'providers/appearance_controller.dart';
 import 'utils/browser_viewport.dart';
 import 'utils/client_diagnostics.dart';
+import 'utils/code_theme.dart';
 
 /// Resolves the backend WebSocket URL for the platform the app runs on.
 ///
@@ -108,10 +109,12 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: colorScheme.schemeFor(Brightness.light),
+          extensions: [CodeTheme.following(colorScheme, Brightness.light)],
         ),
         darkTheme: ThemeData(
           useMaterial3: true,
           colorScheme: colorScheme.schemeFor(Brightness.dark),
+          extensions: [CodeTheme.following(colorScheme, Brightness.dark)],
         ),
         themeMode: themeMode,
         home: const HomeScreen(),

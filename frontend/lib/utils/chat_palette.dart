@@ -2,6 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'code_theme.dart';
+
 /// The chat's colours, read off whichever colour scheme the app is on.
 ///
 /// The bubbles used to carry their own hex literals. That worked while there was
@@ -37,6 +39,7 @@ class ChatPalette {
     required this.toolCard,
     required this.codeBackground,
     required this.codeForeground,
+    required this.codeThemeId,
     required this.diffAdded,
     required this.diffRemoved,
     required this.addedBlock,
@@ -87,12 +90,19 @@ class ChatPalette {
   /// block that goes the same direction in both would sit proud of its card at
   /// one brightness and sunk into it at the other.
   ///
-  /// The syntax colours on top of it are still the code theme's. Those are what
-  /// make a command or a source file read as one at a glance; the surface is not.
-  /// The code theme's own backgrounds are near-neutral greys, and so are these
-  /// surfaces whatever the seed, so its token colours stay legible on them.
+  /// The *surface* is the app's, deliberately: it is a near-neutral step off the
+  /// page, and a block tinted in the scheme's own hue makes every keyword in it
+  /// look like a button. The **token colours** on it are the chosen palette's -
+  /// see `CodeTheme`, which carries the syntax palette of whatever scheme is
+  /// picked and falls back to the app's default one where a scheme has none.
   final Color codeBackground;
   final Color codeForeground;
+
+  /// Which code theme those blocks are coloured with. A rendered span tree has
+  /// its token colours baked into it just as literally as a rendered bubble
+  /// does, so the span cache has to be told apart from one built under another
+  /// scheme - the same reason the whole palette is in `cacheKey`.
+  final String codeThemeId;
 
   /// The two colours of a diff, and the blocks each half of one is painted on.
   ///
@@ -135,8 +145,12 @@ class ChatPalette {
   factory ChatPalette.from(ThemeData theme) {
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
-    final codeBg =
-        isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest;
+    final codeBg = CodeTheme.codeSurface(scheme);
+    // The text colour of an un-tokened code block, and the token map around it,
+    // both from the code theme the chosen scheme carries - raised, in lightness
+    // only, against the surface it is actually painted on.
+    final code = CodeTheme.of(theme);
+    final codeFg = code.foregroundFor(codeBg, appText: scheme.onSurface);
     // The surface a tool card is painted on, bound once: `toolText` and
     // `toolError` are defined *against* it, so the two must be the same card.
     final card = isDark
@@ -163,7 +177,8 @@ class ChatPalette {
       toolCard: card,
       toolResult: isDark ? added : addedLight,
       codeBackground: codeBg,
-      codeForeground: scheme.onSurface,
+      codeForeground: codeFg,
+      codeThemeId: code.id,
       diffAdded: isDark ? added : addedLight,
       diffRemoved: isDark ? removed : removedLight,
       addedBlock: _tint(codeBg, isDark ? added : addedLight, scheme.onSurface, isDark),
@@ -193,6 +208,7 @@ class ChatPalette {
   /// changed - every message in the chat at once - the moment the scheme did.
   int get cacheKey => Object.hashAll([
         isDark,
+        codeThemeId,
         assistantBubble,
         userBubble,
         assistantAccent,
