@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 /// The chat's colours, read off whichever colour scheme the app is on.
@@ -39,6 +41,8 @@ class ChatPalette {
     required this.diffRemoved,
     required this.addedBlock,
     required this.removedBlock,
+    required this.toolText,
+    required this.toolError,
     required this.toolResult,
     required this.link,
     required this.error,
@@ -107,6 +111,18 @@ class ChatPalette {
   final Color addedBlock;
   final Color removedBlock;
 
+  /// Text in a tool card that is not what the card is about: a file path, an
+  /// offset, a "Successfully replaced 2 blocks." line.
+  ///
+  /// `onSurfaceVariant` is the quiet colour, and quiet is not the same as
+  /// legible: on a dark card a medium grey lands around 3:1, which is under
+  /// what body text needs. So it is [legibleOn] - nudged toward the far end of
+  /// the card until it clears 4.5:1, and not a step further. Where the token is
+  /// already readable (every light scheme, and most dark ones) this *is* the
+  /// token, unchanged; it only bites where the text was genuinely hard to read.
+  final Color toolText;
+  final Color toolError;
+
   final Color link;
   final Color error;
 
@@ -121,6 +137,11 @@ class ChatPalette {
     final isDark = theme.brightness == Brightness.dark;
     final codeBg =
         isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest;
+    // The surface a tool card is painted on, bound once: `toolText` and
+    // `toolError` are defined *against* it, so the two must be the same card.
+    final card = isDark
+        ? scheme.surfaceContainerHighest
+        : scheme.surfaceContainerLow;
     const added = Color(0xFF7FCBA5);
     const addedLight = Color(0xFF2E6B4F);
     const removed = Color(0xFFFF6B6B);
@@ -139,9 +160,7 @@ class ChatPalette {
       // a raised card already read. The token that goes *up* in lightness from
       // `surfaceContainerHigh` is a different one per theme, because the surface
       // scale runs the other way in dark.
-      toolCard: isDark
-          ? scheme.surfaceContainerHighest
-          : scheme.surfaceContainerLow,
+      toolCard: card,
       toolResult: isDark ? added : addedLight,
       codeBackground: codeBg,
       codeForeground: scheme.onSurface,
@@ -149,6 +168,8 @@ class ChatPalette {
       diffRemoved: isDark ? removed : removedLight,
       addedBlock: _tint(codeBg, isDark ? added : addedLight, isDark),
       removedBlock: _tint(codeBg, isDark ? removed : removedLight, isDark),
+      toolText: legibleOn(scheme.onSurfaceVariant, card),
+      toolError: legibleOn(scheme.error, card),
       link: scheme.primary,
       error: scheme.error,
       outline: scheme.outlineVariant,
@@ -186,6 +207,8 @@ class ChatPalette {
         diffRemoved,
         addedBlock,
         removedBlock,
+        toolText,
+        toolError,
         link,
         error,
         outline,
@@ -201,3 +224,26 @@ class ChatPalette {
 /// is also a tint the token colours stop working on.
 Color _tint(Color surface, Color signal, bool isDark) =>
     Color.alphaBlend(signal.withValues(alpha: isDark ? 0.14 : 0.08), surface);
+
+/// Contrast between two opaque colours, WCAG-style.
+double contrastOn(Color a, Color b) {
+  final la = a.computeLuminance(), lb = b.computeLuminance();
+  final hi = math.max(la, lb), lo = math.min(la, lb);
+  return (hi + 0.05) / (lo + 0.05);
+}
+
+/// [fg] nudged toward the far end of [bg] until it clears [target] contrast on
+/// it - and no further, so a colour that was already readable stays itself.
+///
+/// The nudge is toward black or white rather than toward `onSurface`, because
+/// what has to be guaranteed is the *contrast*, and the shortest way to it from
+/// a medium grey is the nearer pole of the surface it is being read on.
+Color legibleOn(Color fg, Color bg, {double target = 4.5}) {
+  if (contrastOn(fg, bg) >= target) return fg;
+  final pole = bg.computeLuminance() > 0.5 ? const Color(0xFF000000) : const Color(0xFFFFFFFF);
+  for (var t = 0.05; t <= 1.0; t += 0.05) {
+    final candidate = Color.lerp(fg, pole, t)!;
+    if (contrastOn(candidate, bg) >= target) return candidate;
+  }
+  return pole;
+}

@@ -568,7 +568,7 @@ class ChatBubble extends StatelessWidget {
                   // back" read as one undifferentiated blob.
                   _toolLabel('output', palette),
                   const SizedBox(height: 3),
-                  _buildToolResult(tool.result!, palette),
+                  _buildToolResult(tool, palette),
                 ],
               ),
             ),
@@ -662,7 +662,11 @@ class ChatBubble extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'JetBrainsMono',
                   fontSize: _font(12),
-                  color: palette.muted,
+                  // A path and a line number are not what the card is about -
+                  // the diff or the command below is - but they are still text a
+                  // person reads, and a medium grey on a dark card is under what
+                  // text needs. `toolText` is that line drawn in the right one.
+                  color: palette.toolText,
                 ),
               ),
           ],
@@ -670,6 +674,25 @@ class ChatBubble extends StatelessWidget {
       ));
     }
     return blocks;
+  }
+
+  /// A tool whose arguments *are* the file's text, so its result is a saying
+  /// about the file rather than content.
+  ///
+  /// By name, and by shape: a tool that carries an edit pair is an edit whatever
+  /// it is called.
+  static bool isEditTool(PiTool tool) {
+    const names = {
+      'edit',
+      'multiedit',
+      'write',
+      'create',
+      'str_replace',
+      'search_replace',
+      'apply_patch',
+    };
+    if (names.contains(tool.name)) return true;
+    return tool.arguments.keys.any((k) => _textArgs.containsKey(k));
   }
 
   static bool _isEditList(Object? value) =>
@@ -778,12 +801,36 @@ class ChatBubble extends StatelessWidget {
     return names.contains(name.toLowerCase());
   }
 
-  /// Tool results are usually code (JSON, source, command output). Highlight
-  /// them when they look like code; otherwise keep the plain green monospace
-  /// rendering so prose status messages stay readable.
-  Widget _buildToolResult(String result, ChatPalette palette) {
+  /// A tool's result.
+  ///
+  /// An editing tool's result is a sentence about the file - "Successfully
+  /// replaced 2 block(s)." - and it used to be drawn as a code block because
+  /// `_looksLikeCode` matched the `k(` in `block(s)`. A status line in a card
+  /// whose whole point is the two diff blocks above it gets neither: no code
+  /// block, no syntax colours, no output green. Plain text, in the same quieter
+  /// colour the path above it is drawn in.
+  ///
+  /// A command's output keeps all of that. It *is* content, and the green is the
+  /// app's signal for "this is what came back", not a style.
+  Widget _buildToolResult(PiTool tool, ChatPalette palette) {
+    final result = tool.result!;
     final source =
         result.length > 800 ? '${result.substring(0, 800)}…' : result;
+
+    if (isEditTool(tool)) {
+      // "Error: Could not find oldText in …" is the one status line in a card
+      // that must not be quiet, so it is the one that isn't.
+      final failed =
+          RegExp(r'^\s*(error|failed)\b', caseSensitive: false).hasMatch(source);
+      return Text(
+        source,
+        style: TextStyle(
+          fontSize: _font(12),
+          height: 1.4,
+          color: failed ? palette.toolError : palette.toolText,
+        ),
+      );
+    }
 
     if (!_looksLikeCode(source)) {
       return Text(
