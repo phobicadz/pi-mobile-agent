@@ -32,7 +32,22 @@ class FakeChatService extends PiService {
   Stream<PiEvent> get events => _events.stream;
 
   @override
-  Future<List<PiModel>> getAvailableModels() async => const [];
+  Future<List<PiModel>> getAvailableModels() async => [
+        // One model the account can use, one it cannot, and one that can take a
+        // photo: the three things the picker paints in its own colours.
+        PiModel(
+          id: 'model-offered',
+          name: 'Offered Model',
+          provider: 'test-provider',
+          input: const ['text', 'image'],
+        ),
+        PiModel(
+          id: 'model-retired',
+          name: 'Retired Model',
+          provider: 'test-provider',
+          available: false,
+        ),
+      ];
 
   @override
   Future<void> sendPrompt(String message,
@@ -270,6 +285,54 @@ void main() {
         greaterThanOrEqualTo(4.5));
     expect(contrast(Dracula.foreground, Dracula.background),
         greaterThanOrEqualTo(4.5));
+
+    appearance.dispose();
+  });
+
+  testWidgets('the model picker is painted with the scheme too',
+      (tester) async {
+    final app = await pumpApp(tester);
+    final appearance = app.$1;
+
+    // Read everything after the change: a widget instance captured before it is
+    // the decoration the old theme built.
+    appearance.toggleTheme(Brightness.light); // the app is showing light
+    appearance.setColorScheme(AppColorScheme.dracula);
+    await settleThemeChange(tester);
+
+    final scheme = schemeOf(tester);
+
+    // The box the picker is built in is always on screen.
+    final box = tester.widget<Container>(find
+        .ancestor(
+          of: find.byType(DropdownButton<String>),
+          matching: find.byType(Container),
+        )
+        .first);
+    final border = (box.decoration as BoxDecoration).border as Border;
+    expect(border.top.color, scheme.outlineVariant,
+        reason: 'the hairline around the picker was a fixed light grey, which '
+            'is a bright line across a dark app');
+
+    // The rows only exist once the menu is open - a closed dropdown renders the
+    // selected item, and here nothing is selected.
+    await tester.tap(find.byType(DropdownButton<String>));
+    for (var i = 0; i < 8; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(
+        tester
+            .widget<Icon>(find.byIcon(Icons.error_outline).first)
+            .color,
+        scheme.error,
+        reason: 'a model that is not offered is a failure like any other the '
+            'app reports, so it is the theme red rather than a fixed one');
+    expect(
+        tester.widget<Icon>(find.byIcon(Icons.image_outlined).first).color,
+        scheme.onSurfaceVariant,
+        reason: 'what a model can take is a fact about it, not something to '
+            'act on - muted, and the theme\'s muted');
 
     appearance.dispose();
   });

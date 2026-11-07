@@ -81,10 +81,18 @@ class _ModelSelectorState extends State<ModelSelector> {
         final isCompactMode = screenSize == ScreenSize.phone;
         final menuMaxHeight = isCompactMode ? 300.0 : 400.0;
 
+        // The menu this opens already follows the theme - a dropdown paints
+        // with `Theme.canvasColor`, which is `colorScheme.surface` under
+        // Material 3, and its rows come from the theme's text styles. What did
+        // not follow it was the control itself: a light-grey box, an
+        // off-palette red, and a mid-grey icon, all of which read as chrome
+        // from another app the moment the chat around them has been repainted.
+        final colorScheme = Theme.of(context).colorScheme;
+
         return Container(
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            border: Border.all(color: Colors.grey.shade300),
+            border: Border.all(color: colorScheme.outlineVariant),
             borderRadius: BorderRadius.circular(8),
           ),
           child: DropdownButton<String>(
@@ -102,7 +110,10 @@ class _ModelSelectorState extends State<ModelSelector> {
                     Icon(
                       offered ? Icons.model_training : Icons.error_outline,
                       size: 16,
-                      color: offered ? null : Colors.redAccent,
+                      // The theme's own error colour, so "this model is not
+                      // offered" is the same red as every other failure the app
+                      // reports.
+                      color: offered ? null : colorScheme.error,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -141,7 +152,9 @@ class _ModelSelectorState extends State<ModelSelector> {
                         child: Icon(
                           Icons.image_outlined,
                           size: 15,
-                          color: Colors.grey.shade600,
+                          // Muted on purpose: it is a fact about the model, not
+                          // something to act on.
+                          color: colorScheme.onSurfaceVariant,
                           semanticLabel: 'accepts images',
                         ),
                       ),

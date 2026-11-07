@@ -1139,7 +1139,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: Theme.of(context).scaffoldBackgroundColor,
                   border: Border(
                     top: BorderSide(
-                      color: Colors.grey.shade300,
+                      // The hairline that separates the composer from the chat.
+                      // A fixed light grey was a bright band across the bottom of
+                      // a dark app, whatever the app had been painted in.
+                      color: Theme.of(context).colorScheme.outlineVariant,
                       width: 1,
                     ),
                   ),
@@ -1176,15 +1179,27 @@ class _HomeScreenState extends State<HomeScreen> {
                               child: FloatingActionButton(
                                 mini: true,
                                 heroTag: 'attach-image',
+                                // Switched-off, in the theme's own inactive
+                                // surface - and the icon muted with it, so a
+                                // greyed-out control is greyed out at both
+                                // brightnesses rather than only at one.
                                 backgroundColor:
                                     viewModel.canAttachImages
                                         ? null
-                                        : Colors.grey.shade300,
+                                        : Theme.of(context)
+                                            .colorScheme
+                                            .surfaceContainerHighest,
                                 onPressed: viewModel.canAttachImages
                                     ? () => viewModel.attachImagesFromDevice()
                                     : null,
-                                child:
-                                    const Icon(Icons.add_photo_alternate_outlined),
+                                child: Icon(
+                                  Icons.add_photo_alternate_outlined,
+                                  color: viewModel.canAttachImages
+                                      ? null
+                                      : Theme.of(context)
+                                          .colorScheme
+                                          .onSurfaceVariant,
+                                ),
                               ),
                             ),
                           ),
