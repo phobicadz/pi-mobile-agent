@@ -643,13 +643,23 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () {
                     showModalBottomSheet(
                       context: context,
+                      // Thirteen schemes is a long list, and the default sheet is
+                      // capped at nine sixteenths of the screen. A picker where
+                      // most of what you are choosing is below the fold is a list
+                      // you scroll through blind, so this one takes the height
+                      // there actually is - up to most of it, leaving the app
+                      // visible behind it.
+                      isScrollControlled: true,
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+                      ),
                       builder: (context) => Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
-                        // The list has to scroll: six named schemes with a
-                        // sentence on one of them is taller than a phone sheet,
-                        // and a scheme nobody can reach is a scheme that cannot
-                        // be chosen.
+                        // The list has to scroll: thirteen named schemes, four
+                        // of them with a sentence under them, is taller than a
+                        // phone's sheet, and a scheme nobody can reach is a
+                        // scheme that cannot be chosen.
                         child: SingleChildScrollView(
                           child: Column(
                             mainAxisSize: MainAxisSize.min,

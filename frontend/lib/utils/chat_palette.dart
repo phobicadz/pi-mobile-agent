@@ -166,8 +166,9 @@ class ChatPalette {
       codeForeground: scheme.onSurface,
       diffAdded: isDark ? added : addedLight,
       diffRemoved: isDark ? removed : removedLight,
-      addedBlock: _tint(codeBg, isDark ? added : addedLight, isDark),
-      removedBlock: _tint(codeBg, isDark ? removed : removedLight, isDark),
+      addedBlock: _tint(codeBg, isDark ? added : addedLight, scheme.onSurface, isDark),
+      removedBlock:
+          _tint(codeBg, isDark ? removed : removedLight, scheme.onSurface, isDark),
       toolText: legibleOn(scheme.onSurfaceVariant, card),
       toolError: legibleOn(scheme.error, card),
       link: scheme.primary,
@@ -216,14 +217,24 @@ class ChatPalette {
       ]);
 }
 
-/// [signal] blended faintly into [surface].
+/// [signal] blended into [surface] as strongly as the text on it can take.
 ///
-/// Faintly on purpose. The surface has to stay a surface: code text sits on it
-/// with the code theme's token colours, and those were chosen against a
-/// near-neutral background. A tint strong enough to read as "the green block"
-/// is also a tint the token colours stop working on.
-Color _tint(Color surface, Color signal, bool isDark) =>
-    Color.alphaBlend(signal.withValues(alpha: isDark ? 0.14 : 0.08), surface);
+/// The cap is what a diff block should be: a hint, not a colour swatch. The
+/// search *down* from it is because how much a surface can absorb depends on
+/// what is read on it - a palette whose body text is near-white can afford a
+/// tint that would push a palette whose body text is deliberately a mid grey
+/// (Solarized's is) under legible. Same cap for every scheme, and the amount
+/// each one actually gets is decided by its own contrast, not by the palette's
+/// taste.
+Color _tint(Color surface, Color signal, Color text, bool isDark) {
+  const floor = 0.03;
+  for (var alpha = isDark ? 0.14 : 0.08; alpha > floor; alpha -= 0.01) {
+    final candidate =
+        Color.alphaBlend(signal.withValues(alpha: alpha), surface);
+    if (contrastOn(text, candidate) >= 4.5) return candidate;
+  }
+  return Color.alphaBlend(signal.withValues(alpha: floor), surface);
+}
 
 /// Contrast between two opaque colours, WCAG-style.
 double contrastOn(Color a, Color b) {

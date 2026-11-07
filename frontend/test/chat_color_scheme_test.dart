@@ -337,17 +337,70 @@ void main() {
     appearance.dispose();
   });
 
-  testWidgets('the picker says which schemes are dark only', (tester) async {
+  testWidgets('the picker names every scheme, and says which are dark only',
+      (tester) async {
     final app = await pumpApp(tester);
+    final appearance = app.$1;
+
+    final darkOnly =
+        AppColorScheme.values.where((s) => s.isDarkOnly).toList();
+    expect(darkOnly.length, greaterThan(1),
+        reason: 'a list of one was a Dracula special case; these are themes '
+            'that genuinely have no light half');
+
+    await openAppMenu(tester);
+    await tapMenuRow(tester, Icons.palette);
+
+    for (final scheme in AppColorScheme.values) {
+      // Scoped to the sheet: the drawer row above it shows the *current* scheme's
+      // name as its subtitle, and a name found twice is a name found in the
+      // wrong widget.
+      expect(find.descendant(of: find.byType(BottomSheet), matching: find.text(scheme.displayName)),
+          findsOneWidget,
+          reason: 'a swatch of ${scheme.name} is not a name a reader can look '
+              'for');
+    }
+
+    for (final scheme in darkOnly) {
+      expect(scheme.note, contains('dark palette'),
+          reason: '${scheme.displayName} is dark only and the picker has to '
+              'say so - a swatch cannot');
+    }
+    expect(find.textContaining('dark palette'), findsNWidgets(darkOnly.length),
+        reason: 'the notes the enum says are needed are the notes on screen');
+
+    for (final scheme in AppColorScheme.values.where((s) => !s.isDarkOnly)) {
+      expect(scheme.note, isNull,
+          reason: '${scheme.displayName} does have a light half. A note saying '
+              'otherwise is a lie the picker would tell for free');
+    }
+
+    appearance.dispose();
+  });
+
+  testWidgets('the scheme picker uses the height a phone has', (tester) async {
+    final app = await pumpApp(tester, size: const Size(390, 844));
     final appearance = app.$1;
 
     await openAppMenu(tester);
     await tapMenuRow(tester, Icons.palette);
 
-    expect(find.text('Dracula'), findsOneWidget);
-    expect(find.textContaining('dark palette'), findsOneWidget,
-        reason: 'a swatch cannot say that a palette is dark only, and picking '
-            'one to find that out is a worse way to learn it');
+    // The default bottom sheet is capped at nine sixteenths of the screen.
+    final sheet = tester.getRect(find.byType(BottomSheet));
+    expect(sheet.height, greaterThan(844 * 9 / 16),
+        reason: 'thirteen schemes do not fit in half a phone, and a picker whose '
+            'list is mostly below the fold is one you scroll through blind');
+
+    // What a person can actually see, rather than what is in the tree.
+    var visible = 0;
+    for (final scheme in AppColorScheme.values) {
+      final name = find.descendant(
+          of: find.byType(BottomSheet), matching: find.text(scheme.displayName));
+      if (tester.getRect(name).bottom <= 844) visible++;
+    }
+    expect(visible, greaterThanOrEqualTo(AppColorScheme.values.length - 3),
+        reason: 'a phone should show most of the list at once, not two thirds '
+            'of it off the bottom');
 
     appearance.dispose();
   });

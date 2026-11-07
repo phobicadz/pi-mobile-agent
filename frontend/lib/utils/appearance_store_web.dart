@@ -27,27 +27,23 @@ void saveThemeMode(ThemeMode mode) => _write(
     });
 
 /// Read back the stored color scheme, or null when there is none.
-Future<AppColorScheme?> loadColorScheme() async =>
-    switch (_read(_colorSchemeKey)) {
-      'blue' => AppColorScheme.blue,
-      'green' => AppColorScheme.green,
-      'purple' => AppColorScheme.purple,
-      'orange' => AppColorScheme.orange,
-      'red' => AppColorScheme.red,
-      'dracula' => AppColorScheme.dracula,
-      _ => null,
-    };
+///
+/// The stored name is the enum's own, so a new scheme needs no change here -
+/// which is the only way a list that lives in an enum stays honest. A name this
+/// build does not have (a scheme removed in a later version, a value written by
+/// a hand into localStorage) parses to null and the app starts at its default,
+/// which is what an unreadable stored value should mean.
+Future<AppColorScheme?> loadColorScheme() async {
+  final name = _read(_colorSchemeKey);
+  if (name == null) return null;
+  for (final scheme in AppColorScheme.values) {
+    if (scheme.name == name) return scheme;
+  }
+  return null;
+}
 
-void saveColorScheme(AppColorScheme scheme) => _write(
-    _colorSchemeKey,
-    switch (scheme) {
-      AppColorScheme.blue => 'blue',
-      AppColorScheme.green => 'green',
-      AppColorScheme.purple => 'purple',
-      AppColorScheme.orange => 'orange',
-      AppColorScheme.red => 'red',
-      AppColorScheme.dracula => 'dracula',
-    });
+void saveColorScheme(AppColorScheme scheme) =>
+    _write(_colorSchemeKey, scheme.name);
 
 /// Read back the stored text size, or null when there is none. A value this
 /// version cannot read parses to null and the app starts at its default size,

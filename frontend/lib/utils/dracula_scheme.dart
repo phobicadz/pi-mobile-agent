@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'chat_palette.dart' show legibleOn;
+
 /// The Dracula palette, and the Material 3 scheme built from it.
 ///
 /// The other schemes the app offers are *seeds*: pick a hue, let the tonal
@@ -89,7 +91,12 @@ class Dracula {
       onTertiaryContainer: foreground,
 
       // Dracula's red, on surfaces tinted with it.
-      error: red,
+      //
+      // Its red raised on the bubble it is read on. `#FF5555` on `#343746` is
+      // 3.75:1, which is a colour a reader has to squint at - and an error is
+      // the last thing in the app that should be allowed to be hard to read.
+      // `legibleOn` moves lightness only, so this is still Dracula's red.
+      error: legibleOn(red, surfaceHigh),
       onError: background,
       errorContainer: Color(0xFF5C2B2B),
       onErrorContainer: foreground,

@@ -2,12 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../utils/appearance_store.dart';
 import '../utils/dracula_scheme.dart';
+import '../utils/editor_palettes.dart';
 
 /// Available color schemes for the app.
 ///
-/// Most of these are seeds - a hue to generate a Material 3 scheme from. Dracula
-/// is not: it is a palette with its own surfaces and accents, so it is authored
-/// (see utils/dracula_scheme.dart) and only its purple family is generated.
+/// The first five are seeds - a hue to generate a Material 3 scheme from. The
+/// rest are palettes an editor names: Dracula, and the editor themes held in
+/// `EditorPalette` (Atom One, Solarized, GitHub, Nord, Catppuccin, Tokyo Night,
+/// Monokai). Those are authored from the colours the theme itself publishes,
+/// because a hue is not what someone means when they ask for Solarized, and a
+/// generated scheme will not produce it (see utils/editor_palettes.dart).
+///
+/// Adding one is a case here plus that palette's values in `EditorPalette`: the
+/// picker, the stored choice and the tests all follow the enum.
 enum AppColorScheme {
   blue,
   green,
@@ -15,7 +22,17 @@ enum AppColorScheme {
   orange,
   red,
   dracula,
+  atomOne,
+  solarized,
+  github,
+  nord,
+  catppuccin,
+  tokyoNight,
+  monokai,
 }
+
+/// An editor theme's dark half, and its light half where the theme ships one.
+typedef _EditorFamily = ({EditorPalette dark, EditorPalette? light});
 
 extension AppColorSchemeExt on AppColorScheme {
   /// Display name for the color scheme.
@@ -26,6 +43,13 @@ extension AppColorSchemeExt on AppColorScheme {
         AppColorScheme.orange => 'Orange',
         AppColorScheme.red => 'Red',
         AppColorScheme.dracula => 'Dracula',
+        AppColorScheme.atomOne => 'Atom One',
+        AppColorScheme.solarized => 'Solarized',
+        AppColorScheme.github => 'GitHub',
+        AppColorScheme.nord => 'Nord',
+        AppColorScheme.catppuccin => 'Catppuccin',
+        AppColorScheme.tokyoNight => 'Tokyo Night',
+        AppColorScheme.monokai => 'Monokai',
       };
 
   /// Seed color for Material 3 color generation - and the colour that stands for
@@ -37,27 +61,82 @@ extension AppColorSchemeExt on AppColorScheme {
         AppColorScheme.orange => Colors.orange,
         AppColorScheme.red => Colors.red,
         AppColorScheme.dracula => Dracula.purple,
+        _ => _family!.dark.primary,
+      };
+
+  /// Whether this palette has a light version at all.
+  ///
+  /// A seeded scheme has one by construction. An editor theme has one only when
+  /// the theme itself ships one: Solarized is designed as a pair, Atom One and
+  /// GitHub ship light variants, and Nord, Catppuccin, Tokyo Night and Monokai
+  /// are dark themes with no light half to be faithful to.
+  bool get isDarkOnly => switch (this) {
+        AppColorScheme.dracula => true,
+        _ => _family != null && _family!.light == null,
       };
 
   /// The scheme this choice produces at a given brightness.
   ///
-  /// Dracula's authored palette is the dark one. In light mode it falls back to
-  /// its purple as a seed, because there is no light Dracula to author - which
-  /// is said out loud in the picker (`note`) rather than left for someone to
-  /// discover by picking it and wondering.
+  /// Authored where an authored palette exists at that brightness, and generated
+  /// from the palette's own hue where it does not - which is the honest answer
+  /// for a dark-only theme in light mode, and is said out loud in the picker
+  /// (`note`) rather than left for someone to discover by picking it and
+  /// wondering.
   ColorScheme schemeFor(Brightness brightness) {
     if (this == AppColorScheme.dracula && brightness == Brightness.dark) {
       return Dracula.darkScheme();
     }
+    final authored = switch (brightness) {
+      Brightness.dark => _family?.dark,
+      Brightness.light => _family?.light,
+    };
+    if (authored != null) return authored.schemeFor(brightness);
     return ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
   }
 
   /// Anything the picker has to say about this choice, or null when the name and
   /// the swatch are the whole of it.
-  String? get note => this == AppColorScheme.dracula
-      ? 'A dark palette: in dark mode this is Dracula’s own surfaces and accents, '
-          'in light mode its purple on a light surface'
-      : null;
+  String? get note {
+    if (this == AppColorScheme.dracula) {
+      return 'A dark palette: in dark mode this is Dracula’s own surfaces and accents, '
+          'in light mode its purple on a light surface';
+    }
+    if (!isDarkOnly) return null;
+    return 'A dark palette: ${_family!.dark.name} has no light version, so in '
+        'light mode this is its own accent on a light surface';
+  }
+
+  _EditorFamily? get _family => switch (this) {
+        AppColorScheme.atomOne => (
+            dark: EditorPalette.atomOneDark,
+            light: EditorPalette.atomOneLight,
+          ),
+        AppColorScheme.solarized => (
+            dark: EditorPalette.solarizedDark,
+            light: EditorPalette.solarizedLight,
+          ),
+        AppColorScheme.github => (
+            dark: EditorPalette.githubDark,
+            light: EditorPalette.githubLight,
+          ),
+        AppColorScheme.nord => (dark: EditorPalette.nord, light: null),
+        AppColorScheme.catppuccin => (
+            dark: EditorPalette.catppuccinMocha,
+            light: null,
+          ),
+        AppColorScheme.tokyoNight => (
+            dark: EditorPalette.tokyoNight,
+            light: null,
+          ),
+        AppColorScheme.monokai => (dark: EditorPalette.monokai, light: null),
+        AppColorScheme.blue ||
+        AppColorScheme.green ||
+        AppColorScheme.purple ||
+        AppColorScheme.orange ||
+        AppColorScheme.red ||
+        AppColorScheme.dracula =>
+          null,
+      };
 }
 
 /// How the app looks: which theme it uses, color scheme, and how large the chat text is.
