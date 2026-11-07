@@ -35,6 +35,10 @@ class ChatPalette {
     required this.toolCard,
     required this.codeBackground,
     required this.codeForeground,
+    required this.diffAdded,
+    required this.diffRemoved,
+    required this.addedBlock,
+    required this.removedBlock,
     required this.toolResult,
     required this.link,
     required this.error,
@@ -86,6 +90,23 @@ class ChatPalette {
   final Color codeBackground;
   final Color codeForeground;
 
+  /// The two colours of a diff, and the blocks each half of one is painted on.
+  ///
+  /// Fixed, like the tool-output green: they are a saying about what happened to
+  /// a piece of text - it went in, it came out - not styling. A `+` and a `-`
+  /// whose colours move with the user's colour preference stop meaning anything.
+  ///
+  /// `diffAdded` *is* the tool-output green, deliberately: both mean "text the
+  /// agent wrote", and a second green would just be a second green.
+  final Color diffAdded;
+  final Color diffRemoved;
+
+  /// The code surface with a hint of the signal blended into it. A block of pure
+  /// signal colour is a swatch, not code you can read; a block of plain code
+  /// surface is indistinguishable from the half of the diff above it.
+  final Color addedBlock;
+  final Color removedBlock;
+
   final Color link;
   final Color error;
 
@@ -98,6 +119,12 @@ class ChatPalette {
   factory ChatPalette.from(ThemeData theme) {
     final scheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final codeBg =
+        isDark ? scheme.surfaceContainer : scheme.surfaceContainerLowest;
+    const added = Color(0xFF7FCBA5);
+    const addedLight = Color(0xFF2E6B4F);
+    const removed = Color(0xFFFF6B6B);
+    const removedLight = Color(0xFFB3261E);
 
     return ChatPalette(
       isDark: isDark,
@@ -115,11 +142,13 @@ class ChatPalette {
       toolCard: isDark
           ? scheme.surfaceContainerHighest
           : scheme.surfaceContainerLow,
-      toolResult: isDark ? const Color(0xFF7FCBA5) : const Color(0xFF2E6B4F),
-      codeBackground: isDark
-          ? scheme.surfaceContainer
-          : scheme.surfaceContainerLowest,
+      toolResult: isDark ? added : addedLight,
+      codeBackground: codeBg,
       codeForeground: scheme.onSurface,
+      diffAdded: isDark ? added : addedLight,
+      diffRemoved: isDark ? removed : removedLight,
+      addedBlock: _tint(codeBg, isDark ? added : addedLight, isDark),
+      removedBlock: _tint(codeBg, isDark ? removed : removedLight, isDark),
       link: scheme.primary,
       error: scheme.error,
       outline: scheme.outlineVariant,
@@ -153,9 +182,22 @@ class ChatPalette {
         toolResult,
         codeBackground,
         codeForeground,
+        diffAdded,
+        diffRemoved,
+        addedBlock,
+        removedBlock,
         link,
         error,
         outline,
         inlineCodeBackground,
       ]);
 }
+
+/// [signal] blended faintly into [surface].
+///
+/// Faintly on purpose. The surface has to stay a surface: code text sits on it
+/// with the code theme's token colours, and those were chosen against a
+/// near-neutral background. A tint strong enough to read as "the green block"
+/// is also a tint the token colours stop working on.
+Color _tint(Color surface, Color signal, bool isDark) =>
+    Color.alphaBlend(signal.withValues(alpha: isDark ? 0.14 : 0.08), surface);

@@ -593,22 +593,41 @@ class ChatBubble extends StatelessWidget {
   /// A small label naming a block inside a tool card - a parameter name, or the
   /// output the call produced. One style, because they are the same kind of
   /// thing: a saying about the block below it, not part of the block.
-  Widget _toolLabel(String text, ChatPalette palette) => Text(
+  Widget _toolLabel(String text, ChatPalette palette, {Color? color}) => Text(
         text,
         style: TextStyle(
           fontSize: _font(10.5),
           fontWeight: FontWeight.w600,
           letterSpacing: 0.4,
-          color: palette.muted,
+          color: color ?? palette.muted,
         ),
       );
 
   List<Widget> _buildToolArgs(PiTool tool, ChatPalette palette) {
     final shell = isShellTool(tool.name);
+    final language = _languageOfTool(tool);
     final blocks = <Widget>[];
     for (final entry in tool.arguments.entries) {
+      // An `edit` carries its changes as a list of {oldText, newText} pairs.
+      // Printed as one value that is `[{oldText: <four lines>, newText: <five
+      // lines…}]`, which is how the edit itself used to read. Each pair gets
+      // its own removed / added block instead.
+      if (entry.key == 'edits' && _isEditList(entry.value)) {
+        blocks.addAll(_diffBlocks(entry.value as List, language, palette));
+        continue;
+      }
+
       final value = '${entry.value ?? ''}';
       if (value.trim().isEmpty) continue;
+
+      // Text going into a file is code, whatever the tool spelled it as. A path
+      // or a line number is an argument, and stays one.
+      final direction = _textArgs[entry.key];
+      if (direction != null) {
+        blocks
+            .add(_textArgBlock(entry.key, value, direction, language, palette));
+        continue;
+      }
       blocks.add(Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Column(
@@ -651,6 +670,89 @@ class ChatBubble extends StatelessWidget {
       ));
     }
     return blocks;
+  }
+
+  static bool _isEditList(Object? value) =>
+      value is List && value.isNotEmpty && value.every((e) => e is Map);
+
+  /// One block per half of every pair in an `edit`'s `edits` list.
+  ///
+  /// Removed before added, in each pair: that is the order a diff is read in,
+  /// and the order the change happened in.
+  List<Widget> _diffBlocks(List edits, String? language, ChatPalette palette) {
+    final blocks = <Widget>[];
+    for (final edit in edits) {
+      final pair = edit as Map;
+      for (final slot in _diffSlots) {
+        final value = '${pair[slot.key] ?? ''}';
+        if (value.trim().isEmpty) continue;
+        blocks.add(
+            _textArgBlock(slot.key, value, slot.direction, language, palette));
+      }
+    }
+    return blocks;
+  }
+
+  /// A half of a diff: the text, drawn as the code it is, with which way it
+  /// moved said twice - in the label, and on the edge of the block so it is
+  /// still said while you are reading the text rather than above it.
+  Widget _textArgBlock(String key, String value, _Diff direction,
+      String? language, ChatPalette palette) {
+    final signal =
+        direction == _Diff.added ? palette.diffAdded : palette.diffRemoved;
+    final surface =
+        direction == _Diff.added ? palette.addedBlock : palette.removedBlock;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _toolLabel('${direction.sign} $key', palette, color: signal),
+          const SizedBox(height: 3),
+          // The bar is a border on a wrapper, not a column in a Row: a Row with
+          // `CrossAxisAlignment.stretch` inside a Column is asked for a height it
+          // is never given, and the whole card fails to lay out.
+          Container(
+            decoration: BoxDecoration(
+              border: Border(left: BorderSide(color: signal, width: 3)),
+              borderRadius: _diffRadius,
+            ),
+            child: HighlightedCode(
+              value,
+              language: language,
+              isDark: palette.isDark,
+              textStyle: TextStyle(
+                fontFamily: 'JetBrainsMono',
+                fontSize: _font(12),
+                color: palette.codeForeground,
+              ),
+              background: surface,
+              // Square on the bar's side, rounded on the other: the bar is the
+              // block's edge, not a separate thing standing next to it.
+              borderRadius: _diffRadius,
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// The language the *file* a tool call is about is written in.
+  ///
+  /// An edit's new text is Dart because the path is a `.dart`, not because the
+  /// text looked like Dart. Guessing from content is how a shell command gets
+  /// coloured by a Dart grammar. A document is `plaintext` on purpose: the file
+  /// viewer's own rule, so an edit to a README is not coloured by a guess.
+  String? _languageOfTool(PiTool tool) {
+    for (final key in _pathArgs) {
+      final value = tool.arguments[key];
+      if (value is String && value.isNotEmpty) {
+        return isProsePath(value) ? 'plaintext' : languageForPath(value);
+      }
+    }
+    return null;
   }
 
   /// A tool whose arguments are a command line.
@@ -938,3 +1040,54 @@ class _ProcessingGlowState extends State<_ProcessingGlow>
     );
   }
 }
+
+/// A diff block is rounded on the side away from its bar and square against it.
+const BorderRadius _diffRadius = BorderRadius.only(
+  topRight: Radius.circular(6),
+  bottomRight: Radius.circular(6),
+);
+
+/// Which way a piece of text moves in a tool call: into the file, or out of it.
+enum _Diff {
+  added('+'),
+  removed('-');
+
+  const _Diff(this.sign);
+
+  final String sign;
+}
+
+/// A named half of a diff, in the order they are shown.
+class _DiffSlot {
+  const _DiffSlot(this.key, this.direction);
+
+  final String key;
+  final _Diff direction;
+}
+
+/// The argument names that mean "the text going into a file", and which way it
+/// goes. These are the names the tools in this app's Pi actually use; the two
+/// spellings of an edit's halves are the same meaning said differently.
+const Map<String, _Diff> _textArgs = {
+  'newText': _Diff.added,
+  'oldText': _Diff.removed,
+  'new_str': _Diff.added,
+  'old_str': _Diff.removed,
+  'content': _Diff.added,
+  'text': _Diff.added,
+};
+
+const List<_DiffSlot> _diffSlots = [
+  _DiffSlot('oldText', _Diff.removed),
+  _DiffSlot('newText', _Diff.added),
+];
+
+/// The argument names that mean "the file this is about", which is the only
+/// honest way to know what language its text is written in.
+const List<String> _pathArgs = [
+  'path',
+  'file_path',
+  'filePath',
+  'filename',
+  'file',
+];
