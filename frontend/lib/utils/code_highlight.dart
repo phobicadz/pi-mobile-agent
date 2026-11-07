@@ -24,7 +24,6 @@ import 'package:highlight/languages/properties.dart' show properties;
 import 'package:highlight/languages/python.dart' show python;
 import 'package:highlight/languages/ruby.dart' show ruby;
 import 'package:highlight/languages/rust.dart' show rust;
-import 'package:highlight/languages/shell.dart' show shell;
 import 'package:highlight/languages/sql.dart' show sql;
 import 'package:highlight/languages/typescript.dart' show typescript;
 import 'package:highlight/languages/yaml.dart' show yaml;
@@ -58,7 +57,14 @@ import 'xml_grammar.dart' show xml;
 final Highlight _highlighter = Highlight()
   ..registerLanguages({
     'bash': bash,
-    'shell': shell,
+    // `shell` is registered as the `bash` grammar, on purpose. The shipped
+    // `shell` grammar is a *session* grammar - it colours what follows a `$ `
+    // prompt and treats the rest of the line as output. That is right for a
+    // transcript of someone typing at a terminal and wrong for everything this
+    // app actually colours: a script on disk, a ```bash fence, and the command
+    // line in a tool call, none of which have a prompt in them. Colouring a
+    // command with it is the same as not colouring it at all.
+    'shell': bash,
     'c++': cpp,
     'csharp': cs,
     'css': css,

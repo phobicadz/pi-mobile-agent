@@ -522,8 +522,7 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildTool(BuildContext context, PiTool tool, Color toolColor,
       ChatPalette palette) {
-    final args =
-        tool.arguments.entries.map((e) => '${e.key}: ${e.value}').join(', ');
+    final args = _buildToolArgs(tool, palette);
 
     return Container(
       margin: const EdgeInsets.only(top: 6),
@@ -552,15 +551,7 @@ class ChatBubble extends StatelessWidget {
               ),
             ],
           ),
-          if (args.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Text(
-                args,
-                style:
-                    TextStyle(fontSize: _font(12), color: palette.muted),
-              ),
-            ),
+          ...args,
           if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -570,6 +561,92 @@ class ChatBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// A tool call's arguments, drawn as arguments.
+  ///
+  /// They used to be one `key: value, key: value` line in the same proportional
+  /// text as the reply around it - which is why a command read as part of the
+  /// prose. The arguments are the thing the agent actually ran, so each one gets
+  /// its own line in monospace with the parameter name as a small label above
+  /// it, and a shell command gets the syntax colouring every other code block in
+  /// the app already gets: a command line is code, and it is the one part of a
+  /// tool call that always was.
+  ///
+  /// Only a shell command is coloured. The rest are paths and line numbers, and
+  /// guessing a language for `/home/adam/...` is guessing about a string that
+  /// has no language.
+  List<Widget> _buildToolArgs(PiTool tool, ChatPalette palette) {
+    final shell = isShellTool(tool.name);
+    final blocks = <Widget>[];
+    for (final entry in tool.arguments.entries) {
+      final value = '${entry.value ?? ''}';
+      if (value.trim().isEmpty) continue;
+      blocks.add(Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              entry.key,
+              style: TextStyle(
+                fontSize: _font(10.5),
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.4,
+                color: palette.muted,
+              ),
+            ),
+            const SizedBox(height: 3),
+            if (shell)
+              HighlightedCode(
+                value,
+                language: 'shell',
+                isDark: palette.isDark,
+                // Smaller than a fenced block in a reply: this is one line of
+                // what the agent ran, inside a card, not a block someone wrote.
+                textStyle: TextStyle(
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: _font(12),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              )
+            else
+              Text(
+                value,
+                style: TextStyle(
+                  fontFamily: 'JetBrainsMono',
+                  fontSize: _font(12),
+                  color: palette.muted,
+                ),
+              ),
+          ],
+        ),
+      ));
+    }
+    return blocks;
+  }
+
+  /// A tool whose arguments are a command line.
+  ///
+  /// Pi's is `bash`. The rest are the same thing said differently by whatever is
+  /// driving the agent, and it is the arguments that matter - they are a shell
+  /// command line whatever it was called.
+  ///
+  /// Public, and static, so the name mapping is testable without a widget tree.
+  static bool isShellTool(String name) {
+    const names = {
+      'bash',
+      'shell',
+      'sh',
+      'zsh',
+      'exec',
+      'execute',
+      'run',
+      'run_command',
+      'terminal',
+      'command',
+    };
+    return names.contains(name.toLowerCase());
   }
 
   /// Tool results are usually code (JSON, source, command output). Highlight
