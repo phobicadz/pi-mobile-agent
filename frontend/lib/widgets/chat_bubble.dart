@@ -7,6 +7,7 @@ import 'package:markdown/markdown.dart' as md;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../models/pi_models.dart';
+import '../utils/chat_palette.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
 import '../utils/responsive.dart';
@@ -55,7 +56,6 @@ class ChatBubble extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isAssistant = message.role == 'assistant';
-    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // An assistant reply that has started but has no text yet is Pi thinking.
     // Keeping it renders the bubble header plus its streaming spinner, which is
@@ -69,12 +69,13 @@ class ChatBubble extends StatelessWidget {
       return const SizedBox.shrink();
     }
 
-    // Bubble colours and text colours are chosen together so text always has
-    // strong contrast, in both light and dark themes.
-    final bubbleColor = isAssistant
-        ? (isDark ? const Color(0xFF2A2D34) : Colors.grey.shade200)
-        : (isDark ? const Color(0xFF1E3A5F) : Colors.blue.shade100);
-    final mutedColor = isDark ? Colors.white70 : const Color(0x99000000);
+    // Every colour in this bubble comes from the theme the app is on, including
+    // whichever colour scheme was chosen in the drawer. See
+    // utils/chat_palette.dart for what each one is, and why they are token pairs
+    // rather than the literals these replace.
+    final palette = ChatPalette.from(Theme.of(context));
+    final bubbleColor = palette.bubbleFor(isAssistant);
+    final mutedColor = palette.muted;
 
     // A line the app wrote rather than a reply from Pi: no bubble, no accent,
     // no copy button. Without it the chat shows nothing at all for a run that
@@ -104,43 +105,29 @@ class ChatBubble extends StatelessWidget {
       );
     }
 
-    // Colour coding by output kind: assistant replies are teal-accented, your
-    // own messages blue. A tool call is part of Pi's turn, so it stays in the
-    // teal it is written in and is set apart by shape - a bordered, raised card
-    // - rather than by a second hue. The amber card was the only warm colour in
-    // the app, which is what made a command look like it came from somewhere
-    // else. Results keep green: it is the one signal that says "this is output",
-    // and a cool green sits with teal instead of fighting it.
-    // All accent colours are tuned per theme so contrast is preserved.
-    final accentColor = isAssistant
-        ? (isDark ? const Color(0xFF4DD0E1) : const Color(0xFF00697A))
-        : (isDark ? const Color(0xFF64B5F6) : const Color(0xFF0B4D8C));
-    // Tool calls only ever appear in an assistant reply, so the tool label uses
-    // that reply's own accent - the same teal that says "Pi" in the header.
-    final toolColor = accentColor;
-    final toolResultColor =
-        isDark ? const Color(0xFF7FCBA5) : const Color(0xFF2E6B4F);
-    // A card raised off the bubble it sits on, tinted the same way as the
-    // accent rather than tinted warm. Lighter than the bubble in both themes,
-    // which is how the card already read before.
-    final toolCardColor =
-        isDark ? const Color(0xFF333A41) : const Color(0xFFF2F7F8);
+    // Colour coding by output kind, in whichever hues the scheme currently puts
+    // there: your own messages take the scheme's primary family, Pi's replies
+    // its tertiary. Two distinct hues whatever the seed is - that split is the
+    // design, the particular teal and blue it used to be was not.
+    // A tool call is part of Pi's turn, so it stays in the accent of the reply
+    // it appears in and is set apart by shape - a bordered, raised card - rather
+    // than by a second hue. Results keep green: it is the one signal that says
+    // "this is output", and a signal that moved with the user's colour choice
+    // would stop being one.
+    final accentColor = palette.accentFor(isAssistant);
 
-    // Body text is tinted to match its source while staying high contrast
-    // against the bubble it is rendered on.
-    final bodyColor = isAssistant
-        ? (isDark ? const Color(0xFFD3F1F6) : const Color(0xFF00495A))
-        : (isDark ? const Color(0xFFC3DDF7) : const Color(0xFF0B3A66));
+    // The colours a message's *parts* are drawn in are read where the parts are
+    // built (`_buildBody`), from the same palette: what is left here is what the
+    // bubble's own chrome needs - its background, its accent, its muted icons.
 
     // Rendering a bubble means parsing Markdown and highlighting every code
     // block, which is far too expensive to repeat while scrolling. The rendered
     // children are cached per message content, so re-entering the viewport
     // hands back the *same widget instances* and Flutter skips rebuilding those
     // subtrees entirely. Only a message that is still streaming changes.
-    final cacheKey = _signatureOf(message, isDark, fontScale);
+    final cacheKey = _signatureOf(message, palette, fontScale);
     final body = _BubbleBodyCache.lookup(cacheKey) ??
-        _buildBody(context, message, bodyColor, toolColor, toolResultColor,
-            toolCardColor, mutedColor, isDark);
+        _buildBody(context, message, palette, isAssistant);
     _BubbleBodyCache.store(cacheKey, body);
 
     // MediaQuery.sizeOf only depends on the window size, not on the soft
@@ -276,26 +263,25 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  List<Widget> _buildBody(
-      BuildContext context,
-      PiMessage message,
-      Color bodyColor,
-      Color toolColor,
-      Color toolResultColor,
-      Color toolCardColor,
-      Color mutedColor,
-      bool isDark) {
+  List<Widget> _buildBody(BuildContext context, PiMessage message,
+      ChatPalette palette, bool isAssistant) {
+    // Read here rather than handed in from `build`: the role of this message is
+    // what picks the colours, and everything below already knows the role.
+    final bodyColor = palette.bodyFor(isAssistant);
+    // Tool calls only ever appear in an assistant reply, so the tool label uses
+    // that reply's own accent - the same hue that says "Pi" in the header.
+    final toolColor = palette.accentFor(isAssistant);
     return [
       // Sent first: an image is the thing the user actually asked about, and a
       // caption under it is the comment on it.
-      if (message.images.isNotEmpty) _buildImages(context, message),
+      if (message.images.isNotEmpty)
+        _buildImages(context, message, palette),
       if (message.errorMessage != null)
-        _buildModelError(context, message, isDark),
+        _buildModelError(context, message, palette),
       if (message.content.isNotEmpty)
-        _buildContent(context, message.content, bodyColor, isDark),
+        _buildContent(context, message.content, bodyColor, palette),
       for (final tool in message.toolCalls)
-        _buildTool(context, tool, toolColor, toolResultColor, toolCardColor,
-            mutedColor, isDark),
+        _buildTool(context, tool, toolColor, palette),
     ];
   }
 
@@ -303,8 +289,8 @@ class ChatBubble extends StatelessWidget {
   /// text is the only thing the run produced - hiding it is what makes a model
   /// the account cannot use look like a model that is simply not answering.
   Widget _buildModelError(
-      BuildContext context, PiMessage message, bool isDark) {
-    final color = isDark ? const Color(0xFFFF8A80) : const Color(0xFF7F0000);
+      BuildContext context, PiMessage message, ChatPalette palette) {
+    final color = palette.error;
     final detail = message.errorMessage!.trim();
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -335,26 +321,29 @@ class ChatBubble extends StatelessWidget {
   /// Thumbnails in a wrap, each one opening full size on tap. A phone photo of a
   /// whiteboard or an error on another screen is unreadable at 160px, and the
   /// only useful thing about a thumbnail is what it opens.
-  Widget _buildImages(BuildContext context, PiMessage message) {
+  Widget _buildImages(
+      BuildContext context, PiMessage message, ChatPalette palette) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Wrap(
         spacing: 8,
         runSpacing: 8,
         children: [
-          for (final image in message.images) _buildThumbnail(context, image),
+          for (final image in message.images)
+            _buildThumbnail(context, image, palette),
         ],
       ),
     );
   }
 
-  Widget _buildThumbnail(BuildContext context, PiImage image) {
+  Widget _buildThumbnail(
+      BuildContext context, PiImage image, ChatPalette palette) {
     return InkWell(
       onTap: () => _showImageFullSize(context, image),
       borderRadius: BorderRadius.circular(8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(8),
-        child: _drawImage(image, width: 160, height: 160),
+        child: _drawImage(image, width: 160, height: 160, outline: palette.outline),
       ),
     );
   }
@@ -364,17 +353,18 @@ class ChatBubble extends StatelessWidget {
   /// The base64 is what Pi stored, so a `FormatException` here means the stored
   /// value is not what it claims to be - which is a thing worth showing rather
   /// than a thing to fail a bubble over.
-  Widget _drawImage(PiImage image, {double? width, double? height}) {
+  Widget _drawImage(PiImage image,
+      {double? width, double? height, required Color outline}) {
     try {
       return Image.memory(
         base64Decode(image.base64Data),
         width: width,
         height: height,
         fit: width == null ? null : BoxFit.cover,
-        errorBuilder: (_, __, ___) => _unreadableImage(image),
+        errorBuilder: (_, __, ___) => _unreadableImage(image, outline),
       );
     } on FormatException {
-      return _unreadableImage(image);
+      return _unreadableImage(image, outline);
     }
   }
 
@@ -383,13 +373,13 @@ class ChatBubble extends StatelessWidget {
   /// The name and size are still worth showing: the message was sent, and the
   /// model saw it or refused it. Saying the thumbnail failed is not the same as
   /// hiding the message.
-  Widget _unreadableImage(PiImage image) {
+  Widget _unreadableImage(PiImage image, Color outline) {
     return Container(
       width: 160,
       height: 100,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade400),
+        border: Border.all(color: outline),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -417,7 +407,8 @@ class ChatBubble extends StatelessWidget {
           maxScale: 6,
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
-            child: _drawImage(image),
+            child: _drawImage(image,
+                outline: ChatPalette.from(Theme.of(dialogContext)).outline),
           ),
         ),
       ),
@@ -432,10 +423,16 @@ class ChatBubble extends StatelessWidget {
   /// size changes what the rendered children say, so a cache entry keyed without
   /// it would hand back the old sizes for content that has not changed - which is
   /// every message in the chat at once.
-  static int _signatureOf(PiMessage message, bool isDark, double fontScale) {
+  ///
+  /// So is the whole palette, not just its brightness. A cached body is a
+  /// finished subtree with literal colours already in it; keying it by brightness
+  /// alone would do the same thing to a colour-scheme change - every message in
+  /// the chat keeping the colours it was rendered with.
+  static int _signatureOf(
+      PiMessage message, ChatPalette palette, double fontScale) {
     return Object.hash(
       message.role,
-      isDark,
+      palette.cacheKey,
       fontScale,
       message.localNote,
       message.content.length,
@@ -464,8 +461,9 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildContent(
-      BuildContext context, String text, Color textColor, bool isDark) {
+  Widget _buildContent(BuildContext context, String text, Color textColor,
+      ChatPalette palette) {
+    final isDark = palette.isDark;
     try {
       // Check if it looks like markdown
       if (text.contains('```') || text.contains('#') || text.contains('**')) {
@@ -480,7 +478,8 @@ class ChatBubble extends StatelessWidget {
           // Fenced code blocks get full syntax highlighting.
           builders: {
             'pre': _HighlightCodeBuilder(isDark: isDark, fontSize: _font(13)),
-            'a': _LinkBuilder(isDark: isDark, fontSize: _font(14)),
+            'a': _LinkBuilder(
+                color: palette.link, fontSize: _font(14)),
           },
           styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
             p: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
@@ -489,9 +488,7 @@ class ChatBubble extends StatelessWidget {
               fontSize: _font(13),
               fontFamily: 'JetBrainsMono',
               color: textColor,
-              backgroundColor: isDark
-                  ? Colors.white.withAlpha(30)
-                  : Colors.black.withAlpha(20),
+              backgroundColor: palette.inlineCodeBackground,
             ),
             h1: TextStyle(
                 fontSize: _font(20),
@@ -523,14 +520,8 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  Widget _buildTool(
-      BuildContext context,
-      PiTool tool,
-      Color toolColor,
-      Color toolResultColor,
-      Color toolCardColor,
-      Color mutedColor,
-      bool isDark) {
+  Widget _buildTool(BuildContext context, PiTool tool, Color toolColor,
+      ChatPalette palette) {
     final args =
         tool.arguments.entries.map((e) => '${e.key}: ${e.value}').join(', ');
 
@@ -538,7 +529,7 @@ class ChatBubble extends StatelessWidget {
       margin: const EdgeInsets.only(top: 6),
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
-        color: toolCardColor,
+        color: palette.toolCard,
         border: Border.all(color: toolColor.withValues(alpha: 0.4)),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -566,13 +557,15 @@ class ChatBubble extends StatelessWidget {
               padding: const EdgeInsets.only(top: 2),
               child: Text(
                 args,
-                style: TextStyle(fontSize: _font(12), color: mutedColor),
+                style:
+                    TextStyle(fontSize: _font(12), color: palette.muted),
               ),
             ),
           if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
-              child: _buildToolResult(tool.result!, toolResultColor, isDark),
+              child: _buildToolResult(
+                  tool.result!, palette.toolResult, palette.isDark),
             ),
         ],
       ),
@@ -683,9 +676,11 @@ class _HighlightCodeBuilder extends MarkdownElementBuilder {
 
 /// Renders markdown links as clickable, styled links.
 class _LinkBuilder extends MarkdownElementBuilder {
-  _LinkBuilder({required this.isDark, required this.fontSize});
+  _LinkBuilder({required this.color, required this.fontSize});
 
-  final bool isDark;
+  /// The link colour of the scheme the bubble is rendered in - a link used to be
+  /// the one blue in the app whatever the rest of it had been changed to.
+  final Color color;
   final double fontSize;
 
   @override
@@ -705,10 +700,11 @@ class _LinkBuilder extends MarkdownElementBuilder {
       return Text(textContent, style: preferredStyle);
     }
 
-    // Style for links: underlined and colored based on theme
+    // Style for links: underlined, in the colour the current scheme uses for
+    // something interactive.
     final linkStyle = TextStyle(
       fontSize: fontSize,
-      color: isDark ? const Color(0xFF64B5F6) : const Color(0xFF0B4D8C),
+      color: color,
       decoration: TextDecoration.underline,
       decorationThickness: 1.0,
     );

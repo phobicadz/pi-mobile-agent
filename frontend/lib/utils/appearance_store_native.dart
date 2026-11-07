@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../providers/appearance_controller.dart';
 
 /// Native builds do not remember the theme or the chat text size.
 ///
@@ -15,6 +16,10 @@ import 'package:flutter/material.dart';
 Future<ThemeMode?> loadThemeMode() async => null;
 
 void saveThemeMode(ThemeMode mode) {}
+
+Future<AppColorScheme?> loadColorScheme() async => null;
+
+void saveColorScheme(AppColorScheme scheme) {}
 
 Future<double?> loadFontScale() async => null;
 

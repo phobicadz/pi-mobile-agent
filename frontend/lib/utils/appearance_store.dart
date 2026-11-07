@@ -1,4 +1,4 @@
-/// The app's appearance choices - theme and chat text size - kept out of the
+/// The app's appearance choices - theme, color scheme, and chat text size - kept out of the
 /// widget tree so they can be read before the first frame and written back
 /// without the app knowing where they live.
 ///

@@ -262,6 +262,7 @@ Events stream continuously as the Pi agent works:
 - ✅ Error handling and display
 - ✅ Works on iOS, Android, Web
 - ✅ All controls are in a menu opened by the hamburger at the top left of the app bar; the bar itself carries only that and the connection dot. Each entry in the menu says in words what it does and what it is currently set to — the connection state, the full working directory, the chat text size
+- ✅ Appearance (menu entries): a light/dark switch and a colour scheme (blue, green, purple, orange, red) that the **chat** is drawn in too, not just the bar and the buttons. Your own messages take the chosen scheme's primary colours and Pi's replies its tertiary, so "Pi" and "You" stay tellable apart whatever the seed is; tool output keeps its green because that one is a signal rather than a style. The choice is stored in the browser with the text sizes
 - ✅ Start a new session in the current directory (menu entry, like `/new` in the Pi TUI): the chat empties, the directory and model stay as they are, and the conversation you left is still resumable. Closed while a run is in flight, so it cannot throw away a reply that is still being written
 - ✅ Resume previous sessions (menu entry, like `/resume` in the Pi TUI)
 - ✅ Browse and set the working directory (menu entry): browse drives, folders, and recently used directories; setting a new directory restarts Pi with a fresh session in that directory
@@ -276,7 +277,6 @@ Events stream continuously as the Pi agent works:
 - [ ] Dark mode polish
 - [ ] Offline caching
 - [ ] Push notifications for task completion
-- [ ] Custom themes
 - [ ] Voice input
 - [ ] Code syntax highlighting in chat
 - [ ] Copy/share responses

@@ -87,7 +87,9 @@ class MyApp extends StatelessWidget {
     // MaterialApp, and themeMode is a property of MaterialApp - not of anything
     // below it. A toggle deeper in the tree could change the colours of a
     // screen but not the theme the screens are built from.
-    final themeMode = context.watch<AppearanceController>().themeMode;
+    final appearance = context.watch<AppearanceController>();
+    final themeMode = appearance.themeMode;
+    final colorScheme = appearance.colorScheme;
 
     return MultiProvider(
       providers: [
@@ -103,14 +105,14 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
+            seedColor: colorScheme.seedColor,
             brightness: Brightness.light,
           ),
         ),
         darkTheme: ThemeData(
           useMaterial3: true,
           colorScheme: ColorScheme.fromSeed(
-            seedColor: Colors.blue,
+            seedColor: colorScheme.seedColor,
             brightness: Brightness.dark,
           ),
         ),

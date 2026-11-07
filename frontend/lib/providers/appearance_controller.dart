@@ -2,7 +2,36 @@ import 'package:flutter/material.dart';
 
 import '../utils/appearance_store.dart';
 
-/// How the app looks: which theme it uses and how large the chat text is.
+/// Available color schemes for the app.
+enum AppColorScheme {
+  blue,
+  green,
+  purple,
+  orange,
+  red,
+}
+
+extension AppColorSchemeExt on AppColorScheme {
+  /// Display name for the color scheme.
+  String get displayName => switch (this) {
+        AppColorScheme.blue => 'Blue',
+        AppColorScheme.green => 'Green',
+        AppColorScheme.purple => 'Purple',
+        AppColorScheme.orange => 'Orange',
+        AppColorScheme.red => 'Red',
+      };
+
+  /// Seed color for Material 3 color generation.
+  Color get seedColor => switch (this) {
+        AppColorScheme.blue => Colors.blue,
+        AppColorScheme.green => Colors.green,
+        AppColorScheme.purple => Colors.deepPurple,
+        AppColorScheme.orange => Colors.orange,
+        AppColorScheme.red => Colors.red,
+      };
+}
+
+/// How the app looks: which theme it uses, color scheme, and how large the chat text is.
 ///
 /// Held outside the widget tree so `MaterialApp` can be built with it and the
 /// app bar can change it, rather than the setting living inside one screen.
@@ -24,10 +53,13 @@ class AppearanceController extends ChangeNotifier {
   static const _maxLevel = 8;
 
   ThemeMode _themeMode = ThemeMode.system;
+  AppColorScheme _colorScheme = AppColorScheme.blue;
   int _fontLevel = 0;
   int _fileFontLevel = 0;
 
   ThemeMode get themeMode => _themeMode;
+
+  AppColorScheme get colorScheme => _colorScheme;
 
   /// What every size in the chat is multiplied by. 1.0 is the size the bubbles
   /// were laid out for.
@@ -57,6 +89,14 @@ class AppearanceController extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Change the color scheme and persist the choice.
+  void setColorScheme(AppColorScheme scheme) {
+    if (_colorScheme == scheme) return;
+    _colorScheme = scheme;
+    saveColorScheme(scheme);
+    notifyListeners();
+  }
+
   /// Flip away from whatever is on screen right now.
   ///
   /// [showing] is the brightness actually being rendered, which the caller reads
@@ -83,13 +123,19 @@ class AppearanceController extends ChangeNotifier {
     final storedTheme = await loadThemeMode();
     if (storedTheme != null) _themeMode = storedTheme;
 
+    final storedColorScheme = await loadColorScheme();
+    if (storedColorScheme != null) _colorScheme = storedColorScheme;
+
     final storedScale = await loadFontScale();
     if (storedScale != null) _fontLevel = _levelFor(storedScale);
 
     final storedFileScale = await loadFileFontScale();
     if (storedFileScale != null) _fileFontLevel = _levelFor(storedFileScale);
 
-    if (storedTheme != null || storedScale != null || storedFileScale != null) {
+    if (storedTheme != null ||
+        storedColorScheme != null ||
+        storedScale != null ||
+        storedFileScale != null) {
       notifyListeners();
     }
   }

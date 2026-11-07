@@ -2,8 +2,10 @@ import 'dart:js_interop';
 import 'dart:js_interop_unsafe';
 
 import 'package:flutter/material.dart';
+import '../providers/appearance_controller.dart';
 
 const _themeKey = 'pi-mobile-agent.theme';
+const _colorSchemeKey = 'pi-mobile-agent.colorScheme';
 const _fontKey = 'pi-mobile-agent.fontScale';
 const _fileFontKey = 'pi-mobile-agent.fileFontScale';
 
@@ -22,6 +24,27 @@ void saveThemeMode(ThemeMode mode) => _write(
       ThemeMode.dark => 'dark',
       ThemeMode.light => 'light',
       ThemeMode.system => 'system',
+    });
+
+/// Read back the stored color scheme, or null when there is none.
+Future<AppColorScheme?> loadColorScheme() async =>
+    switch (_read(_colorSchemeKey)) {
+      'blue' => AppColorScheme.blue,
+      'green' => AppColorScheme.green,
+      'purple' => AppColorScheme.purple,
+      'orange' => AppColorScheme.orange,
+      'red' => AppColorScheme.red,
+      _ => null,
+    };
+
+void saveColorScheme(AppColorScheme scheme) => _write(
+    _colorSchemeKey,
+    switch (scheme) {
+      AppColorScheme.blue => 'blue',
+      AppColorScheme.green => 'green',
+      AppColorScheme.purple => 'purple',
+      AppColorScheme.orange => 'orange',
+      AppColorScheme.red => 'red',
     });
 
 /// Read back the stored text size, or null when there is none. A value this

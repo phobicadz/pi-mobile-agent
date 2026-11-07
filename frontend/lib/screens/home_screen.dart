@@ -637,6 +637,50 @@ class _HomeScreenState extends State<HomeScreen> {
                   onTap: () => appearance.toggleTheme(theme.brightness),
                 ),
                 ListTile(
+                  leading: const Icon(Icons.palette),
+                  title: const Text('Color scheme'),
+                  subtitle: Text(appearance.colorScheme.displayName),
+                  onTap: () {
+                    showModalBottomSheet(
+                      context: context,
+                      builder: (context) => Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8),
+                              child: Text('Choose a color scheme',
+                                  style: theme.textTheme.titleMedium),
+                            ),
+                            ...AppColorScheme.values.map((scheme) => ListTile(
+                                  leading: Container(
+                                    width: 32,
+                                    height: 32,
+                                    decoration: BoxDecoration(
+                                      color: scheme.seedColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  title: Text(scheme.displayName),
+                                  trailing: appearance.colorScheme == scheme
+                                      ? Icon(Icons.check,
+                                          color: theme.colorScheme.primary)
+                                      : null,
+                                  onTap: () {
+                                    appearance.setColorScheme(scheme);
+                                    Navigator.pop(context);
+                                  },
+                                )),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+                ListTile(
                   leading: const Icon(Icons.text_fields),
                   title: const Text('Chat text size'),
                   subtitle: Text(
