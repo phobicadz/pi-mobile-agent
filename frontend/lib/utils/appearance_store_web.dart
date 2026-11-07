@@ -34,6 +34,7 @@ Future<AppColorScheme?> loadColorScheme() async =>
       'purple' => AppColorScheme.purple,
       'orange' => AppColorScheme.orange,
       'red' => AppColorScheme.red,
+      'dracula' => AppColorScheme.dracula,
       _ => null,
     };
 
@@ -45,6 +46,7 @@ void saveColorScheme(AppColorScheme scheme) => _write(
       AppColorScheme.purple => 'purple',
       AppColorScheme.orange => 'orange',
       AppColorScheme.red => 'red',
+      AppColorScheme.dracula => 'dracula',
     });
 
 /// Read back the stored text size, or null when there is none. A value this

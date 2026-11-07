@@ -102,19 +102,16 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Pi Agent',
+        // Each scheme says how it is built at each brightness: a generated
+        // scheme from its seed, or - for Dracula in dark mode - a palette that
+        // was authored rather than derived.
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: colorScheme.seedColor,
-            brightness: Brightness.light,
-          ),
+          colorScheme: colorScheme.schemeFor(Brightness.light),
         ),
         darkTheme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: colorScheme.seedColor,
-            brightness: Brightness.dark,
-          ),
+          colorScheme: colorScheme.schemeFor(Brightness.dark),
         ),
         themeMode: themeMode,
         home: const HomeScreen(),

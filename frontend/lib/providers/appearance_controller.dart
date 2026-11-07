@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
 
 import '../utils/appearance_store.dart';
+import '../utils/dracula_scheme.dart';
 
 /// Available color schemes for the app.
+///
+/// Most of these are seeds - a hue to generate a Material 3 scheme from. Dracula
+/// is not: it is a palette with its own surfaces and accents, so it is authored
+/// (see utils/dracula_scheme.dart) and only its purple family is generated.
 enum AppColorScheme {
   blue,
   green,
   purple,
   orange,
   red,
+  dracula,
 }
 
 extension AppColorSchemeExt on AppColorScheme {
@@ -19,16 +25,39 @@ extension AppColorSchemeExt on AppColorScheme {
         AppColorScheme.purple => 'Purple',
         AppColorScheme.orange => 'Orange',
         AppColorScheme.red => 'Red',
+        AppColorScheme.dracula => 'Dracula',
       };
 
-  /// Seed color for Material 3 color generation.
+  /// Seed color for Material 3 color generation - and the colour that stands for
+  /// this scheme wherever the picker shows one.
   Color get seedColor => switch (this) {
         AppColorScheme.blue => Colors.blue,
         AppColorScheme.green => Colors.green,
         AppColorScheme.purple => Colors.deepPurple,
         AppColorScheme.orange => Colors.orange,
         AppColorScheme.red => Colors.red,
+        AppColorScheme.dracula => Dracula.purple,
       };
+
+  /// The scheme this choice produces at a given brightness.
+  ///
+  /// Dracula's authored palette is the dark one. In light mode it falls back to
+  /// its purple as a seed, because there is no light Dracula to author - which
+  /// is said out loud in the picker (`note`) rather than left for someone to
+  /// discover by picking it and wondering.
+  ColorScheme schemeFor(Brightness brightness) {
+    if (this == AppColorScheme.dracula && brightness == Brightness.dark) {
+      return Dracula.darkScheme();
+    }
+    return ColorScheme.fromSeed(seedColor: seedColor, brightness: brightness);
+  }
+
+  /// Anything the picker has to say about this choice, or null when the name and
+  /// the swatch are the whole of it.
+  String? get note => this == AppColorScheme.dracula
+      ? 'A dark palette: in dark mode this is Dracula’s own surfaces and accents, '
+          'in light mode its purple on a light surface'
+      : null;
 }
 
 /// How the app looks: which theme it uses, color scheme, and how large the chat text is.

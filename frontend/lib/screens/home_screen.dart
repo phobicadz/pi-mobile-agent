@@ -646,10 +646,15 @@ class _HomeScreenState extends State<HomeScreen> {
                       builder: (context) => Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 16, vertical: 12),
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
+                        // The list has to scroll: six named schemes with a
+                        // sentence on one of them is taller than a phone sheet,
+                        // and a scheme nobody can reach is a scheme that cannot
+                        // be chosen.
+                        child: SingleChildScrollView(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
                             Padding(
                               padding: const EdgeInsets.symmetric(vertical: 8),
                               child: Text('Choose a color scheme',
@@ -665,6 +670,13 @@ class _HomeScreenState extends State<HomeScreen> {
                                     ),
                                   ),
                                   title: Text(scheme.displayName),
+                                  // Some choices need a sentence with them. The
+                                  // swatch cannot say that a palette is dark
+                                  // only, and picking one to find that out is a
+                                  // worse way to learn it.
+                                  subtitle: scheme.note == null
+                                      ? null
+                                      : Text(scheme.note!),
                                   trailing: appearance.colorScheme == scheme
                                       ? Icon(Icons.check,
                                           color: theme.colorScheme.primary)
@@ -675,6 +687,7 @@ class _HomeScreenState extends State<HomeScreen> {
                                   },
                                 )),
                           ],
+                          ),
                         ),
                       ),
                     );

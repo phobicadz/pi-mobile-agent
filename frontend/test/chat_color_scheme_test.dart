@@ -8,6 +8,7 @@ import 'package:pi_mobile_agent/providers/appearance_controller.dart';
 import 'package:pi_mobile_agent/providers/pi_view_model.dart';
 import 'package:pi_mobile_agent/screens/home_screen.dart';
 import 'package:pi_mobile_agent/services/pi_service.dart';
+import 'package:pi_mobile_agent/utils/dracula_scheme.dart';
 import 'package:pi_mobile_agent/widgets/chat_bubble.dart';
 import 'package:pi_mobile_agent/widgets/chat_list.dart';
 import 'package:provider/provider.dart';
@@ -228,6 +229,62 @@ void main() {
         find.descendant(
             of: find.byType(ChatList), matching: find.text(assistantText)),
         findsOneWidget);
+
+    appearance.dispose();
+  });
+
+  /// WCAG contrast between two colours, for the claims this file makes about
+  /// legibility rather than about identity.
+  double contrast(Color a, Color b) {
+    final la = a.computeLuminance(), lb = b.computeLuminance();
+    return (la > lb ? la / lb : lb / la);
+  }
+
+  testWidgets('Dracula paints the chat with Dracula, not with a purple seed',
+      (tester) async {
+    final (appearance, viewModel, service) = await pumpApp(tester);
+    await fillChat(tester, viewModel, service);
+
+    // Its palette is the dark one, so reach it the way a person does: dark
+    // mode first, then the scheme.
+    appearance.toggleTheme(Brightness.light); // the app is showing light
+    appearance.setColorScheme(AppColorScheme.dracula);
+    await settleThemeChange(tester);
+
+    final scheme = schemeOf(tester);
+    expect(scheme.surface, Dracula.background);
+    expect(assistantBubbleColor(tester), Dracula.surfaceHigh);
+    expect(chatTextColor(tester, assistantText), Dracula.foreground);
+    expect(assistantAccent(tester), Dracula.pink,
+        reason: 'the accent a generated scheme would have derived by hue rotation '
+            'is not a colour Dracula has');
+    expect(userBubbleColor(tester), isNot(Dracula.surfaceHigh),
+        reason: 'your own messages are the purple family, not a third surface');
+
+    // Dracula's comment grey is a code-editor grey: kept as-is it is the muted
+    // UI text nobody can read comfortably.
+    expect(scheme.onSurfaceVariant, Dracula.commentOnDark);
+    expect(contrast(scheme.onSurfaceVariant, Dracula.surfaceHigh),
+        greaterThanOrEqualTo(4.5));
+    expect(contrast(Dracula.pink, Dracula.surfaceHigh),
+        greaterThanOrEqualTo(4.5));
+    expect(contrast(Dracula.foreground, Dracula.background),
+        greaterThanOrEqualTo(4.5));
+
+    appearance.dispose();
+  });
+
+  testWidgets('the picker says which schemes are dark only', (tester) async {
+    final app = await pumpApp(tester);
+    final appearance = app.$1;
+
+    await openAppMenu(tester);
+    await tapMenuRow(tester, Icons.palette);
+
+    expect(find.text('Dracula'), findsOneWidget);
+    expect(find.textContaining('dark palette'), findsOneWidget,
+        reason: 'a swatch cannot say that a palette is dark only, and picking '
+            'one to find that out is a worse way to learn it');
 
     appearance.dispose();
   });

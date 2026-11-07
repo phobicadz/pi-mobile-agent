@@ -51,6 +51,7 @@ frontend/lib/models/pi_models.dart      Wire types (PiState, PiMessage, PiModel,
 frontend/lib/screens/home_screen.dart   Chat screen + AppBar + drawer menu
 frontend/lib/widgets/                 chat_list, chat_bubble, file_browser, model_selector, context_meter
 frontend/lib/utils/chat_palette.dart    The chat's colours, read off the active theme + colour scheme
+frontend/lib/utils/dracula_scheme.dart  Dracula's palette, authored rather than seeded
 frontend/lib/providers/appearance_controller.dart  Theme mode, colour scheme, text sizes (ChangeNotifier)
 ```
 
@@ -127,6 +128,7 @@ Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` inste
   `systemctl --user restart pi-mobile-agent` stops the node process, which stops the Pi
   running you, which ends the tool call with `SIGTERM` (exit 143). The restart still
   succeeds — it just outlives the command that asked for it.
+- **A new colour scheme is a case in `AppColorScheme`, not a `ThemeData` edit.** `main.dart` asks the choice how it is built at each brightness (`schemeFor`), so a seed-based scheme is one enum case plus a colour, and an authored palette like Dracula is one enum case plus a file like `utils/dracula_scheme.dart`. A scheme that only exists at one brightness has to say so in the picker (`note`) — a swatch cannot admit that a palette is dark-only.
 - **The chat's colours come from `utils/chat_palette.dart`, not from literals in `chat_bubble.dart`.** They were hardcoded hex before, which meant a chosen colour scheme changed the bar and left the chat blue. Keep new chat colours as `ColorScheme` token *pairs* (`primaryContainer`/`onPrimaryContainer`, `onSurface` on a `surfaceContainer*`) — those are the combinations Material 3 generates to be legible on each other at either brightness for any seed, which is what the literals were imitating. Tool *results* stay green on purpose: that one is a signal, not a style.
 - **`_BubbleBodyCache` keys on the whole palette** (`ChatPalette.cacheKey`), not just brightness. A cached bubble body is a finished subtree with literal colours in it, so a key that misses the colour scheme hands every message in the chat back in the colours it was drawn with before the change — the same trap the text size already had to avoid.
 - **A frontend-only change needs no restart.** The backend serves `frontend/build/web`
