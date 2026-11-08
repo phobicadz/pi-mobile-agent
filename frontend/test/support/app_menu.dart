@@ -49,6 +49,20 @@ Future<void> tapMenuRow(WidgetTester tester, IconData icon) async {
   }
 }
 
+/// The switch in the menu row whose title is exactly [title].
+///
+/// The menu has more than one switch now - the notice and the chat's compact
+/// view - so `find.byType(Switch)` is not a control, it is whichever row the
+/// menu happened to build first, and a tap on it presses the wrong setting.
+/// A row's title is what a person reads to know which switch they are about to
+/// move, so it is what the test reads too.
+///
+/// [title] is the state-dependent wording these rows use, which means the caller
+/// names the state it expects to find - and a row that failed to change when it
+/// was pressed fails to be found at all, which is the right way to fail.
+Finder menuSwitch(String title) => find.descendant(
+    of: find.widgetWithText(ListTile, title), matching: find.byType(Switch));
+
 /// Open the file browser from the folder in the app bar.
 ///
 /// The menu used to be the way in. It is not any more: the bar says which

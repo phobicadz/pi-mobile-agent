@@ -38,6 +38,17 @@ class ChatBubble extends StatelessWidget {
   /// size a bubble reads for itself would not be.
   final double fontScale;
 
+  /// The compact chat view: a tool call shows what it ran, not what it printed.
+  ///
+  /// Passed in like [fontScale], for the same reason - the body is cached, so a
+  /// view mode a bubble read for itself would not be part of the cache key, and
+  /// toggling the setting would leave every message in the shape it had before.
+  ///
+  /// What it hides is only ever the *result*. The command, the arguments, an
+  /// edit's diff and everything Pi wrote stay: a compact view is a shorter
+  /// record of the same turn, not a different turn.
+  final bool compact;
+
   const ChatBubble({
     super.key,
     required this.message,
@@ -45,6 +56,7 @@ class ChatBubble extends StatelessWidget {
     this.expanded = false,
     this.onToggleExpanded,
     this.fontScale = 1.0,
+    this.compact = false,
   });
 
   /// One size in this bubble, scaled.
@@ -125,7 +137,7 @@ class ChatBubble extends StatelessWidget {
     // children are cached per message content, so re-entering the viewport
     // hands back the *same widget instances* and Flutter skips rebuilding those
     // subtrees entirely. Only a message that is still streaming changes.
-    final cacheKey = _signatureOf(message, palette, fontScale);
+    final cacheKey = _signatureOf(message, palette, fontScale, compact);
     final body = _BubbleBodyCache.lookup(cacheKey) ??
         _buildBody(context, message, palette, isAssistant);
     _BubbleBodyCache.store(cacheKey, body);
@@ -429,11 +441,12 @@ class ChatBubble extends StatelessWidget {
   /// alone would do the same thing to a colour-scheme change - every message in
   /// the chat keeping the colours it was rendered with.
   static int _signatureOf(
-      PiMessage message, ChatPalette palette, double fontScale) {
+      PiMessage message, ChatPalette palette, double fontScale, bool compact) {
     return Object.hash(
       message.role,
       palette.cacheKey,
       fontScale,
+      compact,
       message.localNote,
       message.content.length,
       Object.hashAll(message.content.codeUnits),
@@ -556,7 +569,11 @@ class ChatBubble extends StatelessWidget {
             ],
           ),
           ...args,
-          if (tool.result != null && tool.result!.isNotEmpty)
+          // The half a compact view leaves out. What a tool printed is most of
+          // the height of an agent run, and the question a card answers in that
+          // mode is *what did it run* - so the command, its arguments and any
+          // diff stay exactly as they are. Hiding output is not hiding the work.
+          if (!compact && tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Column(

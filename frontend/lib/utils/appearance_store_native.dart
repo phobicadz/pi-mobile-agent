@@ -28,3 +28,7 @@ void saveFontScale(double scale) {}
 Future<double?> loadFileFontScale() async => null;
 
 void saveFileFontScale(double scale) {}
+
+Future<bool?> loadCompactChat() async => null;
+
+void saveCompactChat(bool compact) {}

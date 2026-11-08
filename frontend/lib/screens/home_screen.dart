@@ -751,6 +751,28 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                 ),
+                ListTile(
+                  // The icon is the state the chat is in, same as the
+                  // notifications row: the menu is readable before anything is
+                  // pressed.
+                  leading: Icon(appearance.compactChat
+                      ? Icons.view_compact
+                      : Icons.view_day),
+                  title: Text(appearance.compactChat
+                      ? 'Compact view'
+                      : 'Full view'),
+                  // What each state leaves on the screen, because the difference
+                  // is not obvious from the name: an agent run is mostly tool
+                  // output, and the same conversation reads as a transcript of
+                  // commands or as a record of what those commands said.
+                  subtitle: Text(appearance.compactChat
+                      ? 'Tool calls show the command only - what it printed stays hidden'
+                      : 'Tool calls show the command and what it printed'),
+                  trailing: Switch(
+                    value: appearance.compactChat,
+                    onChanged: (value) => appearance.setCompactChat(value),
+                  ),
+                ),
                 const Divider(),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -1152,7 +1174,11 @@ class _HomeScreenState extends State<HomeScreen> {
               Expanded(
                 child: Stack(
                   children: [
-                    ChatList(key: _chatKey, fontScale: appearance.fontScale),
+                    ChatList(
+                      key: _chatKey,
+                      fontScale: appearance.fontScale,
+                      compact: appearance.compactChat,
+                    ),
                     if (viewModel.resumingSession) _resumeOverlay(context),
                   ],
                 ),

@@ -20,7 +20,19 @@ class ChatList extends StatefulWidget {
   /// bubbles were designed for.
   final double fontScale;
 
-  const ChatList({super.key, this.fontScale = 1.0});
+  /// Whether the bubbles show what a tool call printed.
+  ///
+  /// Handed down from [HomeScreen]'s menu switch rather than read from the
+  /// appearance provider inside a bubble, for the same reason the text size is:
+  /// a rendered bubble body is cached, so whatever the rendering depends on has
+  /// to be something the bubble was built with.
+  final bool compact;
+
+  const ChatList({
+    super.key,
+    this.fontScale = 1.0,
+    this.compact = false,
+  });
 
   @override
   State<ChatList> createState() => ChatListState();
@@ -210,6 +222,7 @@ class ChatListState extends State<ChatList> {
                           streaming: true,
                         ),
                         fontScale: widget.fontScale,
+                        compact: widget.compact,
                         expanded: _expandedIds.contains('thinking'),
                         onToggleExpanded: () => _toggleExpanded('thinking'),
                         status: const TurnStatusRow(),
@@ -217,6 +230,7 @@ class ChatListState extends State<ChatList> {
                     : ChatBubble(
                         message: messages[index],
                         fontScale: widget.fontScale,
+                        compact: widget.compact,
                         // Pi gives every message an id. A history entry that
                         // arrives without one falls back to its position: the
                         // list only ever grows at the end, so a position is as

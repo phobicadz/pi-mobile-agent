@@ -8,6 +8,7 @@ const _themeKey = 'pi-mobile-agent.theme';
 const _colorSchemeKey = 'pi-mobile-agent.colorScheme';
 const _fontKey = 'pi-mobile-agent.fontScale';
 const _fileFontKey = 'pi-mobile-agent.fileFontScale';
+const _compactKey = 'pi-mobile-agent.compactChat';
 
 /// Read back the stored theme, or null when there is none - which is the app
 /// following the system, not the app having forgotten.
@@ -59,6 +60,20 @@ Future<double?> loadFileFontScale() async =>
     double.tryParse(_read(_fileFontKey) ?? '');
 
 void saveFileFontScale(double scale) => _write(_fileFontKey, scale.toString());
+
+/// Whether this browser last had the compact chat view on.
+///
+/// Stored as `1`/`0` rather than a word, because it is the only boolean here
+/// and a boolean read back from a string is the one place a typo becomes a
+/// silent default. Anything unrecognised is null, which means the default - the
+/// same rule every other value here follows.
+Future<bool?> loadCompactChat() async => switch (_read(_compactKey)) {
+      '1' => true,
+      '0' => false,
+      _ => null,
+    };
+
+void saveCompactChat(bool compact) => _write(_compactKey, compact ? '1' : '0');
 
 /// Storage can be refused outright (private mode, blocked cookies), and an app
 /// that throws on startup over its text size is not an app - one that falls back

@@ -172,10 +172,27 @@ class AppearanceController extends ChangeNotifier {
   AppColorScheme _colorScheme = AppColorScheme.blue;
   int _fontLevel = 0;
   int _fileFontLevel = 0;
+  bool _compactChat = false;
 
   ThemeMode get themeMode => _themeMode;
 
   AppColorScheme get colorScheme => _colorScheme;
+
+  /// Whether the chat shows what a tool call produced, or only what it ran.
+  ///
+  /// A viewing choice, so it lives here with the others rather than in
+  /// [PiViewModel]: it changes what is on this screen, not what the agent did,
+  /// and two devices in the same conversation can want different amounts of it.
+  /// (The notifications switch is the opposite case - it silences an extension
+  /// running inside Pi, so the backend owns it and every device shares it.)
+  bool get compactChat => _compactChat;
+
+  void setCompactChat(bool compact) {
+    if (_compactChat == compact) return;
+    _compactChat = compact;
+    saveCompactChat(compact);
+    notifyListeners();
+  }
 
   /// What every size in the chat is multiplied by. 1.0 is the size the bubbles
   /// were laid out for.
@@ -248,10 +265,14 @@ class AppearanceController extends ChangeNotifier {
     final storedFileScale = await loadFileFontScale();
     if (storedFileScale != null) _fileFontLevel = _levelFor(storedFileScale);
 
+    final storedCompact = await loadCompactChat();
+    if (storedCompact != null) _compactChat = storedCompact;
+
     if (storedTheme != null ||
         storedColorScheme != null ||
         storedScale != null ||
-        storedFileScale != null) {
+        storedFileScale != null ||
+        storedCompact != null) {
       notifyListeners();
     }
   }

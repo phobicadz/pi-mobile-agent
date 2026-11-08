@@ -124,7 +124,12 @@ void main() {
         reason: 'the notice is a setting with two states, so the menu has to '
             'name it rather than be an icon to guess at');
 
-    final switches = tester.widgetList<Switch>(find.byType(Switch)).toList();
+    // The notice row carries one control, and it is in the notice row - the
+    // menu has another switch now, so "the switch in the drawer" is no longer
+    // one thing.
+    final switches = tester
+        .widgetList<Switch>(menuSwitch('Notify me when the agent finishes'))
+        .toList();
     expect(switches, hasLength(1));
     expect(switches.single.value, isTrue,
         reason: 'a notice you have to be able to reach is worth starting on; '
@@ -153,7 +158,7 @@ void main() {
 
     await openAppMenu(tester);
     await scrollMenuIntoView(tester, find.textContaining('when the agent finishes'));
-    await tester.tap(find.byType(Switch));
+    await tester.tap(menuSwitch('Notify me when the agent finishes'));
     await settle(tester);
 
     expect(find.text('No notice when the agent finishes'), findsOneWidget,
@@ -192,7 +197,7 @@ void main() {
 
     await openAppMenu(tester);
     await scrollMenuIntoView(tester, find.textContaining('when the agent finishes'));
-    await tester.tap(find.byType(Switch));
+    await tester.tap(menuSwitch('Notify me when the agent finishes'));
     await settle(tester);
 
     expect(service.requested, [false],
@@ -213,6 +218,7 @@ void main() {
     expect(find.text('No notice when the agent finishes'), findsOneWidget,
         reason: 'the setting is one thing the agent acts on, so a second device '
             'has to open on its real state rather than on its own default');
-    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
+    expect(tester.widget<Switch>(menuSwitch('No notice when the agent finishes'))
+        .value, isFalse);
   });
 }
