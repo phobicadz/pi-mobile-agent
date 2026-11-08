@@ -539,6 +539,11 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildTool(BuildContext context, PiTool tool, Color toolColor,
       ChatPalette palette) {
+    // The compact view of a call is the file it changed, or nothing at all.
+    // Everything below - the name, the labelled arguments, the command, the diff
+    // halves, the output - is what that mode exists to leave out.
+    if (compact) return _compactToolCall(tool, palette);
+
     final args = _buildToolArgs(tool, palette);
 
     return Container(
@@ -592,6 +597,113 @@ class ChatBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// A tool call in the compact view: the file it changed, on one line.
+  ///
+  /// Not a smaller card. A card is the shape of "here is an exchange - a command
+  /// and what it printed", and this mode keeps neither half of it; drawing one
+  /// with nothing in it would be a box around a path. What is left is the one
+  /// fact the mode is for, so it is drawn as a line of the record rather than as
+  /// a card in it, in `ChatPalette.fileLine` - the quiet text of this app
+  /// measured against the bubble it is now drawn on directly, since there is no
+  /// longer a card between them.
+  ///
+  /// A call that changes no file - a command, a search, a read - renders
+  /// nothing. That is the mode answering the question it was asked: *what did
+  /// this run change*, not *what did it do*.
+  Widget _compactToolCall(PiTool tool, ChatPalette palette) {
+    if (!changesFile(tool)) return const SizedBox.shrink();
+    final files = affectedFilesOf(tool);
+    if (files.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (final path in files)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                children: [
+                  Icon(Icons.description, size: _font(13), color: palette.fileLine),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      path,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'JetBrainsMono',
+                        fontSize: _font(11.5),
+                        color: palette.fileLine,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// The files a call names as the ones it is about.
+  ///
+  /// The path arguments are the honest answer for `edit`, `write` and the rest
+  /// of them. A patch is the one case where the file is inside the text rather
+  /// than beside it - `apply_patch` carries the patch and nothing else - so its
+  /// own header lines are read for the paths they name.
+  ///
+  /// Public and static, like `isShellTool`, because "which file did this call
+  /// touch" is a question about the wire format and should be testable without a
+  /// widget tree.
+  static List<String> affectedFilesOf(PiTool tool) {
+    final found = <String>[];
+    void add(Object? value) {
+      if (value is! String) return;
+      final path = value.trim();
+      if (path.isEmpty || found.contains(path)) return;
+      found.add(path);
+    }
+
+    for (final key in _pathArgs) {
+      add(tool.arguments[key]);
+    }
+
+    const patchTools = {'apply_patch', 'patch'};
+    if (patchTools.contains(tool.name.toLowerCase())) {
+      for (final value in tool.arguments.values) {
+        if (value is! String) continue;
+        for (final match in _patchFileLine.allMatches(value)) {
+          add(match.group(1));
+        }
+      }
+    }
+
+    return found;
+  }
+
+  /// A call whose effect is a file: an editor tool by name or by shape, or one
+  /// of the file verbs. A shell command is excluded whatever it was given - what
+  /// `git status` or a build changes is not knowable from its arguments, and a
+  /// view that guessed would be making up the thing it is supposed to report.
+  static bool changesFile(PiTool tool) {
+    final name = tool.name.toLowerCase();
+    if (isShellTool(name)) return false;
+    const fileVerbs = {
+      'delete',
+      'remove',
+      'move',
+      'rename',
+      'copy',
+      'insert',
+      'apply_patch',
+      'patch',
+    };
+    if (fileVerbs.contains(name)) return true;
+    return isEditTool(tool);
   }
 
   /// A tool call's arguments, drawn as arguments.
@@ -1241,3 +1353,12 @@ const List<String> _pathArgs = [
   'filename',
   'file',
 ];
+
+/// A patch's own saying of which file it is about.
+///
+/// `*** Add File:` / `*** Update File:` / `*** Delete File:` is how a patch
+/// names them, and `apply_patch` is a call whose arguments are the patch and no
+/// path - so the file has to be read out of the text to be reported at all.
+final RegExp _patchFileLine = RegExp(
+    r'^\s*\*\*\*\s*(?:Add|Update|Delete|Move)\s+File:\s*(.+?)\s*$',
+    multiLine: true);

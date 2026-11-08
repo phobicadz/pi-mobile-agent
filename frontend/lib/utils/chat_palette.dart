@@ -46,6 +46,7 @@ class ChatPalette {
     required this.removedBlock,
     required this.toolText,
     required this.toolError,
+    required this.fileLine,
     required this.toolResult,
     required this.link,
     required this.error,
@@ -139,6 +140,9 @@ class ChatPalette {
   /// Hairline borders (an unreadable image's frame).
   final Color outline;
 
+  /// A file path in the compact view, where there is no card to be quiet on.
+  final Color fileLine;
+
   /// Inline `code` behind a paragraph, where a real code theme would be too loud.
   final Color inlineCodeBackground;
 
@@ -160,10 +164,14 @@ class ChatPalette {
     const addedLight = Color(0xFF2E6B4F);
     const removed = Color(0xFFFF6B6B);
     const removedLight = Color(0xFFB3261E);
+    // Named once because two things are defined against it: the bubble an
+    // assistant reply is painted with, and the text that has to be readable on
+    // it when there is no card between them.
+    final assistantBubble = scheme.surfaceContainerHigh;
 
     return ChatPalette(
       isDark: isDark,
-      assistantBubble: scheme.surfaceContainerHigh,
+      assistantBubble: assistantBubble,
       userBubble: scheme.primaryContainer,
       assistantAccent: scheme.tertiary,
       userAccent: scheme.primary,
@@ -186,6 +194,10 @@ class ChatPalette {
           _tint(codeBg, isDark ? removed : removedLight, scheme.onSurface, isDark),
       toolText: legibleOn(scheme.onSurfaceVariant, card),
       toolError: legibleOn(scheme.error, card),
+      // The compact view's one line of its own, drawn straight on the reply -
+      // so it is the quiet token measured against that surface rather than the
+      // card's, which is the same question `toolText` answers for a card.
+      fileLine: legibleOn(scheme.onSurfaceVariant, assistantBubble),
       link: scheme.primary,
       error: scheme.error,
       outline: scheme.outlineVariant,
@@ -226,6 +238,7 @@ class ChatPalette {
         removedBlock,
         toolText,
         toolError,
+        fileLine,
         link,
         error,
         outline,

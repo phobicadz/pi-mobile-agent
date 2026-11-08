@@ -131,6 +131,9 @@ void main() {
           'the Pi accent': (built.tertiary, chat.assistantBubble),
           'your text': (built.onPrimaryContainer, chat.userBubble),
           'the quiet text in a card': (chat.toolText, chat.toolCard),
+          // The compact view draws its one line straight onto the reply, with no
+          // card between them - a different surface, so a different measurement.
+          'a file line in the compact view': (chat.fileLine, chat.assistantBubble),
           'an error': (chat.error, chat.assistantBubble),
           'a command on its block': (chat.codeForeground, chat.codeBackground),
           'an added half of a diff': (chat.codeForeground, chat.addedBlock),

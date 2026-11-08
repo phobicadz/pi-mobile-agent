@@ -762,11 +762,11 @@ class _HomeScreenState extends State<HomeScreen> {
                       ? 'Compact view'
                       : 'Full view'),
                   // What each state leaves on the screen, because the difference
-                  // is not obvious from the name: an agent run is mostly tool
-                  // output, and the same conversation reads as a transcript of
-                  // commands or as a record of what those commands said.
+                  // is not obvious from the name: an agent run is mostly
+                  // commands and their output, and the compact view keeps none of
+                  // it - only the files the calls changed.
                   subtitle: Text(appearance.compactChat
-                      ? 'Tool calls show the command only - what it printed stays hidden'
+                      ? 'Tool calls show only the files they changed - no commands, no output'
                       : 'Tool calls show the command and what it printed'),
                   trailing: Switch(
                     value: appearance.compactChat,

@@ -13,7 +13,17 @@ import '../providers/pi_view_model.dart';
 /// because the selected [TurnProgress] has value equality and the view model
 /// coalesces Pi's stream frames.
 class TurnStatusRow extends StatelessWidget {
-  const TurnStatusRow({super.key});
+  /// The compact chat view.
+  ///
+  /// The label this row prints is a description of the call - `bash flutter
+  /// build web…`, `edit frontend/lib/main.dart` - which is the command and the
+  /// path a mode that hides both exists to keep off the screen. The icon stays,
+  /// because it says the *kind* of thing happening (a terminal, a pen, a book)
+  /// without naming it, and the token counters stay because they are not about
+  /// the call at all.
+  final bool compact;
+
+  const TurnStatusRow({super.key, this.compact = false});
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +47,9 @@ class TurnStatusRow extends StatelessWidget {
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  progress.activity.isEmpty ? 'working' : progress.activity,
+                  compact || progress.activity.isEmpty
+                      ? 'working'
+                      : progress.activity,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.labelMedium

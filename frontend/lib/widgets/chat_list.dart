@@ -225,7 +225,7 @@ class ChatListState extends State<ChatList> {
                         compact: widget.compact,
                         expanded: _expandedIds.contains('thinking'),
                         onToggleExpanded: () => _toggleExpanded('thinking'),
-                        status: const TurnStatusRow(),
+                        status: TurnStatusRow(compact: widget.compact),
                       )
                     : ChatBubble(
                         message: messages[index],
@@ -245,7 +245,7 @@ class ChatListState extends State<ChatList> {
                         // The reply Pi is still writing carries the live status;
                         // finished ones carry nothing, and stay cached.
                         status: messages[index].streaming
-                            ? const TurnStatusRow()
+                            ? TurnStatusRow(compact: widget.compact)
                             : null,
                       );
                 return Padding(

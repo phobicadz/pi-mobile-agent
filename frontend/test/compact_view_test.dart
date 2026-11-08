@@ -11,26 +11,61 @@ import 'package:pi_mobile_agent/utils/code_highlight.dart';
 import 'package:pi_mobile_agent/utils/dracula_scheme.dart';
 import 'package:pi_mobile_agent/widgets/chat_bubble.dart';
 import 'package:pi_mobile_agent/widgets/chat_list.dart';
+import 'package:pi_mobile_agent/widgets/turn_status.dart';
 import 'package:provider/provider.dart';
 
 import 'support/app_menu.dart';
 
-/// What a compact view is for: an agent run is mostly tool *output*, and the
-/// same conversation should be readable either as a transcript of the commands
-/// or as a record of what they said. These tests are the difference between
-/// those two, and the parts that must not change.
+/// What a compact view is for: an agent run is mostly commands and their output,
+/// and the same conversation should be readable either in full or as an answer
+/// to the one question that survives hiding all of it - *which files did this
+/// run change*.
+const _path = 'frontend/lib/widgets/chat_bubble.dart';
+const _old = 'final shell = isShellTool(tool.name);';
+const _new = 'final shell = isShellTool(tool.name);\n    final compact = widget.compact;';
 const _command = 'flutter build web 2>&1 | tail -4';
 const _output = '✓ Built build/web\nTotal summarized in 1.2 seconds';
 const _replyText = 'The build is green, so nothing needs changing.';
 
-PiMessage _turn({bool withText = true, String? result = _output}) => PiMessage(
+const _patchBody = '''*** Begin Patch
+*** Update File: frontend/lib/widgets/chat_bubble.dart
+@@
+-old line
++new line
+*** Add File: frontend/test/compact_view_test.dart
+@@
++import 'package:flutter_test/flutter_test.dart';
+*** End Patch''';
+
+PiTool _edit({String? result}) => PiTool(
+      name: 'edit',
+      arguments: {
+        'path': _path,
+        'edits': [
+          {'oldText': _old, 'newText': _new},
+        ],
+      },
+      result: result ?? 'Successfully replaced 1 block(s).',
+    );
+
+PiTool _bash() =>
+    PiTool(name: 'bash', arguments: {'command': _command}, result: _output);
+
+PiTool _read() => PiTool(
+      name: 'read',
+      arguments: {'path': _path, 'offset': 1, 'limit': 40},
+      result: '1  import ...',
+    );
+
+PiTool _patch() =>
+    PiTool(name: 'apply_patch', arguments: {'patch': _patchBody}, result: 'ok');
+
+PiMessage _turn(List<PiTool> tools, {String content = _replyText}) => PiMessage(
       id: 'turn-1',
       role: 'assistant',
-      content: withText ? _replyText : '',
+      content: content,
       timestamp: DateTime(2026),
-      toolCalls: [
-        PiTool(name: 'bash', arguments: {'command': _command}, result: result),
-      ],
+      toolCalls: tools,
     );
 
 /// A bubble on its own, in the mode under test.
@@ -67,11 +102,10 @@ bool _shows(WidgetTester tester, String needle) {
   return [...texts, ...code].any((s) => s.contains(needle));
 }
 
-/// Stands in for a backend running one tool call, so the whole app can be asked
+/// Stands in for a backend running tool calls, so the whole app can be asked
 /// whether the menu's switch reaches the bubbles.
 class _ToolService extends PiService {
-  final StreamController<PiEvent> _events =
-      StreamController<PiEvent>.broadcast();
+  final StreamController<PiEvent> _events = StreamController<PiEvent>.broadcast();
 
   @override
   Stream<PiState> get stateUpdates => const Stream.empty();
@@ -82,120 +116,155 @@ class _ToolService extends PiService {
   @override
   bool get isConnected => true;
 
-  void runTool() {
+  /// Pi's own first frame of a run. The busy line is the app saying a run is in
+  /// flight, so a fixture that wants it has to say the same thing Pi does.
+  void beginRun() =>
+      _events.add(PiEvent(type: 'agent_start', data: const <String, dynamic>{}));
+
+  void start(PiTool tool) {
     _events.add(PiEvent(type: 'tool_execution_start', data: {
-      'toolCallId': 'call-1',
-      'toolName': 'bash',
-      'args': {'command': _command},
+      'toolCallId': 'call-${tool.name}',
+      'toolName': tool.name,
+      'args': tool.arguments,
     }));
+  }
+
+  void finish(PiTool tool, String result) {
     _events.add(PiEvent(type: 'tool_execution_end', data: {
-      'toolCallId': 'call-1',
-      'toolName': 'bash',
-      'result': _output,
+      'toolCallId': 'call-${tool.name}',
+      'toolName': tool.name,
+      'result': result,
     }));
+  }
+
+  void run(PiTool tool, String result) {
+    start(tool);
+    finish(tool, result);
   }
 }
 
 void main() {
+  group('which calls have a file to show', () {
+    test('an editing call names the file it changed', () {
+      expect(ChatBubble.changesFile(_edit()), isTrue);
+      expect(ChatBubble.affectedFilesOf(_edit()), [_path]);
+    });
+
+    test('a patch names its files inside its own text', () {
+      expect(ChatBubble.changesFile(_patch()), isTrue);
+      expect(ChatBubble.affectedFilesOf(_patch()), [
+        _path,
+        'frontend/test/compact_view_test.dart',
+      ],
+          reason: 'apply_patch carries the patch and no path argument, so a '
+              'view that only looked at arguments would report that nothing '
+              'changed when something clearly did');
+    });
+
+    test('a command has no knowable effect on a file', () {
+      expect(ChatBubble.changesFile(_bash()), isFalse);
+      // The same call given a path it is only reading as an argument.
+      expect(
+        ChatBubble.changesFile(
+            PiTool(name: 'bash', arguments: {'command': 'ls', 'path': '.'})),
+        isFalse,
+        reason: 'guessing that a shell call changed the file it mentions is '
+            'inventing the thing this view is supposed to report',
+      );
+    });
+
+    test('a read is not a change', () {
+      expect(ChatBubble.changesFile(_read()), isFalse,
+          reason: 'the mode answers what did this run *change*. Listing every '
+              'file the agent looked at would read as a list of edits, and '
+              'most of them were not');
+    });
+
+    test('a file named twice is named once', () {
+      expect(
+        ChatBubble.affectedFilesOf(PiTool(
+          name: 'edit',
+          arguments: {'path': _path, 'file_path': _path},
+        )),
+        [_path],
+      );
+    });
+  });
+
   group('a bubble in each mode', () {
-    testWidgets('compact mode keeps the command and drops what it printed',
+    testWidgets('compact mode shows the file a call changed, and nothing else',
         (tester) async {
-      await pumpBubble(tester, _turn(), compact: true);
+      await pumpBubble(tester, _turn([_edit()]), compact: true);
 
-      expect(_shows(tester, _command), isTrue,
-          reason: 'the command is what the agent ran, which is the half a '
-              'compact view exists to show');
-      expect(find.text('command'), findsOneWidget,
-          reason: 'the parameter label stays too - a command with no saying '
-              'what it is a parameter of is just text again');
-      expect(_shows(tester, _output), isFalse,
-          reason: 'the output is most of the height of an agent run, and it '
-              'is the half this mode is about');
-      expect(find.text('output'), findsNothing,
-          reason: 'the label belongs to a block that is not there. A label for '
-              'nothing is a heading over an empty space');
+      expect(_shows(tester, _path), isTrue);
+      expect(_shows(tester, _new), isFalse,
+          reason: 'the diff is the command half of the card, and the mode '
+              'exists to hide it');
+      expect(find.text('- oldText'), findsNothing);
+      expect(find.text('+ newText'), findsNothing);
+      expect(find.text('edit'), findsNothing,
+          reason: 'the tool name is part of the command. A path with no verb '
+              'on it is the whole of what this mode reports');
+      expect(_shows(tester, 'Successfully replaced'), isFalse);
+      expect(find.byType(HighlightedCode), findsNothing,
+          reason: 'with no command, no diff and no output there is no code to '
+              'draw. A card with nothing in it is a box around a path');
     });
 
-    testWidgets('full mode shows both halves, as it always did',
-        (tester) async {
-      await pumpBubble(tester, _turn(), compact: false);
+    testWidgets('a command and its output are both gone', (tester) async {
+      await pumpBubble(tester, _turn([_bash()]), compact: true);
 
-      expect(_shows(tester, _command), isTrue);
-      expect(_shows(tester, _output), isTrue);
-      expect(find.text('output'), findsOneWidget);
+      expect(_shows(tester, _command), isFalse);
+      expect(_shows(tester, _output), isFalse);
+      expect(find.text('bash'), findsNothing);
     });
 
-    testWidgets('Pi\'s own text is not what compact mode hides',
+    testWidgets('a call that changes no file says nothing at all',
         (tester) async {
-      await pumpBubble(tester, _turn(), compact: true);
+      await pumpBubble(tester, _turn([_read()]), compact: true);
+
+      expect(_shows(tester, _path), isFalse);
+      expect(_shows(tester, 'import'), isFalse);
+    });
+
+    testWidgets('a patch is reported as the files it touched', (tester) async {
+      await pumpBubble(tester, _turn([_patch()], content: ''), compact: true);
+
+      expect(_shows(tester, _path), isTrue);
+      expect(_shows(tester, 'frontend/test/compact_view_test.dart'), isTrue);
+      expect(_shows(tester, '*** Begin Patch'), isFalse,
+          reason: 'the patch is the argument. Reading the paths out of it is '
+              'for saying which files it is about, not for printing it');
+    });
+
+    testWidgets("Pi's own text is not what the mode hides", (tester) async {
+      await pumpBubble(tester, _turn([_edit(), _bash()]), compact: true);
 
       expect(_shows(tester, _replyText), isTrue,
-          reason: 'the answer is the point of the conversation. A compact view '
-              'that trimmed the replies would be a shorter conversation, not a '
+          reason: 'the answer is the point of the conversation. A view that '
+              'trimmed the replies would be a shorter conversation, not a '
               'shorter view of it');
     });
 
-    testWidgets('an edit keeps its diff, because a diff is what it ran',
+    testWidgets('full view shows the command, the output and the file',
         (tester) async {
-      final message = PiMessage(
-        id: 'edit-1',
-        role: 'assistant',
-        content: '',
-        timestamp: DateTime(2026),
-        toolCalls: [
-          PiTool(
-            name: 'edit',
-            arguments: {
-              'path': 'frontend/lib/widgets/chat_bubble.dart',
-              'edits': [
-                {
-                  'oldText': 'final shell = isShellTool(tool.name);',
-                  'newText':
-                      'final shell = isShellTool(tool.name);\n    final compact = widget.compact;',
-                },
-              ],
-            },
-            result: 'Successfully replaced 1 block(s).',
-          ),
-        ],
-      );
-      await pumpBubble(tester, message, compact: true);
+      await pumpBubble(tester, _turn([_edit(), _bash()]), compact: false);
 
+      expect(_shows(tester, _path), isTrue);
+      expect(_shows(tester, _new), isTrue);
+      expect(_shows(tester, _command), isTrue);
+      expect(_shows(tester, _output), isTrue);
       expect(find.text('- oldText'), findsOneWidget);
-      expect(find.text('+ newText'), findsOneWidget);
-      expect(
-        tester.widgetList<HighlightedCode>(find.byType(HighlightedCode)).length,
-        2,
-        reason: 'what an edit changed is the work, not the noise about it - '
-            'a card that shows only a path says nothing about the change',
-      );
-
-      // The status line *is* output, so it goes with the rest of the output.
-      expect(_shows(tester, 'Successfully replaced'), isFalse);
-    });
-
-    testWidgets('a tool call with no arguments still says what it was',
-        (tester) async {
-      final message = PiMessage(
-        id: 'no-args',
-        role: 'assistant',
-        content: '',
-        timestamp: DateTime(2026),
-        toolCalls: [PiTool(name: 'bash', arguments: {}, result: _output)],
-      );
-      await pumpBubble(tester, message, compact: true);
-
-      expect(find.text('bash'), findsOneWidget,
-          reason: 'with nothing to run and nothing printed, the card is the '
-              'name of the call. That is still the command, and hiding the '
-              'whole card would hide the fact that anything happened at all');
+      expect(find.text('output'), findsAtLeastNWidgets(1),
+          reason: 'the label naming what came back. Two cards in one reply is '
+              'two of them, which is why this does not count them');
     });
   });
 
   group('the rendered bubble and the mode it was rendered in', () {
     testWidgets('the cache cannot hand back the other mode\'s shape',
         (tester) async {
-      final message = _turn();
+      final message = _turn([_edit(), _bash()]);
 
       // The same message, the same theme, the same size: only the view mode
       // changes. A body cache keyed without it hands back what it built before,
@@ -205,8 +274,10 @@ void main() {
       expect(_shows(tester, _output), isTrue);
 
       await pumpBubble(tester, message, compact: true);
-      expect(_shows(tester, _output), isFalse,
-          reason: 'the cached full-mode body is still in the tree otherwise');
+      expect(_shows(tester, _output), isFalse);
+      expect(_shows(tester, _path), isTrue,
+          reason: 'and the other half of the swap has to arrive too, not just '
+              'the half that left');
 
       await pumpBubble(tester, message, compact: false);
       expect(_shows(tester, _output), isTrue,
@@ -216,7 +287,7 @@ void main() {
   });
 
   group('the menu switch reaches the chat', () {
-    Future<AppearanceController> pumpHome(WidgetTester tester) async {
+    Future<(_ToolService, PiViewModel)> pumpHome(WidgetTester tester) async {
       final service = _ToolService();
       final appearance = AppearanceController();
       final viewModel = PiViewModel(piService: service);
@@ -232,11 +303,7 @@ void main() {
       for (var i = 0; i < 8; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
-      service.runTool();
-      for (var i = 0; i < 4; i++) {
-        await tester.pump(const Duration(milliseconds: 100));
-      }
-      return appearance;
+      return (service, viewModel);
     }
 
     /// Press the switch. The menu is left open by the caller, because that is
@@ -252,7 +319,7 @@ void main() {
       }
     }
 
-    testWidgets('the menu offers it as a named pair of states, not a mystery',
+    testWidgets('the menu says which state it is in and what it costs',
         (tester) async {
       await pumpHome(tester);
       await openAppMenu(tester);
@@ -261,30 +328,43 @@ void main() {
       // before it exists to look at - the same as on a phone.
       await scrollMenuIntoView(tester, menuSwitch('Full view'));
 
-      // It says which state it is in and what turning it costs, because
-      // "compact" is not a thing you can infer from the word.
       expect(find.text('Full view'), findsOneWidget);
       expect(
         find.text('Tool calls show the command and what it printed'),
         findsOneWidget,
       );
+
+      await pressCompact(tester, 'Full view');
+      expect(
+        find.text('Tool calls show only the files they changed - no commands, '
+            'no output'),
+        findsOneWidget,
+        reason: 'the row has to read as the state it is now in. "Compact" is '
+            'not a thing you can infer from the word',
+      );
     });
 
-    testWidgets('turning it on hides the output in the chat itself',
+    testWidgets('turning it on leaves the file and drops the rest, in the chat',
         (tester) async {
-      await pumpHome(tester);
+      final (service, _) = await pumpHome(tester);
+      service.beginRun();
+      service.run(_edit(), 'Successfully replaced 1 block(s).');
+      service.run(_bash(), _output);
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
 
       expect(_shows(tester, _output), isTrue,
-          reason: 'the fixture is only worth anything if the tool output really '
-              'is on screen before anything is pressed');
+          reason: 'the fixture is only worth anything if the output really is '
+              'on screen before anything is pressed');
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isFalse);
 
       await openAppMenu(tester);
       await pressCompact(tester, 'Full view');
 
-      expect(_shows(tester, _command), isTrue,
-          reason: 'the command stays in the chat, not just in the bubble test');
+      expect(_shows(tester, _path), isTrue);
       expect(_shows(tester, _output), isFalse);
+      expect(_shows(tester, _command), isFalse);
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isTrue,
           reason: 'the mode has to reach the list that builds the bubbles - a '
               'bubble reading the setting itself would not be part of its cache '
@@ -295,6 +375,43 @@ void main() {
       await pressCompact(tester, 'Compact view');
       expect(_shows(tester, _output), isTrue);
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isFalse);
+    });
+
+    testWidgets('the busy line keeps its kind and drops the words naming the run',
+        (tester) async {
+      final (service, _) = await pumpHome(tester);
+      service.beginRun();
+      // Started and not finished, which is the state the busy row exists for.
+      service.start(_bash());
+      for (var i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+
+      expect(
+        find.descendant(
+            of: find.byType(TurnStatusRow),
+            matching: find.text('bash $_command')),
+        findsOneWidget,
+        reason: 'the live line is the app saying what it is doing, and its '
+            'words are the call - which is what the mode hides',
+      );
+
+      await openAppMenu(tester);
+      await pressCompact(tester, 'Full view');
+
+      expect(find.byType(TurnStatusRow), findsOneWidget,
+          reason: 'the row itself stays: a run in flight still has to say it '
+              'is in flight, and its icon already says the kind');
+      expect(
+        find.descendant(
+            of: find.byType(TurnStatusRow), matching: find.text('working')),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+            of: find.byType(TurnStatusRow), matching: find.textContaining(_command)),
+        findsNothing,
+      );
     });
   });
 }
