@@ -113,6 +113,15 @@ Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` inste
   belongs at the right end (the git chip) goes in `actions`, which is what the bar actually
   right-aligns. Measured positions are the way to check this: `tester.getRect(...)` at both a
   phone width and a desktop width, because centring only shows up when the window is wide.
+- **Centring the title box is not centring the words in it.** The middle box is symmetric by
+  construction (`Expanded(a)`, the name, `Expanded(a)` — its centre is the bar's centre whatever
+  the flex numbers are), and the name control fills it, so where the *text* lands is decided by
+  that control's own layout. The chat icon in front of the name pushed the words 12px right of
+  the middle at every width — 12 being half of 18 + 6, the icon and its gap — which is what
+  `test/appbar_session_name_test.dart` was failing on for a long time while the flexes were
+  correct. The control now ends with the same width of nothing it begins with
+  (`iconWidth + iconGap`), so the words sit dead-centre and the icon hangs to the left of centre
+  on purpose. Change one side and you have to change the other.
 - **Don't put `Expanded`/`Flexible` inside a `Tooltip`'s child.** The widget a
   `Tooltip` keeps in place is laid out with no width constraint of its own, so a
   flex child inside that Row throws `RenderFlex children have non-zero flex but

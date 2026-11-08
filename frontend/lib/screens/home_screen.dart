@@ -893,11 +893,16 @@ class _HomeScreenState extends State<HomeScreen> {
             final pickerEnabled = !viewModel.resumingSession;
 
             // The chat bubble icon that always appears before the session name.
+            //
+            // The two widths are named because the icon's share has to be matched
+            // exactly, twice over - see `nameControl`.
+            const iconWidth = 18.0;
+            const iconGap = 6.0;
             final sessionIcon = Padding(
-              padding: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.only(right: iconGap),
               child: Icon(
                 Icons.chat_bubble_outline,
-                size: 18,
+                size: iconWidth,
               ),
             );
 
@@ -941,6 +946,16 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
+                      // The same width of nothing, on the other side of the words.
+                      //
+                      // The flexes make the *box* dead-centre in the bar. Left at
+                      // that, the icon and the words are centred as a pair, which
+                      // puts the words half an icon to the right of the middle -
+                      // 12px, on every width, because it is half of 18 + 6. The
+                      // words are the thing a person reads off this bar, so they are
+                      // the thing that gets centred; the icon hangs to the left of
+                      // centre and the empty space on the right is what pays for it.
+                      SizedBox(width: iconWidth + iconGap),
                     ],
                   ),
                 ),
