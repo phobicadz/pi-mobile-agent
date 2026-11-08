@@ -47,6 +47,7 @@ class ChatPalette {
     required this.toolText,
     required this.toolError,
     required this.fileLine,
+    required this.outputPreview,
     required this.toolResult,
     required this.link,
     required this.error,
@@ -77,6 +78,13 @@ class ChatPalette {
 
   /// Tool output. Not derived from the scheme - see the class comment.
   final Color toolResult;
+
+  /// Tool output in the compact view, where it is drawn straight on the reply
+  /// instead of on a code block. The same green - it means the same thing, "this
+  /// is what came back" - measured against that bubble and raised only where the
+  /// bubble needs it. A signal that stops being legible has stopped meaning
+  /// anything.
+  final Color outputPreview;
 
   /// The block a piece of code is painted on inside a reply - a fenced block,
   /// a tool call's command, a tool's output - and its un-tokened text.
@@ -198,6 +206,11 @@ class ChatPalette {
       // so it is the quiet token measured against that surface rather than the
       // card's, which is the same question `toolText` answers for a card.
       fileLine: legibleOn(scheme.onSurfaceVariant, assistantBubble),
+      // The green of a tool result, asked the same question `fileLine` asks for
+      // a path: what does it take to read on a reply, with no code block under
+      // it? On most schemes that is the green unchanged.
+      outputPreview:
+          legibleOn(isDark ? added : addedLight, assistantBubble),
       link: scheme.primary,
       error: scheme.error,
       outline: scheme.outlineVariant,
@@ -230,6 +243,7 @@ class ChatPalette {
         muted,
         toolCard,
         toolResult,
+        outputPreview,
         codeBackground,
         codeForeground,
         diffAdded,

@@ -608,9 +608,8 @@ class ChatBubble extends StatelessWidget {
   /// paths in `ChatPalette.fileLine` - the quiet text of this app measured
   /// against the bubble it is drawn on, since there is no card between them.
   ///
-  /// A call that names no file - a shell command, a search - is still its type.
-  /// What a command changed is not knowable from its arguments, and the mode
-  /// does not invent it; it says that a command ran, which is what it can say.
+  /// A call that names no file - a shell command, a search - is shown by what
+  /// it ran and what it printed, shortened. See `_compactCallPreview`.
   ///
   /// One text run per line, name and path as spans of it, rather than a `Row` of
   /// two texts. A flex row has to split the width between them, which truncates a
@@ -618,7 +617,12 @@ class ChatBubble extends StatelessWidget {
   /// when a tool's name is long. One run wraps where it needs to and nothing is
   /// cut off - and the whole line is one thing to select.
   Widget _compactToolCall(PiTool tool, Color toolColor, ChatPalette palette) {
-    final files = affectedFilesOf(tool);
+    // A shell call is never asked "which file did it touch" - what a build or a
+    // `git status` changes is not knowable from its arguments, and the mode does
+    // not invent it. It gets the preview instead.
+    final files =
+        isShellTool(tool.name) ? const <String>[] : affectedFilesOf(tool);
+    if (files.isEmpty) return _compactCallPreview(tool, toolColor, palette);
     // A call with no file is still one line: its type.
     final lineCount = files.isEmpty ? 1 : files.length;
 
@@ -657,6 +661,111 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
+  /// A call that names no file - a shell command, a search - shows a short
+  /// slice of what it ran and what it printed, three lines of each.
+  ///
+  /// Its type alone was the honest answer and the useless one at the same time:
+  /// a bar that says a command ran tells you nothing about whether it worked,
+  /// which is the thing a person glancing at a compact chat is checking. A
+  /// preview is the compromise - the first line or two of a command is the
+  /// command, and the first lines of an output are where success and failure
+  /// both live.
+  ///
+  /// The cut is said out loud (`… 14 more lines`) because a preview that does
+  /// not say it was cut is a record the reader has to distrust wholesale.
+  /// What is hidden is also how you know to switch the mode off.
+  ///
+  /// The two halves keep the colours the full card gives them: the command in
+  /// the quiet text of a bubble, the output in the green that means *this is
+  /// what came back*. That one is a signal, and a compact view is not a reason
+  /// for a signal to stop meaning anything.
+  Widget _compactCallPreview(
+      PiTool tool, Color toolColor, ChatPalette palette) {
+    final input = _foldLines(callTextOf(tool), _compactPreviewLines);
+    final result = _foldLines(tool.result ?? '', _compactPreviewLines);
+
+    final nameSpan = TextSpan(
+      text: '${tool.name}  ',
+      style: TextStyle(
+        fontSize: _font(11.5),
+        fontWeight: FontWeight.w700,
+        color: toolColor,
+      ),
+    );
+    final mono = TextStyle(
+      fontFamily: 'JetBrainsMono',
+      fontSize: _font(11),
+      color: palette.fileLine,
+    );
+    final outputStyle = TextStyle(
+      fontFamily: 'JetBrainsMono',
+      fontSize: _font(11),
+      color: palette.outputPreview,
+    );
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 3),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ..._previewBlock(
+            lines: input.lines,
+            hidden: input.hidden,
+            style: mono,
+            palette: palette,
+            leading: nameSpan,
+          ),
+          if (result.lines.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 8, top: 3),
+              child: _toolLabel('output', palette),
+            ),
+            ..._previewBlock(
+              lines: result.lines,
+              hidden: result.hidden,
+              style: outputStyle,
+              palette: palette,
+              indentFirst: true,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// The lines of a compact preview, one text run each, continuation lines
+  /// indented under the first so a multi-line command reads as one command.
+  ///
+  /// `leading` rides on the first line - the call type in front of the command -
+  /// and the cut marker closes whichever block was cut.
+  List<Widget> _previewBlock({
+    required List<String> lines,
+    required int hidden,
+    required TextStyle style,
+    required ChatPalette palette,
+    InlineSpan? leading,
+    bool indentFirst = false,
+  }) {
+    if (lines.isEmpty) return const [];
+    final cut = TextStyle(fontSize: _font(10), color: palette.muted);
+    return [
+      for (var i = 0; i < lines.length; i++)
+        Padding(
+          padding:
+              EdgeInsets.only(top: i == 0 ? 0 : 1, left: (i == 0 && !indentFirst) ? 0 : 8),
+          child: Text.rich(TextSpan(children: [
+            if (i == 0 && leading != null) leading,
+            TextSpan(text: lines[i], style: style),
+            if (i == lines.length - 1 && hidden > 0)
+              TextSpan(
+                text: ' … $hidden more ${hidden == 1 ? 'line' : 'lines'}',
+                style: cut,
+              ),
+          ])),
+        ),
+    ];
+  }
+
   /// The files a call names as the ones it is about.
   ///
   /// The path arguments are the honest answer for `edit`, `write` and the rest
@@ -691,6 +800,54 @@ class ChatBubble extends StatelessWidget {
     }
 
     return found;
+  }
+
+  /// How much of a command, and of what it printed, the compact view keeps.
+  ///
+  /// Three lines is where both halves of an exchange actually live: a command
+  /// fits in a line or two, and a build says it worked - or says why it did not
+  /// - in its first lines. More than this is the full view, one switch away.
+  static const int _compactPreviewLines = 3;
+
+  /// The first lines of a block of text, and how many there were altogether.
+  ///
+  /// Blank lines go: a preview of a log that keeps its blank ones spends its
+  /// three lines on nothing. `hidden` is what the `… 14 more lines` marker is
+  /// made of - a preview that does not say it was cut is a record the reader
+  /// has to distrust wholesale.
+  static ({List<String> lines, int hidden}) _foldLines(
+      String text, int limit) {
+    final all = <String>[
+      for (final line in text.split('\n'))
+        if (line.trim().isNotEmpty) line.trimRight(),
+    ];
+    if (all.length <= limit) return (lines: all, hidden: 0);
+    return (lines: all.take(limit).toList(), hidden: all.length - limit);
+  }
+
+  /// What a call ran, as opposed to which files it names.
+  ///
+  /// The command first when the call has one, because that is the half worth
+  /// reading first; the rest of its text after it. Paths are left out - a call
+  /// that names files is rendered by `_compactToolCall`, which shows them as
+  /// paths rather than as a line of text.
+  ///
+  /// Public and static like `affectedFilesOf`: it is a question about the wire
+  /// format, and a preview of the wrong argument is the kind of wrong that is
+  /// only visible in the widget.
+  static String callTextOf(PiTool tool) {
+    const commandArgs = {'command', 'cmd', 'script', 'shell', 'code'};
+    final commands = <String>[];
+    final rest = <String>[];
+    for (final entry in tool.arguments.entries) {
+      if (_pathArgs.contains(entry.key)) continue;
+      final value = entry.value;
+      if (value is! String) continue;
+      final text = value.trim();
+      if (text.isEmpty) continue;
+      (commandArgs.contains(entry.key) ? commands : rest).add(text);
+    }
+    return [...commands, ...rest].join('\n');
   }
 
   /// A tool call's arguments, drawn as arguments.

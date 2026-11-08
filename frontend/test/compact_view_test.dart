@@ -197,16 +197,117 @@ void main() {
               'draw. A card with nothing in it is a box around a path');
     });
 
-    testWidgets('a command is named, and its command line is not shown',
+    testWidgets('a command shows what it ran and what came back',
         (tester) async {
+      // The reason the preview exists: a line that only says `bash` tells you a
+      // command ran and nothing about whether it worked, which is what a person
+      // scanning a compact chat is checking.
       await pumpBubble(tester, _turn([_bash()]), compact: true);
 
-      expect(_shows(tester, 'bash'), isTrue,
-          reason: 'what a shell call changed is not knowable from its '
-              'arguments, and the mode does not invent it - it says a command '
-              'ran, which is what it can say');
-      expect(_shows(tester, _command), isFalse);
-      expect(_shows(tester, _output), isFalse);
+      expect(_shows(tester, 'bash'), isTrue);
+      expect(_shows(tester, _command), isTrue,
+          reason: 'the command is the input half of the exchange');
+      expect(_shows(tester, '✓ Built build/web'), isTrue);
+      expect(_shows(tester, 'Total summarized in 1.2 seconds'), isTrue);
+      expect(_shows(tester, 'output'), isTrue,
+          reason: 'with no label between them the two halves read as one blob '
+              'of text - the same reason the full card labels them');
+      expect(_shows(tester, 'command:'), isFalse,
+          reason: 'the arguments are not repeated as a labelled list; one line '
+              'of the command is the command');
+      expect(_shows(tester, 'more lines'), isFalse,
+          reason: 'nothing was cut, so there is nothing to warn about');
+    });
+
+    testWidgets('a long output is cut short, and says it was', (tester) async {
+      final log = [
+        'info • one • a.dart:1',
+        'info • two • b.dart:2',
+        'info • three • c.dart:3',
+        'info • four • d.dart:4',
+        '17 issues found.',
+      ].join('\n');
+      await pumpBubble(
+          tester,
+          _turn([
+            PiTool(
+                name: 'bash',
+                arguments: {'command': 'flutter analyze'},
+                result: log)
+          ]),
+          compact: true);
+
+      expect(_shows(tester, 'info • one'), isTrue);
+      expect(_shows(tester, 'info • three'), isTrue);
+      expect(_shows(tester, 'info • four'), isFalse,
+          reason: 'three lines is the budget, and the first lines are where '
+              'success and failure both live');
+      expect(_shows(tester, '17 issues found.'), isFalse);
+      expect(_shows(tester, '2 more lines'), isTrue,
+          reason: 'a preview that does not say it was cut is a record the '
+              'reader has to distrust wholesale - and how much is hidden is how '
+              'you know to switch the mode off');
+    });
+
+    testWidgets('a long command is cut short too', (tester) async {
+      final script = [
+        'set -euo pipefail',
+        'cd frontend',
+        'flutter build web',
+        'rsync -a build/web/ /srv/www/',
+        'echo deployed',
+      ].join('\n');
+      await pumpBubble(
+          tester,
+          _turn([
+            PiTool(name: 'bash', arguments: {'command': script}, result: 'ok')
+          ]),
+          compact: true);
+
+      expect(_shows(tester, 'set -euo pipefail'), isTrue);
+      expect(_shows(tester, 'flutter build web'), isTrue);
+      expect(_shows(tester, 'rsync -a build/web/ /srv/www/'), isFalse);
+      expect(_shows(tester, '2 more lines'), isTrue);
+    });
+
+    testWidgets('a blank-line-heavy log spends its preview on text',
+        (tester) async {
+      // Three lines of a build log that keeps its blank ones is two lines of
+      // nothing.
+      await pumpBubble(
+          tester,
+          _turn([
+            PiTool(
+                name: 'bash',
+                arguments: {'command': 'make'},
+                result: '\n\nbuilding…\n\n\ndone\n')
+          ]),
+          compact: true);
+
+      expect(_shows(tester, 'building…'), isTrue);
+      expect(_shows(tester, 'done'), isTrue);
+      expect(_shows(tester, '3 more lines'), isFalse,
+          reason: 'the blank ones are not lines worth counting');
+    });
+
+    test('what a call ran is its text, not the paths it names', () {
+      // A preview of the wrong argument is only visible in the widget, so the
+      // choice is tested on its own: the command leads, paths are left to the
+      // line that shows paths.
+      expect(
+          ChatBubble.callTextOf(PiTool(
+              name: 'bash', arguments: {'path': '/app/main.dart', 'command': 'git status'})),
+          'git status');
+      expect(
+          ChatBubble.callTextOf(PiTool(name: 'run', arguments: {
+            'description': 'build it',
+            'command': 'make',
+          })),
+          'make\nbuild it',
+          reason: 'the command leads even when it is not the first argument');
+      expect(ChatBubble.callTextOf(_read()), '',
+          reason: 'a read has no text half to preview - it is a path and a '
+              'file, and the compact line already says the path');
     });
 
     testWidgets('a read says it read, and does not print the file',
@@ -365,14 +466,15 @@ void main() {
 
       expect(find.text('Full view'), findsOneWidget);
       expect(
-        find.text('Tool calls show the command and what it printed'),
+        find.text(
+            'Tool calls show the command, its arguments and its full output'),
         findsOneWidget,
       );
 
       await pressCompact(tester, 'Full view');
       expect(
-        find.text('Tool calls show the call and any file it names - no '
-            'commands, no output'),
+        find.text('Tool calls show the call and any file it names, or the '
+            'first lines of a command'),
         findsOneWidget,
         reason: 'the row has to read as the state it is now in. "Compact" is '
             'not a thing you can infer from the word',
@@ -381,25 +483,43 @@ void main() {
 
     testWidgets('turning it on leaves the calls and the files, and drops the rest',
         (tester) async {
+      // A log long enough that the cut is visible through the menu: the point of
+      // the wiring test is that the mode reaches the bubbles at all, and a
+      // preview of the same length as the full text would prove nothing.
+      const log = '✓ Built build/web\n'
+          'Total summarized in 1.2 seconds\n'
+          'serving from build/web\n'
+          '3 files copied\n'
+          'done';
       final (service, _) = await pumpHome(tester);
       service.beginRun();
       service.run(_edit(), 'Successfully replaced 1 block(s).');
-      service.run(_bash(), _output);
+      service.run(_bash(), log);
       for (var i = 0; i < 4; i++) {
         await tester.pump(const Duration(milliseconds: 100));
       }
 
-      expect(_shows(tester, _output), isTrue,
+      expect(_shows(tester, '3 files copied'), isTrue,
           reason: 'the fixture is only worth anything if the output really is '
-              'on screen before anything is pressed');
+              'all on screen before anything is pressed');
+      expect(_shows(tester, _new), isTrue,
+          reason: 'and the edit really is drawn as a diff');
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isFalse);
 
       await openAppMenu(tester);
       await pressCompact(tester, 'Full view');
 
       expect(_shows(tester, 'edit  $_path'), isTrue);
-      expect(_shows(tester, _output), isFalse);
-      expect(_shows(tester, _command), isFalse);
+      expect(_shows(tester, 'bash'), isTrue);
+      expect(_shows(tester, _command), isTrue,
+          reason: 'what it ran is the half a compact view keeps');
+      expect(_shows(tester, '✓ Built build/web'), isTrue);
+      expect(_shows(tester, '3 files copied'), isFalse);
+      expect(_shows(tester, '2 more lines'), isTrue);
+      expect(_shows(tester, _new), isFalse,
+          reason: 'the halves of a diff are the most text in the app, and the '
+              'file the edit names is what the mode is for');
+      expect(_shows(tester, 'Successfully replaced 1 block(s).'), isFalse);
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isTrue,
           reason: 'the mode has to reach the list that builds the bubbles - a '
               'bubble reading the setting itself would not be part of its cache '
@@ -408,7 +528,8 @@ void main() {
       // And back again, in the same session, without a reload. The menu is
       // still open, which is what it does while a setting is being watched.
       await pressCompact(tester, 'Compact view');
-      expect(_shows(tester, _output), isTrue);
+      expect(_shows(tester, '3 files copied'), isTrue);
+      expect(_shows(tester, _new), isTrue);
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isFalse);
     });
 

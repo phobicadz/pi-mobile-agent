@@ -134,6 +134,11 @@ void main() {
           // The compact view draws its one line straight onto the reply, with no
           // card between them - a different surface, so a different measurement.
           'a file line in the compact view': (chat.fileLine, chat.assistantBubble),
+          // The tool-result green, drawn on a reply instead of on a code block.
+          // It is the same green the full card uses - it means the same thing -
+          // so it has to clear the same bar on a surface nobody chose for it.
+          'a command’s output in the compact view':
+              (chat.outputPreview, chat.assistantBubble),
           'an error': (chat.error, chat.assistantBubble),
           'a command on its block': (chat.codeForeground, chat.codeBackground),
           'an added half of a diff': (chat.codeForeground, chat.addedBlock),

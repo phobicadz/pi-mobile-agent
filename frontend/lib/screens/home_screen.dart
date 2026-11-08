@@ -763,11 +763,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       : 'Full view'),
                   // What each state leaves on the screen, because the difference
                   // is not obvious from the name. The compact view keeps what a
-                  // call was and which files it names, and drops the command, the
-                  // arguments and everything the call printed.
+                  // call was and which files it names; a call that names no file
+                  // - a command - keeps a few lines of what it ran and what it
+                  // printed, because "a command ran" is not an answer.
                   subtitle: Text(appearance.compactChat
-                      ? 'Tool calls show the call and any file it names - no commands, no output'
-                      : 'Tool calls show the command and what it printed'),
+                      ? 'Tool calls show the call and any file it names, or the first lines of a command'
+                      : 'Tool calls show the command, its arguments and its full output'),
                   trailing: Switch(
                     value: appearance.compactChat,
                     onChanged: (value) => appearance.setCompactChat(value),
