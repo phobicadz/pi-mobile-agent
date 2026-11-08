@@ -17,14 +17,15 @@ import 'package:provider/provider.dart';
 import 'support/app_menu.dart';
 
 /// What a compact view is for: an agent run is mostly commands and their output,
-/// and the same conversation should be readable either in full or as an answer
-/// to the one question that survives hiding all of it - *which files did this
-/// run change*.
+/// and the same conversation should be readable either in full or as the short
+/// version - *what Pi did, and to which files*.
 const _path = 'frontend/lib/widgets/chat_bubble.dart';
+const _otherPath = 'frontend/test/compact_view_test.dart';
 const _old = 'final shell = isShellTool(tool.name);';
 const _new = 'final shell = isShellTool(tool.name);\n    final compact = widget.compact;';
 const _command = 'flutter build web 2>&1 | tail -4';
 const _output = '✓ Built build/web\nTotal summarized in 1.2 seconds';
+const _fileBody = 'import package flutter test here is the file content';
 const _replyText = 'The build is green, so nothing needs changing.';
 
 const _patchBody = '''*** Begin Patch
@@ -54,7 +55,7 @@ PiTool _bash() =>
 PiTool _read() => PiTool(
       name: 'read',
       arguments: {'path': _path, 'offset': 1, 'limit': 40},
-      result: '1  import ...',
+      result: _fileBody,
     );
 
 PiTool _patch() =>
@@ -91,9 +92,13 @@ Future<void> pumpBubble(WidgetTester tester, PiMessage message,
 /// depending on whether it looks like code, and a test that only looks for one
 /// passes over the case it is not looking at.
 bool _shows(WidgetTester tester, String needle) {
+  // `Text.data` and `Text.textSpan` are both rendered text: a compact line is
+  // one run with the name and the path as spans of it, so a helper that only
+  // looked at `data` would report that the line is not on screen at all.
   final texts = tester
       .widgetList<Text>(find.byType(Text))
-      .map((w) => w.data ?? '')
+      .map((w) =>
+          w.data ?? w.textSpan?.toPlainText() ?? '')
       .toList();
   final code = tester
       .widgetList<HighlightedCode>(find.byType(HighlightedCode))
@@ -144,94 +149,84 @@ class _ToolService extends PiService {
 }
 
 void main() {
-  group('which calls have a file to show', () {
+  group('which files a call names', () {
     test('an editing call names the file it changed', () {
-      expect(ChatBubble.changesFile(_edit()), isTrue);
       expect(ChatBubble.affectedFilesOf(_edit()), [_path]);
     });
 
+    test('a read names the file it looked at', () {
+      expect(ChatBubble.affectedFilesOf(_read()), [_path],
+          reason: 'the compact view shows the type next to the path, so a read '
+              'and an edit are not flattened into the same line - the list can '
+              'say what the agent looked at as well as what it changed');
+    });
+
     test('a patch names its files inside its own text', () {
-      expect(ChatBubble.changesFile(_patch()), isTrue);
-      expect(ChatBubble.affectedFilesOf(_patch()), [
-        _path,
-        'frontend/test/compact_view_test.dart',
-      ],
+      expect(ChatBubble.affectedFilesOf(_patch()), [_path, _otherPath],
           reason: 'apply_patch carries the patch and no path argument, so a '
               'view that only looked at arguments would report that nothing '
               'changed when something clearly did');
     });
 
-    test('a command has no knowable effect on a file', () {
-      expect(ChatBubble.changesFile(_bash()), isFalse);
-      // The same call given a path it is only reading as an argument.
-      expect(
-        ChatBubble.changesFile(
-            PiTool(name: 'bash', arguments: {'command': 'ls', 'path': '.'})),
-        isFalse,
-        reason: 'guessing that a shell call changed the file it mentions is '
-            'inventing the thing this view is supposed to report',
-      );
-    });
-
-    test('a read is not a change', () {
-      expect(ChatBubble.changesFile(_read()), isFalse,
-          reason: 'the mode answers what did this run *change*. Listing every '
-              'file the agent looked at would read as a list of edits, and '
-              'most of them were not');
-    });
-
     test('a file named twice is named once', () {
       expect(
-        ChatBubble.affectedFilesOf(PiTool(
-          name: 'edit',
-          arguments: {'path': _path, 'file_path': _path},
-        )),
+        ChatBubble.affectedFilesOf(
+            PiTool(name: 'edit', arguments: {'path': _path, 'file_path': _path})),
         [_path],
       );
     });
   });
 
   group('a bubble in each mode', () {
-    testWidgets('compact mode shows the file a call changed, and nothing else',
+    testWidgets('compact mode shows the call and the file it names',
         (tester) async {
       await pumpBubble(tester, _turn([_edit()]), compact: true);
 
-      expect(_shows(tester, _path), isTrue);
+      expect(_shows(tester, 'edit  $_path'), isTrue,
+          reason: 'the call type is what makes a path readable as an event - '
+              'a list of paths alone cannot tell a read from an edit. On one '
+              'line, because they are one fact');
       expect(_shows(tester, _new), isFalse,
           reason: 'the diff is the command half of the card, and the mode '
               'exists to hide it');
       expect(find.text('- oldText'), findsNothing);
       expect(find.text('+ newText'), findsNothing);
-      expect(find.text('edit'), findsNothing,
-          reason: 'the tool name is part of the command. A path with no verb '
-              'on it is the whole of what this mode reports');
       expect(_shows(tester, 'Successfully replaced'), isFalse);
       expect(find.byType(HighlightedCode), findsNothing,
           reason: 'with no command, no diff and no output there is no code to '
               'draw. A card with nothing in it is a box around a path');
     });
 
-    testWidgets('a command and its output are both gone', (tester) async {
+    testWidgets('a command is named, and its command line is not shown',
+        (tester) async {
       await pumpBubble(tester, _turn([_bash()]), compact: true);
 
+      expect(_shows(tester, 'bash'), isTrue,
+          reason: 'what a shell call changed is not knowable from its '
+              'arguments, and the mode does not invent it - it says a command '
+              'ran, which is what it can say');
       expect(_shows(tester, _command), isFalse);
       expect(_shows(tester, _output), isFalse);
-      expect(find.text('bash'), findsNothing);
     });
 
-    testWidgets('a call that changes no file says nothing at all',
+    testWidgets('a read says it read, and does not print the file',
         (tester) async {
       await pumpBubble(tester, _turn([_read()]), compact: true);
 
-      expect(_shows(tester, _path), isFalse);
-      expect(_shows(tester, 'import'), isFalse);
+      expect(_shows(tester, 'read  $_path'), isTrue);
+      expect(_shows(tester, _fileBody), isFalse,
+          reason: 'the file is what the call read, which is its output. Naming '
+              'the path is the fact the mode keeps; reciting it is not');
     });
 
-    testWidgets('a patch is reported as the files it touched', (tester) async {
+    testWidgets('a patch is reported as the calls it was and the files it touched',
+        (tester) async {
       await pumpBubble(tester, _turn([_patch()], content: ''), compact: true);
 
-      expect(_shows(tester, _path), isTrue);
-      expect(_shows(tester, 'frontend/test/compact_view_test.dart'), isTrue);
+      expect(_shows(tester, 'apply_patch  $_path'), isTrue);
+      expect(_shows(tester, _otherPath), isTrue,
+          reason: 'the second file is a continuation line under the first, not '
+              'a second call. A multi-file patch is one thing Pi did');
       expect(_shows(tester, '*** Begin Patch'), isFalse,
           reason: 'the patch is the argument. Reading the paths out of it is '
               'for saying which files it is about, not for printing it');
@@ -259,6 +254,46 @@ void main() {
           reason: 'the label naming what came back. Two cards in one reply is '
               'two of them, which is why this does not count them');
     });
+    testWidgets('a long path wraps inside the bubble rather than overflowing it',
+        (tester) async {
+      // The width a phone actually has, and an absolute path of the shape Pi
+      // reports for a file outside the working directory - long enough that a
+      // layout built out of two flex children would have had to truncate one of
+      // them to fit the other.
+      tester.view.physicalSize = const Size(390, 844);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+
+      final long =
+          '/home/adam/source/repos/pi-mobile-agent/frontend/lib/widgets/chat_bubble.dart';
+      await pumpBubble(
+          tester,
+          _turn([
+            PiTool(name: 'edit', arguments: {'path': long}, result: 'ok'),
+          ], content: ''),
+          compact: true);
+
+      expect(_shows(tester, long), isTrue,
+          reason: 'the whole path is there. Truncating the one fact the mode '
+              'keeps is not compact, it is missing');
+
+      final bubble = tester.getRect(find.byType(ChatBubble));
+      // The line itself, not the bubble's header: both are `Text`, and the
+      // header is the one a bare `find.byType` reaches first.
+      final line = find.byWidgetPredicate((w) =>
+          w is Text && (w.data ?? w.textSpan?.toPlainText() ?? '').contains(long));
+      final rect = tester.getRect(line);
+      final size = tester.getSize(line);
+
+      expect(size.height, greaterThanOrEqualTo(30),
+          reason: 'the fixture is only worth anything if the path really is '
+              'long enough to wrap - one line of 11.5px text is under 20');
+      expect(rect.right, lessThanOrEqualTo(bubble.right + 0.5),
+          reason: 'wrapped, inside the bubble - not overflowing it');
+      expect(rect.left, greaterThanOrEqualTo(bubble.left - 0.5));
+      expect(rect.bottom, lessThanOrEqualTo(bubble.bottom + 0.5));
+    });
   });
 
   group('the rendered bubble and the mode it was rendered in', () {
@@ -275,7 +310,7 @@ void main() {
 
       await pumpBubble(tester, message, compact: true);
       expect(_shows(tester, _output), isFalse);
-      expect(_shows(tester, _path), isTrue,
+      expect(_shows(tester, 'edit  $_path'), isTrue,
           reason: 'and the other half of the swap has to arrive too, not just '
               'the half that left');
 
@@ -336,15 +371,15 @@ void main() {
 
       await pressCompact(tester, 'Full view');
       expect(
-        find.text('Tool calls show only the files they changed - no commands, '
-            'no output'),
+        find.text('Tool calls show the call and any file it names - no '
+            'commands, no output'),
         findsOneWidget,
         reason: 'the row has to read as the state it is now in. "Compact" is '
             'not a thing you can infer from the word',
       );
     });
 
-    testWidgets('turning it on leaves the file and drops the rest, in the chat',
+    testWidgets('turning it on leaves the calls and the files, and drops the rest',
         (tester) async {
       final (service, _) = await pumpHome(tester);
       service.beginRun();
@@ -362,7 +397,7 @@ void main() {
       await openAppMenu(tester);
       await pressCompact(tester, 'Full view');
 
-      expect(_shows(tester, _path), isTrue);
+      expect(_shows(tester, 'edit  $_path'), isTrue);
       expect(_shows(tester, _output), isFalse);
       expect(_shows(tester, _command), isFalse);
       expect(tester.widget<ChatList>(find.byType(ChatList)).compact, isTrue,
@@ -389,8 +424,7 @@ void main() {
 
       expect(
         find.descendant(
-            of: find.byType(TurnStatusRow),
-            matching: find.text('bash $_command')),
+            of: find.byType(TurnStatusRow), matching: find.text('bash $_command')),
         findsOneWidget,
         reason: 'the live line is the app saying what it is doing, and its '
             'words are the call - which is what the mode hides',
@@ -401,7 +435,8 @@ void main() {
 
       expect(find.byType(TurnStatusRow), findsOneWidget,
           reason: 'the row itself stays: a run in flight still has to say it '
-              'is in flight, and its icon already says the kind');
+              'is in flight. The chat carries the call types now, so this line '
+              'only has to carry the kind, and its icon does');
       expect(
         find.descendant(
             of: find.byType(TurnStatusRow), matching: find.text('working')),

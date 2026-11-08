@@ -539,10 +539,10 @@ class ChatBubble extends StatelessWidget {
 
   Widget _buildTool(BuildContext context, PiTool tool, Color toolColor,
       ChatPalette palette) {
-    // The compact view of a call is the file it changed, or nothing at all.
-    // Everything below - the name, the labelled arguments, the command, the diff
-    // halves, the output - is what that mode exists to leave out.
-    if (compact) return _compactToolCall(tool, palette);
+    // The compact view of a call is what it was and which files it is about.
+    // Everything below - the labelled arguments, the command, the diff halves,
+    // the output - is what that mode exists to leave out.
+    if (compact) return _compactToolCall(tool, toolColor, palette);
 
     final args = _buildToolArgs(tool, palette);
 
@@ -574,11 +574,7 @@ class ChatBubble extends StatelessWidget {
             ],
           ),
           ...args,
-          // The half a compact view leaves out. What a tool printed is most of
-          // the height of an agent run, and the question a card answers in that
-          // mode is *what did it run* - so the command, its arguments and any
-          // diff stay exactly as they are. Hiding output is not hiding the work.
-          if (!compact && tool.result != null && tool.result!.isNotEmpty)
+          if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
               child: Column(
@@ -599,50 +595,62 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
-  /// A tool call in the compact view: the file it changed, on one line.
+  /// A tool call in the compact view: what it was, and the files it names.
   ///
   /// Not a smaller card. A card is the shape of "here is an exchange - a command
   /// and what it printed", and this mode keeps neither half of it; drawing one
-  /// with nothing in it would be a box around a path. What is left is the one
-  /// fact the mode is for, so it is drawn as a line of the record rather than as
-  /// a card in it, in `ChatPalette.fileLine` - the quiet text of this app
-  /// measured against the bubble it is now drawn on directly, since there is no
-  /// longer a card between them.
+  /// with nothing in it would be a box around a path.
   ///
-  /// A call that changes no file - a command, a search, a read - renders
-  /// nothing. That is the mode answering the question it was asked: *what did
-  /// this run change*, not *what did it do*.
-  Widget _compactToolCall(PiTool tool, ChatPalette palette) {
-    if (!changesFile(tool)) return const SizedBox.shrink();
+  /// The type is what makes a path honest to read. `read a file` and `edit a
+  /// file` are different events, and a list of paths alone would flatten them;
+  /// named, the list can include what the agent looked at as well as what it
+  /// changed. The name is in the accent that already means *Pi did this*, the
+  /// paths in `ChatPalette.fileLine` - the quiet text of this app measured
+  /// against the bubble it is drawn on, since there is no card between them.
+  ///
+  /// A call that names no file - a shell command, a search - is still its type.
+  /// What a command changed is not knowable from its arguments, and the mode
+  /// does not invent it; it says that a command ran, which is what it can say.
+  ///
+  /// One text run per line, name and path as spans of it, rather than a `Row` of
+  /// two texts. A flex row has to split the width between them, which truncates a
+  /// path to make room for a name that needed far less, or overflows the bubble
+  /// when a tool's name is long. One run wraps where it needs to and nothing is
+  /// cut off - and the whole line is one thing to select.
+  Widget _compactToolCall(PiTool tool, Color toolColor, ChatPalette palette) {
     final files = affectedFilesOf(tool);
-    if (files.isEmpty) return const SizedBox.shrink();
+    // A call with no file is still one line: its type.
+    final lineCount = files.isEmpty ? 1 : files.length;
+
+    final nameSpan = TextSpan(
+      text: '${tool.name}  ',
+      style: TextStyle(
+        fontSize: _font(11.5),
+        fontWeight: FontWeight.w700,
+        color: toolColor,
+      ),
+    );
+    final pathStyle = TextStyle(
+      fontFamily: 'JetBrainsMono',
+      fontSize: _font(11.5),
+      color: palette.fileLine,
+    );
 
     return Padding(
-      padding: const EdgeInsets.only(top: 2),
+      padding: const EdgeInsets.only(top: 3),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final path in files)
+          for (var i = 0; i < lineCount; i++)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Icon(Icons.description, size: _font(13), color: palette.fileLine),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      path,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontFamily: 'JetBrainsMono',
-                        fontSize: _font(11.5),
-                        color: palette.fileLine,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+              // Continuation paths line up under the first one rather than under
+              // the name, so a multi-file call reads as one call.
+              padding: EdgeInsets.only(top: i == 0 ? 0 : 1, left: i == 0 ? 0 : 8),
+              child: Text.rich(TextSpan(children: [
+                if (i == 0) nameSpan,
+                if (i < files.length)
+                  TextSpan(text: files[i], style: pathStyle),
+              ])),
             ),
         ],
       ),
@@ -683,27 +691,6 @@ class ChatBubble extends StatelessWidget {
     }
 
     return found;
-  }
-
-  /// A call whose effect is a file: an editor tool by name or by shape, or one
-  /// of the file verbs. A shell command is excluded whatever it was given - what
-  /// `git status` or a build changes is not knowable from its arguments, and a
-  /// view that guessed would be making up the thing it is supposed to report.
-  static bool changesFile(PiTool tool) {
-    final name = tool.name.toLowerCase();
-    if (isShellTool(name)) return false;
-    const fileVerbs = {
-      'delete',
-      'remove',
-      'move',
-      'rename',
-      'copy',
-      'insert',
-      'apply_patch',
-      'patch',
-    };
-    if (fileVerbs.contains(name)) return true;
-    return isEditTool(tool);
   }
 
   /// A tool call's arguments, drawn as arguments.
