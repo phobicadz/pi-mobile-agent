@@ -10,6 +10,7 @@ import '../models/pi_models.dart';
 import '../utils/chat_palette.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
+import '../utils/markdown_tables.dart';
 import '../utils/responsive.dart';
 import '../utils/toast.dart';
 
@@ -474,57 +475,75 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
+  /// The padding a table's cells get.
+  ///
+  /// flutter_markdown's own default is 16 left and right, which on a phone is
+  /// 32px of a 73px column spent on nothing - and whatever is left inside is
+  /// what has to wrap. Measured on the same table: 10 and 6 makes it a third
+  /// shorter and a third cheaper to scroll past.
+  static const EdgeInsets _tableCellPadding =
+      EdgeInsets.symmetric(horizontal: 10, vertical: 6);
+
   Widget _buildContent(BuildContext context, String text, Color textColor,
       ChatPalette palette) {
-    final isDark = palette.isDark;
     try {
-      // Check if it looks like markdown
-      if (text.contains('```') || text.contains('#') || text.contains('**')) {
+      // Check if it looks like markdown. A pipe is in that list because a table
+      // with no other markup in it was being drawn as its source - a wall of
+      // `|` characters - which is the same complaint as a slow table, only
+      // uglier: the reply had the structure and the app refused to show it.
+      if (text.contains('```') ||
+          text.contains('#') ||
+          text.contains('**') ||
+          text.contains('|')) {
         // For very large content, truncate for markdown parsing to improve performance
-        final renderText = text.length > 8000 ? '${text.substring(0, 8000)}…' : text;
-        return MarkdownBody(
-          data: renderText,
-          // False on purpose: this bubble is inside a SelectionArea. `true` here
-          // would put a separate text field around every block and split the
-          // reply back into pieces that cannot be selected across.
-          selectable: false,
-          // Fenced code blocks get full syntax highlighting.
-          builders: {
-            'pre': _HighlightCodeBuilder(
-                isDark: isDark,
-                fontSize: _font(13),
-                background: palette.codeBackground,
-                foreground: palette.codeForeground),
-            'a': _LinkBuilder(
-                color: palette.link, fontSize: _font(14)),
-          },
-          styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
-            p: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
-            tableBody: TextStyle(fontSize: _font(13), color: textColor),
-            code: TextStyle(
-              fontSize: _font(13),
-              fontFamily: 'JetBrainsMono',
-              color: textColor,
-              backgroundColor: palette.inlineCodeBackground,
-            ),
-            h1: TextStyle(
-                fontSize: _font(20),
-                fontWeight: FontWeight.bold,
-                color: textColor),
-            h2: TextStyle(
-                fontSize: _font(18),
-                fontWeight: FontWeight.bold,
-                color: textColor),
-            h3: TextStyle(
-                fontSize: _font(16),
-                fontWeight: FontWeight.bold,
-                color: textColor),
-            strong: TextStyle(
-                fontSize: _font(14),
-                fontWeight: FontWeight.bold,
-                color: textColor),
-            blockquote: TextStyle(fontSize: _font(14), color: textColor),
-          ),
+        final renderText =
+            text.length > 8000 ? '${text.substring(0, 8000)}…' : text;
+        final segments = splitMarkdownTables(renderText);
+        if (segments.length == 1 && !segments.first.isTable) {
+          return _markdownBody(
+              context, segments.first.source, textColor, palette);
+        }
+
+        // A reply is a document, and a document is laid out by what is left
+        // over. A table is a grid, and a grid asked how wide its columns want
+        // to be answers that question under the width it has been given - which
+        // is why a table on a phone used to be six columns of 73px and a screen
+        // and a half tall. Split out, a table gets asked the question properly:
+        // measured from its own text, at the width its own text needs.
+        //
+        // A table that fits is rendered exactly as it was. A table that does
+        // not scrolls sideways, which is what this app already does for a code
+        // block, and what every other narrow reader does for a table.
+        final bodyStyle = TextStyle(fontSize: _font(13), color: textColor);
+        final codeStyle = TextStyle(
+            fontSize: _font(13),
+            fontFamily: 'JetBrainsMono',
+            color: textColor);
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final segment in segments)
+              segment.isTable
+                  ? MarkdownTableFrame(
+                      // Once, here, inside the body that is already cached -
+                      // which is the only reason measuring a whole table is not
+                      // the cost this change exists to remove.
+                      preferredWidth: tablePreferredWidth(
+                        segment.source,
+                        bodyStyle: bodyStyle,
+                        codeStyle: codeStyle,
+                        cellPadding: _tableCellPadding,
+                      ),
+                      tableBuilder: (context, width) => SizedBox(
+                        width: width,
+                        child: _markdownBody(
+                            context, segment.source, textColor, palette),
+                      ),
+                    )
+                  : _markdownBody(
+                      context, segment.source, textColor, palette),
+          ],
         );
       }
     } catch (e) {
@@ -534,6 +553,60 @@ class ChatBubble extends StatelessWidget {
     return Text(
       text,
       style: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
+    );
+  }
+
+  /// One piece of the reply, rendered as Markdown.
+  ///
+  /// Splitting a reply into pieces is about the width each piece is laid out at
+  /// and nothing else: the same builders, the same style sheet, so a table cut
+  /// out of a document looks like the document it came from.
+  Widget _markdownBody(BuildContext context, String data, Color textColor,
+      ChatPalette palette) {
+    final isDark = palette.isDark;
+    return MarkdownBody(
+      data: data,
+      // False on purpose: this bubble is inside a SelectionArea. `true` here
+      // would put a separate text field around every block and split the
+      // reply back into pieces that cannot be selected across.
+      selectable: false,
+      // Fenced code blocks get full syntax highlighting.
+      builders: {
+        'pre': _HighlightCodeBuilder(
+            isDark: isDark,
+            fontSize: _font(13),
+            background: palette.codeBackground,
+            foreground: palette.codeForeground),
+        'a': _LinkBuilder(color: palette.link, fontSize: _font(14)),
+      },
+      styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+        p: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
+        tableBody: TextStyle(fontSize: _font(13), color: textColor),
+        tableCellsPadding: _tableCellPadding,
+        code: TextStyle(
+          fontSize: _font(13),
+          fontFamily: 'JetBrainsMono',
+          color: textColor,
+          backgroundColor: palette.inlineCodeBackground,
+        ),
+        h1: TextStyle(
+            fontSize: _font(20),
+            fontWeight: FontWeight.bold,
+            color: textColor),
+        h2: TextStyle(
+            fontSize: _font(18),
+            fontWeight: FontWeight.bold,
+            color: textColor),
+        h3: TextStyle(
+            fontSize: _font(16),
+            fontWeight: FontWeight.bold,
+            color: textColor),
+        strong: TextStyle(
+            fontSize: _font(14),
+            fontWeight: FontWeight.bold,
+            color: textColor),
+        blockquote: TextStyle(fontSize: _font(14), color: textColor),
+      ),
     );
   }
 
@@ -1130,6 +1203,7 @@ class _BubbleBodyCache {
       LinkedHashMap<int, List<Widget>>();
   /// Increased to 200 entries for better performance in longer conversations.
   static const int _maxEntries = 200;
+
 
   static List<Widget>? lookup(int key) {
     final value = _entries.remove(key);
