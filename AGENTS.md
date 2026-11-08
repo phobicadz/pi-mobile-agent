@@ -113,15 +113,24 @@ Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` inste
   belongs at the right end (the git chip) goes in `actions`, which is what the bar actually
   right-aligns. Measured positions are the way to check this: `tester.getRect(...)` at both a
   phone width and a desktop width, because centring only shows up when the window is wide.
-- **Centring the title box is not centring the words in it.** The middle box is symmetric by
-  construction (`Expanded(a)`, the name, `Expanded(a)` — its centre is the bar's centre whatever
-  the flex numbers are), and the name control fills it, so where the *text* lands is decided by
-  that control's own layout. The chat icon in front of the name pushed the words 12px right of
-  the middle at every width — 12 being half of 18 + 6, the icon and its gap — which is what
-  `test/appbar_session_name_test.dart` was failing on for a long time while the flexes were
-  correct. The control now ends with the same width of nothing it begins with
-  (`iconWidth + iconGap`), so the words sit dead-centre and the icon hangs to the left of centre
-  on purpose. Change one side and you have to change the other.
+- **The session name is anchored to the right end of the title area, not centred.**
+  `Expanded(flex: 1, folder)` then `Flexible(flex: 1, fit: loose, Align(centerRight, name))`: the
+  directory holds the left half, the name the right, flush with the edge the bar already right-aligns
+  its own controls to. Two reasons, both measured at a phone and a desktop width in
+  `test/appbar_session_name_test.dart`.
+  - Centring needed a counterweight: an identical empty box on the name's right, a third of the title
+    area doing nothing, which at 390px was the difference between a readable directory name and an
+    icon with one character after it (14px of text). Anchoring spends nothing on balance.
+  - Centring also made the name's position a function of its own length — a bar whose centre shifts
+    as you work. Anchored, a short name and a long one end in the same place, and the directory keeps
+    the room it was given either way; the two tests are comparisons of a short name against a long one
+    because that is what the design promises.
+  - And **centring a box is not centring the words in it**, which is what the old failure looked
+    like: the middle box *was* exactly centred (`Expanded(a)`, name, `Expanded(a)`), and the name
+    control filled it, so the words started where the control's own Row put them — half an icon
+    (18 + 6 = 24, so 12px) right of the middle, at every width. If anything here is ever centred
+    again, the icon in front of the name has to be paid for by the same width of nothing on its other
+    side.
 - **Don't put `Expanded`/`Flexible` inside a `Tooltip`'s child.** The widget a
   `Tooltip` keeps in place is laid out with no width constraint of its own, so a
   flex child inside that Row throws `RenderFlex children have non-zero flex but

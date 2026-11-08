@@ -821,17 +821,24 @@ class _HomeScreenState extends State<HomeScreen> {
             // simply nothing to show rather than a placeholder for an unnamed chat.
             final sessionName = viewModel.sessionName?.trim() ?? '';
 
-            // Two controls in one Row with the name's box exactly in the middle
-            // of it. With the two outer flexes equal - a, b, a - the middle box
-            // spans [a, a+b] of (2a+b), whose centre is (a + b/2) / (2a + b) = 1/2
-            // whatever the numbers are. That is why the two side flexes match, and
-            // why the name's share is the smaller one: a name that has to be
-            // squeezed is the one that reads as secondary.
+            // Two controls in one Row, each in its own half of it: the directory
+            // at the left end, the conversation at the right, flush against the
+            // controls the bar right-aligns. That is the order the question is
+            // asked in - which directory, then which conversation in it - and it
+            // is the shape an app bar already has.
+            //
+            // Centring the name used to need a counterweight: an identical empty
+            // box on its right, a third of the title area doing nothing at all.
+            // On a phone that was the difference between a readable directory name
+            // and an icon with one character after it. Right-aligned, nothing is
+            // spent on balance, and each half is *stable*: the name's position
+            // does not move with its length, and what the directory can show does
+            // not change with the name.
             //
             // The name belongs in the bar because it is the other half of "where am
-            // I": which directory, and which conversation in it. It is also the only
-            // place the live session's name is ever visible - the picker lists saved
-            // sessions, and the one being had is the one not there.
+            // I". It is also the only place the live session's name is ever visible
+            // - the picker lists saved sessions, and the one being had is the one
+            // not there.
             //
             // The flex lives in this Row and each Tooltip wraps its Text directly.
             // The other way round - a Tooltip holding a Row with an Expanded in it -
@@ -892,10 +899,9 @@ class _HomeScreenState extends State<HomeScreen> {
             void openPicker() => _showSessionPicker(context);
             final pickerEnabled = !viewModel.resumingSession;
 
-            // The chat bubble icon that always appears before the session name.
-            //
-            // The two widths are named because the icon's share has to be matched
-            // exactly, twice over - see `nameControl`.
+            // The chat bubble icon that always appears before the session name:
+            // the one mark that says the words next to it are a control and not a
+            // label.
             const iconWidth = 18.0;
             const iconGap = 6.0;
             final sessionIcon = Padding(
@@ -946,16 +952,6 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                         ),
                       ),
-                      // The same width of nothing, on the other side of the words.
-                      //
-                      // The flexes make the *box* dead-centre in the bar. Left at
-                      // that, the icon and the words are centred as a pair, which
-                      // puts the words half an icon to the right of the middle -
-                      // 12px, on every width, because it is half of 18 + 6. The
-                      // words are the thing a person reads off this bar, so they are
-                      // the thing that gets centred; the icon hangs to the left of
-                      // centre and the empty space on the right is what pays for it.
-                      SizedBox(width: iconWidth + iconGap),
                     ],
                   ),
                 ),
@@ -973,9 +969,11 @@ class _HomeScreenState extends State<HomeScreen> {
               // box measured 37.5px end to end. An icon at the size the folder's is
               // fits where a button would overflow the bar.
               //
-              // It is not a flex child, so it is laid out at its own width first and
-              // the two Expandeds then split what is left equally - which puts it in
-              // the middle without borrowing space the directory needs.
+              // Not a flex child: it is laid out at its own width, and the
+              // directory's half is what is left of the box - so an icon-only way
+              // into the list costs the path nothing. It sits at the right end,
+              // which is where the named bar puts its name, so the way in is in
+              // the same place whether or not there are words to click.
               final sessionsControl = MouseRegion(
                 cursor: SystemMouseCursors.click,
                 child: InkWell(
@@ -1002,39 +1000,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Expanded(flex: 1, child: folderControl),
                   sessionsControl,
-                  const Expanded(
-                    flex: 1,
-                    child: SizedBox.shrink(),
-                  ),
                 ],
               );
             }
 
-            // Responsive flex ratios: on small screens, prioritize the session name
-            // visibility by reducing folder width. On desktop, center it more.
-            final screenWidth = MediaQuery.of(context).size.width;
-            final isSmallScreen = screenWidth < ResponsiveSizes.phoneMaxWidth;
-            
-            final (folderFlex, nameFlex, spacerFlex) = isSmallScreen
-                ? (2, 5, 2)      // Small screens: name gets more space
-                : (4, 3, 4);     // Larger screens: keep the centered design
-            
+            // Equal halves, and the name's half is the loose one: a name longer
+            // than its half ellipsizes inside it, and the directory keeps what it
+            // was going to show either way. `Align` is what makes the name *fixed*
+            // to the right end rather than floating at the left of whatever room it
+            // was given - a short name and a long one end in the same place.
             return Row(
               children: [
-                Expanded(flex: folderFlex, child: folderControl),
-                // Centred: the box is centred, and Center puts the text in the middle
-                // of a box it does not have to fill. Loose-fit, so a short name costs
-                // the bar nothing and a long one ellipsizes inside its own share.
+                Expanded(flex: 1, child: folderControl),
                 Flexible(
-                  flex: nameFlex,
+                  flex: 1,
                   fit: FlexFit.loose,
-                  child: Center(child: nameControl),
-                ),
-                // The counterweight. Without an identical share on the right there is
-                // no centre to put anything in.
-                Expanded(
-                  flex: spacerFlex,
-                  child: const SizedBox.shrink(),
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: nameControl,
+                  ),
                 ),
               ],
             );

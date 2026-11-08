@@ -126,6 +126,24 @@ void main() {
   Finder sessionName() => find.descendant(
       of: find.byType(AppBar), matching: find.text('garden siren diagnosis'));
 
+  /// The three boxes the bar is made of, as laid out.
+  ///
+  /// The title box is the space the AppBar leaves between the menu button and the
+  /// actions - everything the bar puts in its `title` has to live inside it, and
+  /// the bar's own `actions` start where it ends.
+  ({Rect title, Rect name, Rect folder}) measure(WidgetTester tester, String name) =>
+      (
+        title: tester.getRect(find
+            .descendant(
+                of: find.byType(AppBar), matching: find.byType(Consumer<PiViewModel>))
+            .first),
+        name: tester.getRect(
+            find.descendant(of: find.byType(AppBar), matching: find.text(name)).first),
+        folder: tester.getRect(find
+            .descendant(of: find.byType(AppBar), matching: find.text('pi-mobile-agent'))
+            .first),
+      );
+
   testWidgets('the bar names the conversation next to the directory',
       (tester) async {
     final (_, viewModel) =
@@ -165,39 +183,51 @@ void main() {
     viewModel.dispose();
   });
 
-  testWidgets('the name sits in the middle of the bar, at both widths',
+  testWidgets('the name is fixed to the right end of the bar, at both widths',
       (tester) async {
+    // A short name and a long one, measured against each other. Anchoring is the
+    // design here, and a design is only worth the name if the two things it
+    // promises are the two things that stay true: the name ends in the same place
+    // whatever it says, and the directory is not what gives way when it is long.
     for (final width in const [Size(390, 844), Size(1280, 900)]) {
-      final (_, viewModel) = await pumpHome(
+      final first = await pumpHome(
         tester,
         sessionName: 'garden siren diagnosis',
         width: width,
       );
+      final short = measure(tester, 'garden siren diagnosis');
+      first.$2.dispose();
 
-      // The title box is the space the AppBar leaves between the menu button and
-      // the actions, and it is the box the name has to be centred in - the bar
-      // itself would be centred on the model picker.
-      final title = tester.getRect(
-        find
-            .descendant(
-                of: find.byType(AppBar),
-                matching: find.byType(Consumer<PiViewModel>))
-            .first,
+      final second = await pumpHome(
+        tester,
+        sessionName: 'refactor the mobile agent title bar layout and context meter',
+        width: width,
       );
-      final name = tester.getRect(sessionName());
+      final long = measure(
+          tester, 'refactor the mobile agent title bar layout and context meter');
 
-      expect((name.center.dx - title.center.dx).abs(), lessThan(2),
-          reason: 'the middle box is bounded by equal flexes on both sides, so '
-              'its centre is the title\'s centre whatever the numbers are '
-              '(width $width)');
-      expect(name.center.dx,
-          greaterThan(tester
-              .getRect(find.descendant(
-                  of: find.byType(AppBar), matching: find.text('pi-mobile-agent')))
-              .right),
-          reason: 'and centring it does not mean laying it over the directory');
+      for (final measured in [short, long]) {
+        expect(measured.title.right - measured.name.right,
+            inInclusiveRange(0, 12),
+            reason: 'the name is anchored to the right end of the title area - '
+                'where the bar already right-aligns things - and the only thing '
+                'between it and that edge is its own tap padding (width $width)');
+        expect(measured.name.right,
+            lessThan(tester.getRect(find.byType(AppBar)).right),
+            reason: 'and it is inside the bar, not past it');
+        expect(measured.name.left, greaterThan(measured.folder.right),
+            reason: 'the two halves of "where am I" do not lie on top of each '
+                'other to get there');
+      }
 
-      viewModel.dispose();
+      expect(long.name.right, closeTo(short.name.right, 1),
+          reason: 'a name that moved with its own length would be a bar whose '
+              'centre shifts as you work');
+      expect(long.folder, equals(short.folder),
+          reason: 'and the directory keeps the room it was given, whatever the '
+              'name next to it says');
+
+      second.$2.dispose();
     }
   });
 
@@ -219,26 +249,40 @@ void main() {
 
   testWidgets('a long name gives way rather than pushing the directory out',
       (tester) async {
-    final (_, viewModel) = await pumpHome(
-      tester,
-      sessionName: 'refactor the mobile agent title bar layout and context meter',
-    );
+    for (final width in const [Size(390, 844), Size(1280, 900)]) {
+      final short = await pumpHome(
+        tester,
+        sessionName: 'garden siren diagnosis',
+        width: width,
+      );
+      final shortFolder = tester.getRect(folderName());
+      short.$2.dispose();
 
-    expect(folderName(), findsOneWidget,
-        reason: 'the directory is the primary half of the bar; a session name '
-            'that squeezed it out would be labelling the wrong thing');
+      const longName =
+          'refactor the mobile agent title bar layout and context meter';
+      final (_, viewModel) =
+          await pumpHome(tester, sessionName: longName, width: width);
 
-    final bar = tester.getRect(find.byType(AppBar));
-    final name = tester.getRect(find.descendant(
-      of: find.byType(AppBar),
-      matching: find.textContaining('refactor the mobile agent'),
-    ));
-    expect(name.right, lessThanOrEqualTo(bar.right));
-    expect(name.width, lessThan(bar.width * 0.4),
-        reason: 'it gets the smaller share of the flex, so a long one ellipsizes '
-            'its own half instead of the path');
+      final bar = tester.getRect(find.byType(AppBar));
+      final title = tester.getRect(find
+          .descendant(
+              of: find.byType(AppBar), matching: find.byType(Consumer<PiViewModel>))
+          .first);
+      final name = tester.getRect(find
+          .descendant(of: find.byType(AppBar), matching: find.text(longName))
+          .first);
 
-    viewModel.dispose();
+      expect(name.right, lessThanOrEqualTo(bar.right));
+      expect(name.width, lessThanOrEqualTo(title.width / 2),
+          reason: 'the name is capped at its own half of the title area, so a '
+              'long one ellipsizes there instead of taking the path\'s room off '
+              'the bar (width $width)');
+      expect(tester.getRect(folderName()).width, equals(shortFolder.width),
+          reason: 'which is the whole point of the cap: the directory shows the '
+              'same thing it was going to show either way');
+
+      viewModel.dispose();
+    }
   });
 
   testWidgets('renaming the live session renames the bar', (tester) async {
