@@ -644,6 +644,46 @@ class FileListing {
   }
 }
 
+/// One of the user's GitHub repositories, as the clone picker lists them.
+///
+/// [slug] is `owner/name`, which is what a clone is asked for; [name] is the
+/// directory it will land in, which is the thing the file browser then shows.
+class GitHubRepo {
+  final String slug;
+  final String name;
+  final String owner;
+  final String url;
+  final bool isPrivate;
+  final String? description;
+
+  /// When it was last pushed to. The backend lists most recent first, so this
+  /// is only ever shown — the order is already decided.
+  final DateTime? pushedAt;
+
+  GitHubRepo({
+    required this.slug,
+    required this.name,
+    required this.owner,
+    required this.url,
+    this.isPrivate = false,
+    this.description,
+    this.pushedAt,
+  });
+
+  factory GitHubRepo.fromJson(Map<String, dynamic> json) {
+    final pushed = json['pushedAt'] as String?;
+    return GitHubRepo(
+      slug: json['slug'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      owner: json['owner'] as String? ?? '',
+      url: json['url'] as String? ?? '',
+      isPrivate: json['isPrivate'] == true,
+      description: json['description'] as String?,
+      pushedAt: pushed == null ? null : DateTime.tryParse(pushed),
+    );
+  }
+}
+
 class FileContent {
   final String content;
   final int size;

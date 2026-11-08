@@ -228,6 +228,37 @@ class PiService {
     return data['path'] as String? ?? name;
   }
 
+  /// The user's own GitHub repositories, most recently pushed first.
+  ///
+  /// The backend reads these from the GitHub CLI on this machine, so it can
+  /// reach private repositories without the app ever holding a token.
+  Future<List<GitHubRepo>> listGitHubRepos() async {
+    final response = await _sendCommand('list_repos');
+    final data = unwrapData(response, command: 'list_repos');
+    return (data['repos'] as List<dynamic>? ?? [])
+        .map((e) => GitHubRepo.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Clone [repo] (`owner/name`, or a github.com URL) into [path].
+  ///
+  /// Omit [path] to clone into the directory Pi is working in. Returns the
+  /// directory the clone made.
+  ///
+  /// The timeout is longer than for any other command because a first clone of
+  /// a real repository is the case this has to survive; the backend gives up at
+  /// five minutes and says so, and this waits past that so its reason — not a
+  /// client-side "command timeout" — is what comes back.
+  Future<String> cloneGitHubRepo({required String repo, String? path}) async {
+    final response = await _sendCommand(
+      'clone_repo',
+      params: {'repo': repo, if (path != null) 'path': path},
+      timeout: const Duration(minutes: 6),
+    );
+    final data = unwrapData(response, command: 'clone_repo');
+    return data['path'] as String? ?? '';
+  }
+
   /// Read the contents of a text file.
   Future<FileContent> readFile(String path) async {
     final response = await _sendCommand('read_file', params: {'path': path});

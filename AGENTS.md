@@ -44,12 +44,14 @@ backend/src/index.ts        Express + WebSocket server; owns currentCwd, spawns 
 backend/src/pi-rpc-client.ts  RPC protocol wrapper over the pi child's stdio
 backend/src/session-store.ts  Reads Pi's on-disk session history (list_sessions, sessionCwdOf)
 backend/src/fs-browser.ts     Directory/file browsing for the app's folder picker
+backend/src/github-repos.ts   Listing the user's GitHub repos + cloning one, through the gh CLI
 frontend/lib/main.dart        Entry; resolves the WebSocket URL (web: same host that served the page)
 frontend/lib/services/pi_service.dart   WebSocket client, command send + event/state streams
 frontend/lib/providers/pi_view_model.dart  All app state (ChangeNotifier)
 frontend/lib/models/pi_models.dart      Wire types (PiState, PiMessage, PiModel, PiUsage, …)
 frontend/lib/screens/home_screen.dart   Chat screen + AppBar + drawer menu
-frontend/lib/widgets/                 chat_list, chat_bubble, file_browser, model_selector, context_meter
+frontend/lib/widgets/                 chat_list, chat_bubble, file_browser, model_selector, context_meter,
+                                    github_clone_dialog
 frontend/lib/utils/chat_palette.dart    The chat's colours, read off the active theme + colour scheme
 frontend/lib/utils/code_theme.dart      Which syntax palette the code is coloured with, on the ThemeData
 frontend/lib/utils/editor_palettes.dart The editor themes' surfaces *and* their syntax palettes
@@ -74,6 +76,17 @@ Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` inste
   has no name, which is the app's signal to show nothing.
 - **Sessions are persisted** (no `--no-session`) so `/resume` can reload them. Resuming
   re-enters the directory recorded in the session file.
+- **A clone is a child process, not a Pi command.** `list_repos` / `clone_repo` (the
+  file browser's "Clone from GitHub") are handled in `index.ts` through
+  `github-repos.ts`, which shells out to the **GitHub CLI** — the only thing on this box
+  that authenticates to a private repository, so the app never holds a token. `run()` there
+  is an async `spawn`, never `spawnSync`: this same process relays Pi's events to every open
+  browser, and a blocked event loop is a frozen chat on every phone while one directory is
+  being copied. It clones into **the directory the browser is showing**, not `currentCwd`
+  (the two differ as soon as you browse elsewhere); a name that already exists there is
+  refused rather than cloned alongside it; a failed clone removes what it half-wrote so the
+  retry is not blocked by it; and the Flutter side waits six minutes to the backend's five so
+  the backend's reason is what comes back rather than a client-side "Command timeout".
 - **`PI_PROVIDER` / `PI_MODEL` are unset in the unit on purpose** — Pi uses its own
   configured provider/model. Set them only to override.
 - **The web build needs no `--dart-define`**: it connects to the host that served the

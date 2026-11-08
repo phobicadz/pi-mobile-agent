@@ -16,6 +16,7 @@ import {
   setSessionNameOnDisk,
 } from "./session-store.js";
 import { listDirectory, listFiles, createDirectory, readFile, resolveExistingDir, shrinkHome } from "./fs-browser.js";
+import { cloneGitHubRepo, listGitHubRepos } from "./github-repos.js";
 import {
   loadNotificationsEnabled,
   saveNotificationsEnabled,
@@ -551,6 +552,76 @@ async function handleClientMessage(ws: WebSocket, message: any) {
             path: created,
             parent,
             name: params.name.trim(),
+          },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  // The user's own GitHub repositories, for the file browser's clone picker.
+  if (command === "list_repos") {
+    try {
+      const repos = await listGitHubRepos();
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: { repos },
+        })
+      );
+    } catch (err) {
+      ws.send(
+        JSON.stringify({
+          type: "error",
+          id,
+          command,
+          error: (err as Error).message,
+        })
+      );
+    }
+    return;
+  }
+
+  if (command === "clone_repo") {
+    try {
+      const parent = params.path
+        ? resolveExistingDir(params.path)
+        : resolveExistingDir(currentCwd) ?? os.homedir();
+      if (!parent) {
+        ws.send(
+          JSON.stringify({
+            type: "response",
+            id,
+            command,
+            success: false,
+            error: `Not a directory: ${params.path}`,
+          })
+        );
+        return;
+      }
+      const cloned = await cloneGitHubRepo(parent, params.repo);
+      ws.send(
+        JSON.stringify({
+          type: "response",
+          id,
+          command,
+          success: true,
+          data: {
+            ...cloned,
+            parent,
+            cwdDisplay: shrinkHome(cloned.path),
           },
         })
       );

@@ -1300,6 +1300,32 @@ class PiViewModel extends ChangeNotifier {
     }
   }
 
+  /// The user's GitHub repositories, for the clone picker in the file browser.
+  /// Returns null on failure (with [error] set).
+  Future<List<GitHubRepo>?> listGitHubRepos() async {
+    _error = null;
+    try {
+      return await piService.listGitHubRepos();
+    } catch (e) {
+      _error = 'Failed to list GitHub repositories: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
+  /// Clone a GitHub repository into [path]. Returns the directory it made, or
+  /// null on failure (with [error] set).
+  Future<String?> cloneGitHubRepo({required String repo, String? path}) async {
+    _error = null;
+    try {
+      return await piService.cloneGitHubRepo(repo: repo, path: path);
+    } catch (e) {
+      _error = 'Failed to clone: $e';
+      _notifyNow();
+      return null;
+    }
+  }
+
   /// Read the contents of a text file.
   Future<FileContent?> readFile(String path) async {
     _error = null;

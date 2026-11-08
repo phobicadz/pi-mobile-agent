@@ -3,7 +3,9 @@ import 'package:provider/provider.dart';
 import '../models/pi_models.dart';
 import '../providers/pi_view_model.dart';
 import '../utils/code_highlight.dart';
+import '../utils/toast.dart';
 import 'file_viewer.dart';
+import 'github_clone_dialog.dart';
 
 /// Browse and view files in the current directory.
 class FileBrowser extends StatefulWidget {
@@ -92,6 +94,30 @@ class _FileBrowserState extends State<FileBrowser> {
         _error = vm.error ?? 'Could not change the working directory.';
       });
     }
+  }
+
+  /// Clone one of the user's GitHub repositories into the directory being shown.
+  ///
+  /// Then go into it. The reason a person clones a repository here is to work on
+  /// it, and the sheet is now sitting in it with "Set as working directory" one
+  /// tap away — which is the whole flow, and also the clearest possible proof
+  /// that the clone worked.
+  Future<void> _cloneFromGitHub() async {
+    final listing = _listing;
+    if (listing == null || _loading || _applying) return;
+
+    final vm = context.read<PiViewModel>();
+    final cloned = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => GitHubCloneDialog(
+        viewModel: vm,
+        intoPath: listing.path,
+      ),
+    );
+
+    if (cloned == null || cloned.isEmpty || !mounted) return;
+    showToast(context, 'Cloned ${_dirName(cloned)}');
+    _browse(cloned);
   }
 
   Future<void> _showCreateFolderDialog() async {
@@ -241,6 +267,12 @@ class _FileBrowserState extends State<FileBrowser> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 else ...[
+                  IconButton(
+                    icon: const Icon(Icons.cloud_download),
+                    tooltip: 'Clone from GitHub',
+                    onPressed:
+                        listing == null ? null : _cloneFromGitHub,
+                  ),
                   IconButton(
                     icon: const Icon(Icons.create_new_folder),
                     tooltip: 'New folder',
