@@ -131,6 +131,7 @@ Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` inste
     (18 + 6 = 24, so 12px) right of the middle, at every width. If anything here is ever centred
     again, the icon in front of the name has to be paid for by the same width of nothing on its other
     side.
+- **Both halves of the bar's title share one style** (`barTitle` in the `title:` builder) — `titleMedium`, 16px medium. They are the same kind of thing, which directory and which conversation in it, and they had drifted: the directory had *no* style and inherited the AppBar's title style (Roboto 22px regular) while the name carried an explicit `titleSmall` bold (14px). A control with no style is a control whose font nobody can read in the code, which is how they diverged in the first place. `titleMedium` is Material's app-bar title size and the middle of the two; inheriting the bar's default is the lazier way to make them match and it is 22px. `the same words in either half of the bar render the same size` is the test that holds it: it pumps a cwd whose basename *is* the session name and compares the two rendered sizes, so family, size or weight diverging fails a layout rather than a style comparison.
 - **Don't put `Expanded`/`Flexible` inside a `Tooltip`'s child.** The widget a
   `Tooltip` keeps in place is laid out with no width constraint of its own, so a
   flex child inside that Row throws `RenderFlex children have non-zero flex but

@@ -95,6 +95,7 @@ void main() {
   Future<(_NamedService, PiViewModel)> pumpHome(
     WidgetTester tester, {
     String? sessionName,
+    String? cwd,
     Size width = const Size(390, 844),
   }) async {
     tester.view.physicalSize = width;
@@ -102,7 +103,9 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    final service = _NamedService()..sessionName = sessionName;
+    final service = _NamedService()
+      ..sessionName = sessionName
+      ..cwd = cwd ?? '/home/adam/source/repos/pi-mobile-agent';
     final viewModel = PiViewModel(piService: service);
     await tester.pumpWidget(
       ChangeNotifierProvider<AppearanceController>(
@@ -154,9 +157,13 @@ void main() {
             'of "where am I", and only the directory was ever on screen');
 
     final style = tester.widget<Text>(sessionName()).style!;
-    expect(style.fontWeight, FontWeight.bold,
-        reason: 'this is the centre of the bar and the name of what the rest of '
-            'the screen is about, not a caption on the directory');
+    final folderStyle = tester.widget<Text>(folderName()).style!;
+    expect(style.fontSize, folderStyle.fontSize,
+        reason: 'the two halves of "where am I" are one line of text, not a '
+            'heading and a caption - the directory used to inherit the bar\'s '
+            '22px title style while the name carried its own 14px bold one');
+    expect(style.fontWeight, folderStyle.fontWeight);
+    expect(style.fontFamily, folderStyle.fontFamily);
 
     final folder = tester.getRect(folderName());
     final name = tester.getRect(sessionName());
@@ -164,6 +171,32 @@ void main() {
         reason: 'after the folder name, which is the order the question is '
             'asked in');
     expect(name.left, lessThan(name.right));
+
+    viewModel.dispose();
+  });
+
+  testWidgets('the same words in either half of the bar render the same size',
+      (tester) async {
+    // A directory named exactly like the conversation, which is the only way to
+    // compare the two renderings rather than the two styles: identical strings,
+    // laid out, at the same width or not. Family, size and weight all move a
+    // rendered width, so this fails for any of them being different - including
+    // a style set on one control and not the other, which is how they diverged.
+    const words = 'triage';
+    final (_, viewModel) = await pumpHome(tester,
+        sessionName: words, cwd: '/home/adam/.pi/agent/sessions/$words');
+
+    final both =
+        find.descendant(of: find.byType(AppBar), matching: find.text(words));
+    expect(both, findsNWidgets(2),
+        reason: 'the fixture is only worth anything if the same words really '
+            'are in both halves');
+
+    final folder = tester.getSize(both.at(0));
+    final name = tester.getSize(both.at(1));
+    expect(name, folder,
+        reason: 'the same words at the same size, measured as laid out - not '
+            'two styles that happen to look similar');
 
     viewModel.dispose();
   });

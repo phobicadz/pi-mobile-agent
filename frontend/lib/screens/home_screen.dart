@@ -835,6 +835,21 @@ class _HomeScreenState extends State<HomeScreen> {
         title: Consumer<PiViewModel>(
           builder: (context, viewModel, _) {
             final cwd = viewModel.workingDirectory ?? '';
+            // One style for both halves of the bar's title.
+            //
+            // They are the same kind of thing - which directory, and which
+            // conversation in it - and they were being rendered as two different
+            // ones: the directory inheriting the AppBar's own title style (Roboto
+            // 22px, regular) and the name carrying an explicit titleSmall bold
+            // (14px, bold). Measured, because nothing about that is visible from
+            // the code: the directory had no style to read.
+            //
+            // `titleMedium` is Material's app-bar title size and the middle of
+            // what the two halves were - 16px, medium. Not inheriting the bar's
+            // default, which is the lazier way to make them match: it is 22px,
+            // which is the size of a bar with nothing else in it, and a phone bar
+            // carrying a directory and a conversation has something else in it.
+            final barTitle = Theme.of(context).textTheme.titleMedium;
             // Get just the directory name (last component of the path)
             final dirName = cwd.isEmpty
                 ? 'Pi Agent'
@@ -879,6 +894,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     message: cwd.isEmpty ? 'No directory selected' : cwd,
                     child: Text(
                       dirName,
+                      style: barTitle,
                       overflow: TextOverflow.ellipsis,
                       maxLines: 1,
                     ),
@@ -962,15 +978,9 @@ class _HomeScreenState extends State<HomeScreen> {
                               : 'Session: $sessionName — restoring a session first',
                           child: Text(
                             sessionName,
+                            style: barTitle,
                             overflow: TextOverflow.ellipsis,
                             maxLines: 1,
-                            // Bold, and one step up from the label size the git chip uses:
-                            // this is the centre of the bar and the name of the thing the
-                            // rest of the screen is about, not a caption on the directory.
-                            style: Theme.of(context)
-                                .textTheme
-                                .titleSmall
-                                ?.copyWith(fontWeight: FontWeight.bold),
                           ),
                         ),
                       ),
