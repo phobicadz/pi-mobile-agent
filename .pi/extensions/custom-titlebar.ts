@@ -23,7 +23,7 @@ export default function (pi: ExtensionAPI) {
 						if (now - lastFetchTime > 5000) {
 							try {
 								cachedBranch = execSync("git rev-parse --abbrev-ref HEAD", {
-									cwd: ctx.workingDirectory,
+									cwd: ctx.cwd,
 									encoding: "utf-8",
 									timeout: 1000,
 									stdio: ["pipe", "pipe", "pipe"],
@@ -38,8 +38,8 @@ export default function (pi: ExtensionAPI) {
 						}
 
 						// Get directory name (basename) and full path
-						const dirName = basename(ctx.workingDirectory);
-						const dirPath = ctx.workingDirectory;
+						const dirName = basename(ctx.cwd);
+						const dirPath = ctx.cwd;
 
 						// Build the right side (branch info)
 						let rightContent = "";
