@@ -88,6 +88,11 @@ class TurnStatusRow extends StatelessWidget {
         return Icons.build;
       case ActivityKind.waiting:
         return Icons.hourglass_top;
+      case ActivityKind.compacting:
+        // The conversation made shorter. It is not a brain (no reasoning is
+        // being shown to anyone) and not a pen (nothing is being written to a
+        // file): the thing happening is that the chat is being reduced.
+        return Icons.compress;
       case ActivityKind.idle:
         return Icons.autorenew;
     }

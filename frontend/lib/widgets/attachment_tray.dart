@@ -38,7 +38,7 @@ class AttachmentTray extends StatelessWidget {
   Widget _attachment(BuildContext context, PiImage image, int index) {
     final muted = Theme.of(context).textTheme.bodySmall?.color;
 
-    final Widget thumbnail = _drawImage(image);
+    final Widget thumbnail = _drawImage(context, image);
 
     return SizedBox(
       width: 104,
@@ -73,7 +73,9 @@ class AttachmentTray extends StatelessWidget {
             top: -4,
             right: -4,
             child: Material(
-              color: Colors.black54,
+              // The scrim token is the theme's own "dark plate over content"
+              // colour at the same 54% wash black54 was.
+              color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.54),
               shape: const CircleBorder(),
               child: IconButton(
                 // Named for find.byTooltip in tests: several controls in this app
@@ -83,7 +85,9 @@ class AttachmentTray extends StatelessWidget {
                 visualDensity: VisualDensity.compact,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                icon: const Icon(Icons.close, color: Colors.white),
+                // White on the plate is the surface colour the chip sits proud
+                // of — tokened so a light scheme keeps the same readable pair.
+                icon: Icon(Icons.close, color: Theme.of(context).colorScheme.surface),
                 onPressed: () => onRemove(index),
               ),
             ),
@@ -94,26 +98,28 @@ class AttachmentTray extends StatelessWidget {
   }
 
   /// Draw the stored image, or the placeholder that says it could not be drawn.
-  Widget _drawImage(PiImage image) {
+  Widget _drawImage(BuildContext context, PiImage image) {
     try {
       return Image.memory(
         base64Decode(image.base64Data),
         width: 104,
         height: 72,
         fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => _blank(),
+        errorBuilder: (_, __, ___) => _blank(context),
       );
     } on FormatException {
-      return _blank();
+      return _blank(context);
     }
   }
 
-  Widget _blank() {
+  Widget _blank(BuildContext context) {
     return Container(
       width: 104,
       height: 72,
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.grey.shade400),
+        // A placeholder's outline is quiet chrome, which is what outlineVariant
+        // is for; grey.shade400 is the same grey in every scheme.
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
         borderRadius: BorderRadius.circular(8),
       ),
       child: const Icon(Icons.image_not_supported_outlined, size: 20),

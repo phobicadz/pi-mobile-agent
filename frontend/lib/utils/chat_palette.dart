@@ -46,6 +46,12 @@ class ChatPalette {
     required this.removedBlock,
     required this.toolText,
     required this.toolError,
+    required this.cardText,
+    required this.cardBorder,
+    required this.accentOnCard,
+    required this.linkOnCard,
+    required this.linkOnBubble,
+    required this.userHeader,
     required this.fileLine,
     required this.outputPreview,
     required this.toolResult,
@@ -142,6 +148,43 @@ class ChatPalette {
   final Color toolText;
   final Color toolError;
 
+  /// The *content* of a tool card — the document a compaction line carries —
+  /// as opposed to the chrome around it.
+  ///
+  /// `toolText` is defined as the quiet text of a card (a path, an offset, a
+  /// status line). A hundred-line summary is the opposite: it *is* what the
+  /// card is about, and drawing it in the label colour makes its headings read
+  /// as chrome. The card's own body colour is the page's text colour measured
+  /// on the card — which is the token unchanged on most schemes, raised only
+  /// where the card genuinely eats into it.
+  final Color cardText;
+
+  /// A hairline that is actually visible on [toolCard].
+  ///
+  /// `outlineVariant` is meant for hairlines on the *page*, and a card is a
+  /// different surface: under Dracula the outline token *is* the card colour,
+  /// so a border drawn with it is 1.00:1 — literally invisible. [legibleOn]
+  /// with a hairline target nudges it just far enough to be seen.
+  final Color cardBorder;
+
+  /// The Pi accent, and links, raised for the surfaces they are actually read
+  /// on. `tertiary` and `primary` are raised by the palette against the *bubble*
+  /// they seed from — a tool card and a code-flavoured block are different
+  /// surfaces, and an accent that clears 4.5:1 on a bubble can land at 3.8:1 on
+  /// a card. Same rule `toolText` and `fileLine` already follow: the surface
+  /// being drawn on is part of the measurement.
+  final Color accentOnCard;
+  final Color linkOnCard;
+  final Color linkOnBubble;
+
+  /// The "You" header on your own bubble.
+  ///
+  /// `primary` on `primaryContainer` is the one pair the palette never measures:
+  /// the accent is raised against the page it seeds from, not the container it
+  /// is drawn on, and a bold 11px label at 2.3:1 (Nord) is not readable. M3
+  /// already publishes the right colour for text on that container.
+  final Color userHeader;
+
   final Color link;
   final Color error;
 
@@ -202,6 +245,16 @@ class ChatPalette {
           _tint(codeBg, isDark ? removed : removedLight, scheme.onSurface, isDark),
       toolText: legibleOn(scheme.onSurfaceVariant, card),
       toolError: legibleOn(scheme.error, card),
+      cardText: legibleOn(scheme.onSurface, card),
+      // A hairline, so a low target — enough to *see* an edge, not to read as
+      // text. Where the outline token is already visible on the card this is it,
+      // unchanged; it only bites where the card and the outline are the same
+      // colour, which is exactly the Dracula case.
+      cardBorder: legibleOn(scheme.outlineVariant, card, target: 1.5),
+      accentOnCard: legibleOn(scheme.tertiary, card),
+      linkOnCard: legibleOn(scheme.primary, card),
+      linkOnBubble: legibleOn(scheme.primary, assistantBubble),
+      userHeader: scheme.onPrimaryContainer,
       // The compact view's one line of its own, drawn straight on the reply -
       // so it is the quiet token measured against that surface rather than the
       // card's, which is the same question `toolText` answers for a card.
@@ -252,6 +305,12 @@ class ChatPalette {
         removedBlock,
         toolText,
         toolError,
+        cardText,
+        cardBorder,
+        accentOnCard,
+        linkOnCard,
+        linkOnBubble,
+        userHeader,
         fileLine,
         link,
         error,

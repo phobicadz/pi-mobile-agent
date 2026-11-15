@@ -10,6 +10,7 @@ import '../models/pi_models.dart';
 import '../utils/chat_palette.dart';
 import '../utils/clipboard.dart';
 import '../utils/code_highlight.dart';
+import '../utils/format.dart';
 import '../utils/markdown_tables.dart';
 import '../utils/responsive.dart';
 import '../utils/toast.dart';
@@ -74,7 +75,11 @@ class ChatBubble extends StatelessWidget {
     // Keeping it renders the bubble header plus its streaming spinner, which is
     // the typing indicator; empty finished messages stay hidden - unless the
     // provider reported why it failed, which is the whole content of that reply.
-    if (message.content.isEmpty &&
+    // A compaction is exempt from this rule: even the one that did not happen
+    // has something to say, and "the pause freed nothing" is the whole content
+    // of that line.
+    if (message.compaction == null &&
+        message.content.isEmpty &&
         message.toolCalls.isEmpty &&
         message.images.isEmpty &&
         message.errorMessage == null &&
@@ -89,6 +94,16 @@ class ChatBubble extends StatelessWidget {
     final palette = ChatPalette.from(Theme.of(context));
     final bubbleColor = palette.bubbleFor(isAssistant);
     final mutedColor = palette.muted;
+
+    // Pi summarised the conversation here. It is drawn outside the bubble
+    // because it is not a turn of the conversation: Pi replaced part of the
+    // transcript, and the line that says so belongs to neither side. It goes
+    // through the same body cache as a reply - a real summary is a hundred-plus
+    // lines of markdown, and re-parsing it on every token of the next reply is
+    // exactly the cost that cache exists to avoid.
+    if (message.compaction != null) {
+      return _buildCompactionCard(context, message.compaction!, palette);
+    }
 
     // A line the app wrote rather than a reply from Pi: no bubble, no accent,
     // no copy button. Without it the chat shows nothing at all for a run that
@@ -128,6 +143,10 @@ class ChatBubble extends StatelessWidget {
     // "this is output", and a signal that moved with the user's colour choice
     // would stop being one.
     final accentColor = palette.accentFor(isAssistant);
+    // The bubble's own header, measured on the bubble it sits on: `primary` on
+    // `primaryContainer` is the pair the palette never measures (2.3:1 under
+    // Nord), and M3 already publishes the right colour for it.
+    final headerColor = isAssistant ? accentColor : palette.userHeader;
 
     // The colours a message's *parts* are drawn in are read where the parts are
     // built (`_buildBody`), from the same palette: what is left here is what the
@@ -195,16 +214,21 @@ class ChatBubble extends StatelessWidget {
               children: [
                 Row(
                   children: [
+                    // The header is drawn *on the bubble*, so it takes the
+                    // colour measured on that bubble: `onPrimaryContainer` for
+                    // your own (the pair M3 publishes for primaryContainer),
+                    // the raised tertiary for Pi's. `primary` on
+                    // `primaryContainer` is the pair the palette never measures.
                     Icon(
                       isAssistant ? Icons.smart_toy : Icons.person,
                       size: 16,
-                      color: accentColor,
+                      color: headerColor,
                     ),
                     const SizedBox(width: 6),
                     Text(
                       isAssistant ? 'Pi' : 'You',
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: accentColor, fontWeight: FontWeight.bold),
+                          color: headerColor, fontWeight: FontWeight.bold),
                     ),
                     // Copy button in the top-right corner of the bubble. The header
                     // row already spans the whole bubble, so a Spacer puts it in the
@@ -276,14 +300,158 @@ class ChatBubble extends StatelessWidget {
     );
   }
 
+  /// The line Pi drew through the transcript when it summarised it.
+  ///
+  /// Full width, its own surface, no tail: a bubble is the shape of "someone in
+  /// this conversation said something", and this is not that. It is a page break
+  /// with a measurement on it, so it is drawn as one - a card on the same scale
+  /// as a tool card, at the width the chat is already read at.
+  ///
+  /// The card is cached the way a reply body is. The width is applied outside the
+  /// cache, so widening the column re-lays out the cached widgets instead of
+  /// rebuilding them.
+  Widget _buildCompactionCard(BuildContext context, PiCompaction compaction,
+      ChatPalette palette) {
+    final cacheKey = Object.hash(
+      'compaction',
+      compaction.reason,
+      compaction.tokensBefore,
+      compaction.tokensAfter,
+      compaction.aborted,
+      compaction.errorMessage,
+      compaction.summary,
+      palette.cacheKey,
+      fontScale,
+      compact,
+    );
+    final body = _BubbleBodyCache.lookup(cacheKey) ??
+        _buildCompactionBody(context, compaction, palette);
+    _BubbleBodyCache.store(cacheKey, body);
+
+    final maxWidth = ResponsiveSizes.getChatMaxWidth(
+        MediaQuery.sizeOf(context).width,
+        expanded: expanded);
+
+    return RepaintBoundary(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: palette.toolCard,
+            borderRadius: BorderRadius.circular(12),
+            // A hairline rather than a step of elevation: this card is not a
+            // card *inside* a reply, it is the transcript's own, and the border
+            // is what keeps it from reading as a bubble with nothing in it.
+            // A hairline that is *visible* on this card — see `cardBorder`.
+            border: Border.all(color: palette.cardBorder),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            child: SelectionArea(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: body,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildCompactionBody(BuildContext context,
+      PiCompaction compaction, ChatPalette palette) {
+    final theme = Theme.of(context);
+    final failed = compaction.failed;
+    // The accent that already means "Pi did this", or the error colour when it
+    // did not: a compaction is Pi's own action on its own memory, and the one
+    // thing a reader needs off a glance is whether it worked.
+    final signal = failed ? palette.error : palette.assistantAccent;
+    final label = compactionLabel(compaction);
+    final reason = compactionReason(compaction.reason);
+    final tokens =
+        compactionTokens(compaction.tokensBefore, compaction.tokensAfter);
+    final chrome = theme.textTheme.labelSmall?.copyWith(
+      color: palette.toolText,
+      fontSize: _font(12),
+      fontFeatures: const [FontFeature.tabularFigures()],
+    );
+
+    return [
+      Row(
+        children: [
+          Icon(Icons.compress, size: 16, color: signal),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              label,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: signal,
+                fontWeight: FontWeight.w600,
+                fontSize: _font(12.5),
+              ),
+            ),
+          ),
+          if (tokens.isNotEmpty) Text(tokens, style: chrome),
+          if (compaction.summary.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.copy, size: 15),
+              tooltip: 'Copy summary',
+              visualDensity: VisualDensity.compact,
+              // Quiet, but quiet *on this card*.
+              color: palette.toolText,
+              // The summary is the one part of this a person might want
+              // somewhere else - pasted into a new session, or a note.
+              onPressed: () => _copyMessage(context, message.copyableText),
+            ),
+        ],
+      ),
+      if (reason.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text(reason, style: chrome),
+      ],
+      if (failed) ...[
+        const SizedBox(height: 4),
+        Text(
+          compaction.errorMessage ??
+              'The summarisation call returned nothing.',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: palette.toolError,
+            fontSize: _font(12.5),
+          ),
+        ),
+      ],
+      // The compact view keeps the fact and drops the document. What that mode
+      // exists to keep off a phone screen is exactly this: a hundred lines of
+      // prose Pi wrote to itself.
+      if (!compact && compaction.summary.isNotEmpty) ...[
+        const SizedBox(height: 8),
+        Divider(height: 1, thickness: 1, color: palette.cardBorder),
+        const SizedBox(height: 6),
+        _CompactionSummary(
+          summary: compaction.summary,
+          // A link inside this card is read on the card, not on a reply.
+          linkColor: palette.linkOnCard,
+          // The summary is the card's *content*, not chrome on it: it is drawn
+          // in the card's body colour, and the label/reason/token lines keep
+          // `toolText`. See `cardText`.
+          render: (context, text) =>
+              _buildContent(context, text, palette.cardText, palette),
+        ),
+      ],
+    ];
+  }
+
   List<Widget> _buildBody(BuildContext context, PiMessage message,
       ChatPalette palette, bool isAssistant) {
     // Read here rather than handed in from `build`: the role of this message is
     // what picks the colours, and everything below already knows the role.
     final bodyColor = palette.bodyFor(isAssistant);
-    // Tool calls only ever appear in an assistant reply, so the tool label uses
-    // that reply's own accent - the same hue that says "Pi" in the header.
-    final toolColor = palette.accentFor(isAssistant);
+    // Tool calls only ever appear in an assistant reply, so the card uses that
+    // reply's own accent - the same hue that says "Pi" in the header - measured
+    // on the card it is actually drawn on. A tool card is a different surface
+    // from the bubble, and an accent at 3.8:1 has stopped meaning "Pi did this".
+    final toolColor = palette.accentOnCard;
     return [
       // Sent first: an image is the thing the user actually asked about, and a
       // caption under it is the comment on it.
@@ -465,7 +633,14 @@ class ChatBubble extends StatelessWidget {
             tool.id,
             tool.name,
             tool.result?.length ?? -1,
-            Object.hashAll((tool.result ?? '').codeUnits),
+            Object.hashAll(tool.result?.codeUnits ?? const <int>[]),
+            // The images a tool returned are part of what it returned, and a
+            // cached card that never saw them would keep not showing them.
+            tool.images.length,
+            Object.hashAll([
+              for (final image in tool.images)
+                Object.hash(image.mimeType, image.name, image.base64Data.length),
+            ]),
             Object.hashAll([
               for (final entry in tool.arguments.entries)
                 Object.hash(entry.key, '${entry.value}'),
@@ -577,7 +752,9 @@ class ChatBubble extends StatelessWidget {
             fontSize: _font(13),
             background: palette.codeBackground,
             foreground: palette.codeForeground),
-        'a': _LinkBuilder(color: palette.link, fontSize: _font(14)),
+        // A link in a reply is read on that reply, which is a different surface
+      // from the one `primary` was raised for.
+      'a': _LinkBuilder(color: palette.linkOnBubble, fontSize: _font(14)),
       },
       styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
         p: TextStyle(fontSize: _font(14), color: textColor, height: 1.4),
@@ -615,7 +792,19 @@ class ChatBubble extends StatelessWidget {
     // The compact view of a call is what it was and which files it is about.
     // Everything below - the labelled arguments, the command, the diff halves,
     // the output - is what that mode exists to leave out.
-    if (compact) return _compactToolCall(tool, toolColor, palette);
+    if (compact) {
+      final call = _compactToolCall(tool, toolColor, palette);
+      // An image is not one of the things the compact view keeps off the screen.
+      // What that mode hides is the mechanics of a call - its arguments, its
+      // diff, its output - and a picture the agent made is neither of those:
+      // it is the thing the user asked for. Hiding it would make the mode
+      // report that a call happened instead of what it produced.
+      if (tool.images.isEmpty) return call;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [call, ..._toolImages(context, tool, palette)],
+      );
+    }
 
     final args = _buildToolArgs(tool, palette);
 
@@ -624,7 +813,7 @@ class ChatBubble extends StatelessWidget {
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: palette.toolCard,
-        border: Border.all(color: toolColor.withValues(alpha: 0.4)),
+        border: Border.all(color: palette.cardBorder.withValues(alpha: 0.6)),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -647,6 +836,11 @@ class ChatBubble extends StatelessWidget {
             ],
           ),
           ...args,
+          // Before the text half of the result. A tool that returns an image
+          // returns the thing that was asked for; the text beside it is the note
+          // on it - for a `codemode` script, the wall of script output that ends
+          // with the path the image was saved to.
+          ..._toolImages(context, tool, palette),
           if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -666,6 +860,34 @@ class ChatBubble extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  /// The images a tool returned, drawn in the card that returned them.
+  ///
+  /// The same treatment as an image the user sent, for the same reason: a
+  /// thumbnail whose only job is what it opens. A generated picture is not
+  /// readable at any size a chat bubble has room for, and the app already has
+  /// one rule for an image in the chat - a second one would be a second rule
+  /// for the same thing, applied to whichever half of the transcript it came from.
+  ///
+  /// `PiImage` is what a tool result's image block already is, so there is no
+  /// second kind of image to draw here: `_drawImage` and the full-size dialog are
+  /// the ones the user's own attachments go through.
+  List<Widget> _toolImages(BuildContext context, PiTool tool, ChatPalette palette) {
+    if (tool.images.isEmpty) return const [];
+    return [
+      Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final image in tool.images)
+              _buildThumbnail(context, image, palette),
+          ],
+        ),
+      ),
+    ];
   }
 
   /// A tool call in the compact view: what it was, and the files it names.
@@ -820,7 +1042,9 @@ class ChatBubble extends StatelessWidget {
     bool indentFirst = false,
   }) {
     if (lines.isEmpty) return const [];
-    final cut = TextStyle(fontSize: _font(10), color: palette.muted);
+    // The cut marker is part of this line, and this line is drawn on the
+    // reply — `fileLine` is the quiet colour measured there.
+    final cut = TextStyle(fontSize: _font(10), color: palette.fileLine);
     return [
       for (var i = 0; i < lines.length; i++)
         Padding(
@@ -939,13 +1163,18 @@ class ChatBubble extends StatelessWidget {
   /// A small label naming a block inside a tool card - a parameter name, or the
   /// output the call produced. One style, because they are the same kind of
   /// thing: a saying about the block below it, not part of the block.
+  ///
+  /// Its default colour is the card's quiet text — `toolText`, the token that
+  /// was introduced for exactly this text and these cards, and which four call
+  /// sites were still drawing in the un-raised `muted` (3.07:1 under Dracula).
+  /// A caller that means a *signal* — a diff half's green or red — passes it.
   Widget _toolLabel(String text, ChatPalette palette, {Color? color}) => Text(
         text,
         style: TextStyle(
           fontSize: _font(10.5),
           fontWeight: FontWeight.w600,
           letterSpacing: 0.4,
-          color: color ?? palette.muted,
+          color: color ?? palette.toolText,
         ),
       );
 
@@ -1108,6 +1337,51 @@ class ChatBubble extends StatelessWidget {
       }
     }
     return null;
+  }
+
+  /// What a compaction line is called.
+  ///
+  /// The wording is state-dependent on purpose, because the two states are what
+  /// a reader is checking: "Context compacted" reports something that happened
+  /// and freed room, "Compaction failed" reports a pause that freed nothing.
+  /// Public and static for the same reason `isShellTool` is - a question about
+  /// what Pi reported, answerable without a widget tree.
+  static String compactionLabel(PiCompaction c) {
+    if (c.failed) return c.aborted ? 'Compaction stopped' : 'Compaction failed';
+    return 'Context compacted';
+  }
+
+  /// Why Pi compacted, in the app's words.
+  ///
+  /// An unknown reason is passed through as Pi named it rather than dropped or
+  /// replaced with a guess: a reason added in a newer Pi is still a fact about
+  /// the conversation, and a fallback invented here would be the app claiming a
+  /// cause it was not told. An empty reason says nothing, so it draws nothing.
+  static String compactionReason(String reason) {
+    switch (reason) {
+      case 'threshold':
+        return 'the conversation outgrew the model\u2019s context window';
+      case 'manual':
+        return 'a /compact was asked for';
+      case 'overflow':
+        return 'a request exceeded the context window';
+      case '':
+        return '';
+      default:
+        return reason;
+    }
+  }
+
+  /// The measurement, in the only form that is honest about what it is: the
+  /// context Pi replaced, and its own estimate of what is left after.
+  ///
+  /// `estimatedTokensAfter` is newer than `tokensBefore`, so a frame can carry
+  /// only the first. Showing "195k replaced" instead of inventing the other half
+  /// is the difference between reporting a number and reporting a guess.
+  static String compactionTokens(int? before, int? after) {
+    if (before == null) return '';
+    if (after == null) return '${formatTokens(before)} replaced';
+    return '${formatTokens(before)} \u2192 ${formatTokens(after)}';
   }
 
   /// A tool whose arguments are a command line.
@@ -1324,8 +1598,12 @@ class _LinkBuilder extends MarkdownElementBuilder {
   void _handleLinkTap(String url) {
     final uri = Uri.tryParse(url);
     if (uri == null) return;
-    launchUrl(uri, mode: LaunchMode.externalApplication)
-        .catchError((e) => debugPrint('Could not launch $url: $e'));
+    launchUrl(uri, mode: LaunchMode.externalApplication).catchError((e) {
+      debugPrint('Could not launch $url: $e');
+      // catchError's handler must return the future's value type (void), not the
+      // Void return of debugPrint.
+      return Future<bool>.value(true);
+    });
   }
 }
 
@@ -1434,6 +1712,13 @@ const BorderRadius _diffRadius = BorderRadius.only(
 /// the rest of the conversation off a phone screen while you read it.
 const int _previewLines = 12;
 
+/// How much of a compaction summary is open by default.
+///
+/// Lower than a tool output's fold because this is prose, not a log: six lines
+/// of a summary is already the shape of what Pi kept, and the fold exists to
+/// keep a hundred-line document from being the tallest thing on the phone.
+const int _compactionPreviewLines = 6;
+
 /// A block of a tool call's text, folded when it is long.
 ///
 /// The card's job is to say what changed. A whole file's worth of text in it says
@@ -1524,6 +1809,100 @@ class _FoldedTextState extends State<_FoldedText> {
         ),
       ],
     );
+  }
+}
+
+/// The summary Pi wrote for the conversation it just replaced, folded.
+///
+/// The fold is the same shape as `_FoldedText` for the same reason, with its own
+/// budget: a real summary is a hundred-plus lines of everything the agent read,
+/// which is worth having here and is not worth a screen of it. How much is hidden
+/// is in the control before the tap, because a record that does not say it was
+/// cut is one you have to distrust wholesale.
+///
+/// The markdown itself is rendered by [render] - the same builder a reply uses -
+/// so a summary that contains a list or a table is drawn as one. It is passed in
+/// rather than rebuilt here because the reply's renderer is the one that knows the
+/// palette, the code theme and the table widths.
+class _CompactionSummary extends StatefulWidget {
+  const _CompactionSummary({
+    required this.summary,
+    required this.linkColor,
+    required this.render,
+  });
+
+  final String summary;
+  final Color linkColor;
+
+  /// Renders a piece of the summary as the markdown it is.
+  ///
+  /// Handed in rather than rebuilt here because the reply's builder is the one
+  /// that knows the palette, the code theme and the table widths - and because
+  /// it is the same builder, so a summary with a list or a table in it is drawn
+  /// exactly like a reply that has one.
+  final Widget Function(BuildContext context, String text) render;
+
+  @override
+  State<_CompactionSummary> createState() => _CompactionSummaryState();
+}
+
+class _CompactionSummaryState extends State<_CompactionSummary> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = widget.summary.split('\n');
+    // Blank lines do not count towards the fold: a summary written with a blank
+    // line between every heading would fold at its whitespace.
+    final contentLines = lines.where((line) => line.trim().isNotEmpty).length;
+    final long = contentLines > _compactionPreviewLines;
+    if (!long) return widget.render(context, widget.summary);
+
+    final shown = _open
+        ? widget.summary
+        : _firstLines(lines, _compactionPreviewLines);
+    final hidden = contentLines - _compactionPreviewLines;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        widget.render(context, shown),
+        // The cut is said where the cut is. The reader is at the bottom of what
+        // they can see, and that is where "there is more of this" has to land.
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton(
+            onPressed: () => setState(() => _open = !_open),
+            style: TextButton.styleFrom(
+              foregroundColor: widget.linkColor,
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              textStyle: const TextStyle(
+                  fontSize: 11.5, fontWeight: FontWeight.w600),
+            ),
+            child: Text(_open
+                ? 'show the first $_compactionPreviewLines lines'
+                : 'show the full summary ($hidden more lines)'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// The first [count] non-blank lines, keeping the blanks between them.
+  ///
+  /// Rendering a prefix rather than a re-joined list is the difference between
+  /// folding a document and mangling it: this is markdown, and dropping its blank
+  /// lines would change which blocks it is.
+  static String _firstLines(List<String> lines, int count) {
+    final out = <String>[];
+    var kept = 0;
+    for (final line in lines) {
+      if (kept >= count) break;
+      out.add(line);
+      if (line.trim().isNotEmpty) kept++;
+    }
+    return out.join('\n');
   }
 }
 

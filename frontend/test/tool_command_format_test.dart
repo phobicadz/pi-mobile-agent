@@ -166,8 +166,11 @@ void main() {
 
   testWidgets('the shell command is actually coloured, not just monospaced',
       (tester) async {
-    final spans =
-        highlightedSpans(_command, language: 'shell', isDark: true);
+    final spans = highlightedSpans(_command,
+        language: 'shell',
+        isDark: true,
+        themeId: 'atom-one',
+        background: codePalette(true).background);
 
     // The colours are on the nested spans - a keyword or a quoted string is a
     // child of the block, not the block.

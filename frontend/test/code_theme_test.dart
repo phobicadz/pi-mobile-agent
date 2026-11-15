@@ -216,20 +216,27 @@ void main() {
     // frame is its own bug. A colour is baked into a span, so the key has to
     // carry which theme baked it.
     const source = 'final count = 42;';
-    final solarized = CodeTheme.of(themeFor(AppColorScheme.solarized, Brightness.dark));
-    final monokai = CodeTheme.of(themeFor(AppColorScheme.monokai, Brightness.dark));
+    final solarizedTheme = themeFor(AppColorScheme.solarized, Brightness.dark);
+    final monokaiTheme = themeFor(AppColorScheme.monokai, Brightness.dark);
+    final solarized = CodeTheme.of(solarizedTheme);
+    final monokai = CodeTheme.of(monokaiTheme);
+    // The surface each map was derived for is part of the cache key, exactly as
+    // it is in `CodeTheme._maps` — so the call says which surface it asked for.
+    final solarizedSurface =
+        CodeTheme.codeSurface(solarizedTheme.colorScheme);
+    final monokaiSurface = CodeTheme.codeSurface(monokaiTheme.colorScheme);
 
     final a = highlightedSpans(source,
         language: 'dart',
         isDark: true,
-        theme: solarized.mapFor(CodeTheme.codeSurface(
-            themeFor(AppColorScheme.solarized, Brightness.dark).colorScheme)),
+        background: solarizedSurface,
+        theme: solarized.mapFor(solarizedSurface),
         themeId: solarized.id);
     final b = highlightedSpans(source,
         language: 'dart',
         isDark: true,
-        theme: monokai.mapFor(
-            CodeTheme.codeSurface(themeFor(AppColorScheme.monokai, Brightness.dark).colorScheme)),
+        background: monokaiSurface,
+        theme: monokai.mapFor(monokaiSurface),
         themeId: monokai.id);
 
     List<Color> colours(List<TextSpan> spans) => [

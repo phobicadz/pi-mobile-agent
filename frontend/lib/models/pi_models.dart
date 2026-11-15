@@ -326,6 +326,75 @@ class PiSessionStats {
   }
 }
 
+/// Pi's own record that it summarised the conversation it just replaced.
+///
+/// Only the live event is modelled, on purpose. Pi's stored `compaction` entry
+/// carries the same summary but no reason and no figure for what is left after,
+/// and RPC `get_messages` - the only history command the app has - does not
+/// return it at all, so a resumed conversation still shows nothing about its own
+/// compactions. Closing that gap means `get_entries`; it is not a reason to
+/// render the live event from a shape the app never receives.
+class PiCompaction {
+  /// Why Pi compacted: `manual` (a `/compact`), `threshold` (the conversation
+  /// crossed Pi's auto-compaction threshold) or `overflow` (the provider refused
+  /// the request, or a response stopped at the length limit).
+  ///
+  /// A string rather than an enum: Pi can add a reason, and one the app has
+  /// never seen still has to be shown instead of dropped.
+  final String reason;
+
+  /// The context it replaced, and Pi's estimate of what is left after it.
+  ///
+  /// `estimatedTokensAfter` is newer than `tokensBefore`, so either one can be
+  /// absent - and a card that invented the missing half would be reporting a
+  /// number nobody measured.
+  final int? tokensBefore;
+  final int? tokensAfter;
+
+  /// What Pi now remembers, in its own words. This is the whole content of a
+  /// successful compaction, and the reason it lives here rather than in a
+  /// message's `content`: it is not something Pi said *in* the conversation, it
+  /// is what replaced part of it.
+  final String summary;
+
+  /// Why it did not happen, when it did not. `aborted` is someone stopping it;
+  /// [errorMessage] is the summarisation itself failing. Both are worth a line
+  /// in the chat: the user watched the pause, and a pause that freed nothing is
+  /// the thing they would otherwise have to guess at.
+  final String? errorMessage;
+  final bool aborted;
+
+  const PiCompaction({
+    required this.reason,
+    this.tokensBefore,
+    this.tokensAfter,
+    this.summary = '',
+    this.errorMessage,
+    this.aborted = false,
+  });
+
+  /// A compaction that produced no summary did not compact anything, and the
+  /// chat says so rather than showing an empty block.
+  bool get failed => summary.isEmpty;
+
+  factory PiCompaction.fromEvent(Map<String, dynamic> event) {
+    final result = event['result'] is Map<String, dynamic>
+        ? event['result'] as Map<String, dynamic>
+        : const <String, dynamic>{};
+    return PiCompaction(
+      reason: event['reason'] as String? ?? '',
+      tokensBefore: _asInt(result['tokensBefore']),
+      tokensAfter: _asInt(result['estimatedTokensAfter']),
+      summary: result['summary'] as String? ?? '',
+      errorMessage: event['errorMessage'] as String?,
+      aborted: event['aborted'] == true,
+    );
+  }
+
+  static int? _asInt(dynamic value) =>
+      value is num ? value.round() : (value is String ? int.tryParse(value) : null);
+}
+
 class PiMessage {
   final String id;
   final String role; // 'user' or 'assistant'
@@ -357,6 +426,16 @@ class PiMessage {
   /// come out of Pi's own transcript, which stores the image inline.
   final List<PiImage> images;
 
+  /// Pi summarised the conversation here.
+  ///
+  /// A structural event in the transcript, not a turn in it: Pi replaced part of
+  /// the conversation with a summary of it. It is carried on a message because
+  /// the chat is a transcript in append order, and that is where it belongs -
+  /// between the turn that filled the window and the turn that carried on with
+  /// less in it. Its `role` is `system` for the same reason: a tool call that
+  /// arrives after it must not find its way onto a card that is not a reply.
+  final PiCompaction? compaction;
+
   /// A line the app wrote itself, not something Pi said.
   ///
   /// Used for the one case Pi's own output cannot express: a run that ended
@@ -377,6 +456,7 @@ class PiMessage {
     this.errorMessage,
     this.streaming = false,
     this.localNote = false,
+    this.compaction,
     List<PiImage>? images,
   })  : toolCalls = toolCalls ?? [],
         images = images ?? [];
@@ -421,6 +501,14 @@ class PiMessage {
   /// bubble that is only tool calls - the calls and their results, which is the
   /// text that bubble actually shows.
   String get copyableText {
+    // A compaction's text is the summary, which is exactly the thing you might
+    // want to paste somewhere else. The token figures in its header are a
+    // measurement of what was dropped, not content.
+    if (compaction != null) {
+      final c = compaction!;
+      if (c.summary.isNotEmpty) return c.summary;
+      return c.errorMessage ?? (c.aborted ? 'Compaction stopped.' : '');
+    }
     if (content.isNotEmpty) return content;
     if (toolCalls.isEmpty) return '';
     return toolCalls.map((tool) => tool.toPlainText()).join('\n\n');
@@ -433,12 +521,23 @@ class PiTool {
   final Map<String, dynamic> arguments;
   String? result;
 
+  /// The images the tool returned.
+  ///
+  /// A tool result's content is text *and* image blocks, and until now the app
+  /// read only the text half. That is the whole of what an agent's picture is
+  /// made of: a `codemode` script calling `image()`, a `read` of a photo, an MCP
+  /// tool that returns a screenshot. The text half - which is what the model is
+  /// actually shown - names the file the image was saved to; the image itself is
+  /// the thing the user asked for, and it was being dropped.
+  final List<PiImage> images;
+
   PiTool({
     required this.name,
     required this.arguments,
     this.id = '',
     this.result,
-  });
+    List<PiImage>? images,
+  }) : images = images ?? [];
 
   factory PiTool.fromJson(Map<String, dynamic> json) {
     return PiTool(
@@ -534,14 +633,19 @@ class PiImage {
       };
 
   /// An image block from Pi's own transcript (`ImageContent`).
-  static PiImage? fromContentBlock(dynamic block) {
+  ///
+  /// [name] is what a placeholder says when the bytes will not draw. A transcript
+  /// image has no name of its own, so a caller that knows which one it is (a
+  /// tool result carrying three of them) passes one; the ones a user sent are
+  /// already named by the picker.
+  static PiImage? fromContentBlock(dynamic block, {String? name}) {
     if (block is! Map) return null;
     if (block['type'] != 'image') return null;
     final data = block['data'];
     final mimeType = block['mimeType'];
     if (data is! String || data.isEmpty || mimeType is! String) return null;
     return PiImage(
-      name: 'image',
+      name: name ?? 'image',
       mimeType: mimeType,
       base64Data: data,
     );
@@ -690,12 +794,36 @@ class FileContent {
   final bool isText;
   final String encoding;
 
+  /// Set when the backend recognised the file's bytes as an image: the MIME type
+  /// it read them as, and the bytes themselves.
+  ///
+  /// The image arrives as base64 rather than as a URL because that is the shape
+  /// every other image in this app already travels in - an attachment, an image
+  /// in a tool result, a stored one in a session file - so drawing a file the
+  /// agent made uses the one thing the app already knows how to draw instead of
+  /// opening a second way for bytes to get here.
+  final String? mimeType;
+  final String? base64Data;
+
   FileContent({
     required this.content,
     required this.size,
     required this.isText,
     required this.encoding,
+    this.mimeType,
+    this.base64Data,
   });
+
+  /// An image the app can draw, rather than a file whose bytes are text.
+  bool get isImage => base64Data != null && base64Data!.isNotEmpty;
+
+  /// The name the viewer labels a picture with: `PNG`, from the MIME type the
+  /// backend read off the bytes. Null when there is nothing to name.
+  String? get imageFormatLabel {
+    if (!isImage || mimeType == null) return null;
+    final subtype = mimeType!.split('/').last.toUpperCase();
+    return subtype.isEmpty ? null : subtype;
+  }
 
   factory FileContent.fromJson(Map<String, dynamic> json) {
     return FileContent(
@@ -703,6 +831,8 @@ class FileContent {
       size: json['size'] as int? ?? 0,
       isText: json['isText'] as bool? ?? true,
       encoding: json['encoding'] as String? ?? 'utf-8',
+      mimeType: json['mimeType'] as String?,
+      base64Data: json['base64Data'] as String?,
     );
   }
 }

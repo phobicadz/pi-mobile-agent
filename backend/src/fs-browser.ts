@@ -47,6 +47,31 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const TEXT_SNIFF_BYTES = 8192;
 
 /**
+ * Which image formats this app can draw, decided from the bytes.
+ *
+ * The same rule `looksLikeText` follows: an extension says what a file claims
+ * to be, the bytes say what it is. A name list would call a screenshot saved
+ * without an extension "binary" and a `.txt` holding a pasted PNG header a
+ * picture. The formats are the ones Flutter decodes - which is also the set
+ * Pi's own image tools produce - so a file recognised here is one the phone can
+ * actually show. SVG is deliberately absent: it is text, and the viewer reads a
+ * drawing's source better than it reads its bytes.
+ */
+function imageTypeOf(bytes: Buffer): string | null {
+  const starts = (bytes: Buffer, at: number, needle: number[]) =>
+    needle.every((byte, index) => bytes[at + index] === byte);
+
+  if (starts(bytes, 0, [0x89, 0x50, 0x4e, 0x47])) return "image/png";
+  if (starts(bytes, 0, [0xff, 0xd8, 0xff])) return "image/jpeg";
+  if (starts(bytes, 0, [0x47, 0x49, 0x46, 0x38])) return "image/gif"; // GIF87a / GIF89a
+  if (starts(bytes, 0, [0x42, 0x4d])) return "image/bmp";
+  if (starts(bytes, 0, [0x52, 0x49, 0x46, 0x46]) && starts(bytes, 8, [0x57, 0x45, 0x42, 0x50])) {
+    return "image/webp";
+  }
+  return null;
+}
+
+/**
  * Whether a file's bytes are text - decided from the bytes, not the name.
  *
  * An extension says what a file claims to be; the bytes say what it is. The
@@ -257,6 +282,10 @@ export function readFile(
   size: number;
   isText: boolean;
   encoding: string;
+  /** Set for an image file: the MIME type its bytes were recognised as. */
+  mimeType?: string;
+  /** Set for an image file: the bytes as base64, which is what a viewer draws. */
+  base64Data?: string;
 } {
   const resolved = expandUserPath(filePath);
 
@@ -278,6 +307,25 @@ export function readFile(
     // Read the bytes, then decide what they are. Deciding from the extension
     // first is what made a source file the app could colour arrive as binary.
     const bytes = readFileSync(resolved);
+
+    // Checked before the text sniff, not after: an image's first bytes are a
+    // magic number and a JPEG survives `looksLikeText` by luck rather than by
+    // design, which is how a photo used to reach the phone as a wall of latin1
+    // boxes under an icon that said it was a picture.
+    const mimeType = imageTypeOf(bytes);
+    if (mimeType) {
+      // No `content`: the app draws this from the base64, and a 2 MB photo
+      // carried as both is a 2 MB string nobody renders.
+      return {
+        content: "",
+        size: stat.size,
+        isText: false,
+        encoding: "base64",
+        mimeType,
+        base64Data: bytes.toString("base64"),
+      };
+    }
+
     const isText = looksLikeText(bytes);
 
     return {

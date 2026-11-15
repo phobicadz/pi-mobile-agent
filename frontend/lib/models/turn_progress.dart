@@ -15,6 +15,10 @@ enum ActivityKind {
   searching,
   browsing,
   tool,
+  // Summarising the conversation to free room in the context window: a model
+  // call that belongs to no turn, and the one thing Pi does that a chat can
+  // otherwise only show as it stopping to move.
+  compacting,
 }
 
 /// Snapshot of the run in flight, shown in the streaming chat bubble.

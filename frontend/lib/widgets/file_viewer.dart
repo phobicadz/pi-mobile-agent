@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -167,6 +169,17 @@ class _FileViewerState extends State<FileViewer> {
     _palette = palette;
     _preparedBrightness = Theme.of(context).brightness;
 
+    // A picture is not a file with lines in it. There is nothing to colour, no
+    // language to name, and no line count to report - the header says what the
+    // bytes are instead, and the body draws them.
+    if (content.isImage) {
+      _languageLabel = content.imageFormatLabel != null
+          ? '${content.imageFormatLabel} image'
+          : 'image';
+      _lines = null;
+      return;
+    }
+
     // Text files whose extension the mapping does not know are still offered to
     // the highlighter: a `.cshtml`, a `.mjs`, or a file saved without an
     // extension is code, and guessing is better than showing it uncoloured.
@@ -182,6 +195,7 @@ class _FileViewerState extends State<FileViewer> {
         content.content,
         language: mapped,
         isDark: isDark,
+        background: palette.background,
         theme: code.mapFor(palette.background),
         themeId: code.id,
       );
@@ -297,6 +311,74 @@ class _FileViewerState extends State<FileViewer> {
                     fontSize: scaled.fontSize, fontFamily: _monoFamily),
           ),
       ];
+
+  /// A picture, drawn at the size the dialog has and zoomable from there.
+  ///
+  /// On the dialog's own surface, not the code theme's. That surface exists
+  /// because a code theme is a set of colours chosen against one background, and
+  /// an image has its own background - it is the thing being looked at, not text
+  /// painted with someone else's palette.
+  ///
+  /// The zoom is the whole point of opening a 1024px image on a 390px phone: a
+  /// picture scaled to fit is a picture you cannot read, and "pinch to zoom" is
+  /// not something a framed image announces by itself.
+  Widget _buildImageBody(BuildContext context, ThemeData theme, FileContent content) {
+    final bytes = _imageBytes(content);
+    if (bytes == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.image_not_supported_outlined,
+                  size: 48, color: theme.colorScheme.onSurfaceVariant),
+              const SizedBox(height: 16),
+              Text(
+                'This image could not be drawn',
+                style: theme.textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'The file is ${_formatFileSize(content.size)} of '
+                '${content.imageFormatLabel ?? 'image'} data this browser cannot render.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return InteractiveViewer(
+      maxScale: 6,
+      child: ColoredBox(
+        color: theme.colorScheme.surface,
+        child: Image.memory(
+          bytes,
+          fit: BoxFit.contain,
+          // The same fallback as the chat's: the backend read the bytes as an
+          // image, so a decode that fails here is the browser's, not the app's.
+          errorBuilder: (_, __, ___) => Text(
+            'This image could not be drawn',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// The image's bytes, or null when the base64 the backend sent is not base64.
+  Uint8List? _imageBytes(FileContent content) {
+    try {
+      return base64Decode(content.base64Data!);
+    } on FormatException {
+      return null;
+    }
+  }
 
   Widget _buildBody(BuildContext context, ThemeData theme, double fontScale) {
     final lines = _lines;
@@ -572,7 +654,10 @@ class _FileViewerState extends State<FileViewer> {
                                     if (_lines != null)
                                       '${_lines!.length} lines',
                                     if (_languageLabel != null) _languageLabel!,
-                                    if (!content.isText) 'binary',
+                                    // "binary" is the app saying it has nothing to
+                                    // draw. A picture it can draw is not that.
+                                    if (!content.isText && !content.isImage)
+                                      'binary',
                                   ].join(' • '),
                                   style: theme.textTheme.bodySmall?.copyWith(
                                       color:
@@ -581,7 +666,7 @@ class _FileViewerState extends State<FileViewer> {
                             ],
                           ),
                         ),
-                        if (content != null)
+                        if (content != null && !content.isImage)
                           // A Builder, so the copy is reported through the messenger
                           // inside this dialog. An inherited lookup starts above the
                           // widget that does it: asking from the viewer's own context
@@ -604,10 +689,20 @@ class _FileViewerState extends State<FileViewer> {
                     ),
                     // The controls a file needs are in the file's own header: what
                     // size to read it at, and a reference to the part of it being
-                    // looked at.
-                    if (content != null) ...[
+                    // looked at. Neither is a control a picture has - there is no
+                    // text size in an image and no line in it to point at, so a
+                    // picture gets the one thing it does have instead.
+                    if (content != null && !content.isImage) ...[
                       const SizedBox(height: 6),
                       _buildToolbar(context, theme, appearance),
+                    ],
+                    if (content != null && content.isImage) ...[
+                      const SizedBox(height: 6),
+                      Text(
+                        'Pinch or scroll to zoom',
+                        style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant),
+                      ),
                     ],
                   ],
                 ),
@@ -641,11 +736,17 @@ class _FileViewerState extends State<FileViewer> {
                           )
                         : content == null
                             ? const Center(child: Text('No content'))
-                            : Scrollbar(
-                                controller: _scrollController,
-                                child: _buildBody(
-                                    context, theme, appearance.fileFontScale),
-                              ),
+                            : content.isImage
+                                // Not inside the Scrollbar: the picture is not a
+                                // document to scroll through, and a scroll thumb
+                                // for a zoomable image is a control for a thing
+                                // this half of the viewer does not do.
+                                ? _buildImageBody(context, theme, content)
+                                : Scrollbar(
+                                    controller: _scrollController,
+                                    child: _buildBody(
+                                        context, theme, appearance.fileFontScale),
+                                  ),
               ),
             ],
           ),

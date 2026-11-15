@@ -511,9 +511,15 @@ class PiViewModel extends ChangeNotifier {
           null,
           const {},
         );
+        // The final frame is the one that carries the result's image blocks, so
+        // it is the one the images are read from. A partial result is a progress
+        // report - the byte count behind "Pi is working" - and taking content
+        // from it would mean an image could be shown from a half-written result
+        // and then replaced by the finished one.
         _finishTool(
           data['toolCallId'] as String?,
           _resultText(data['result']),
+          images: _imagesOfResult(data['result']),
         );
         break;
 
@@ -539,6 +545,18 @@ class PiViewModel extends ChangeNotifier {
         _isLoading = false;
         _setActivity(ActivityKind.idle, '');
         unawaited(_refreshSessionStats());
+        break;
+
+      case 'compaction_start':
+        // A summarisation pass is a model call of its own - the slow kind, with
+        // the whole conversation as its input - and it lands between turns, where
+        // the chat would otherwise just stop moving. Saying what the pause is is
+        // the difference between "it is working" and "it has hung".
+        _setActivity(ActivityKind.compacting, 'compacting context');
+        break;
+
+      case 'compaction_end':
+        _noteCompaction(data);
         break;
 
       case 'turn_end':
@@ -836,11 +854,13 @@ class PiViewModel extends ChangeNotifier {
     _bumpMessages();
   }
 
-  void _finishTool(String? toolCallId, String result) {
+  void _finishTool(String? toolCallId, String result,
+      {List<PiImage> images = const []}) {
     for (final message in _messages.reversed) {
       for (final tool in message.toolCalls.reversed) {
         if (toolCallId != null && tool.id == toolCallId) {
           tool.result = result;
+          tool.images.addAll(images);
           _bumpMessages();
           return;
         }
@@ -851,6 +871,7 @@ class PiViewModel extends ChangeNotifier {
       for (final tool in message.toolCalls.reversed) {
         if (tool.result == null) {
           tool.result = result;
+          tool.images.addAll(images);
           _bumpMessages();
           return;
         }
@@ -923,6 +944,25 @@ class PiViewModel extends ChangeNotifier {
     _trimMessages();
   }
 
+  /// Put a compaction in the transcript where it happened.
+  ///
+  /// The role is `system`, not `assistant`: this is not a turn of the
+  /// conversation, and a tool call that arrives after it looks for the last
+  /// *reply* to attach itself to. Giving a compaction an assistant role would
+  /// hand the next `bash` to a card that is not a reply at all.
+  void _noteCompaction(Map<String, dynamic> data) {
+    final compaction = PiCompaction.fromEvent(data);
+    _messages.add(PiMessage(
+      id: 'compaction-${DateTime.now().microsecondsSinceEpoch}',
+      role: 'system',
+      content: '',
+      timestamp: DateTime.now(),
+      compaction: compaction,
+    ));
+    _bumpMessages();
+    _trimMessages();
+  }
+
   static String _textOf(Map<String, dynamic> message) {
     final content = message['content'];
     if (content is List) {
@@ -946,14 +986,58 @@ class PiViewModel extends ChangeNotifier {
     return content.map(PiImage.fromContentBlock).whereType<PiImage>().toList();
   }
 
-  static String _resultText(dynamic result) {
-    if (result is Map && result['content'] is List) {
-      return (result['content'] as List)
-          .whereType<Map<String, dynamic>>()
-          .map((block) => block['text'] as String? ?? '')
-          .join('\n');
+  /// The content blocks of a tool result, in either shape Pi sends one in.
+  ///
+  /// `tool_execution_end` carries the tool's own result object; a stored
+  /// `toolResult` message carries the same list at its top level. Both are the
+  /// content array of `ToolResultMessage`, and text and image are two kinds of
+  /// block in it - which is why reading only the text half is what dropped an
+  /// agent's picture.
+  static List<dynamic> _resultBlocks(dynamic value) {
+    if (value is Map && value['content'] is List) {
+      return value['content'] as List;
     }
-    return result?.toString() ?? '';
+    return const [];
+  }
+
+  static String _resultText(dynamic result) {
+    final blocks = _resultBlocks(result);
+    if (blocks.isEmpty) return result?.toString() ?? '';
+    // Text blocks only. An image block contributes nothing to the text half of
+    // a result, and joining one in is how a picture put a blank line in the
+    // middle of the output its card prints.
+    return blocks
+        .whereType<Map<String, dynamic>>()
+        .where((block) => block['type'] == 'text' || block['text'] is String)
+        .map((block) => block['text'] as String? ?? '')
+        .join('\n');
+  }
+
+  /// The images a tool result carries.
+  ///
+  /// This is where a generated image actually exists in the protocol: a
+  /// `codemode` script's `image()`, a `read` of a photo, an MCP tool that
+  /// returns a screenshot. The text half of the same result names the file the
+  /// image was written to; the image is the half the user asked for.
+  static List<PiImage> _imagesOfResult(dynamic result) {
+    final imageBlocks = _resultBlocks(result)
+        .where((block) => block is Map && block['type'] == 'image')
+        .toList();
+    if (imageBlocks.isEmpty) return const [];
+
+    // Named by position only when there is more than one. A name is read in the
+    // one case where the bytes will not draw, and three placeholders all saying
+    // "image" is a list nothing can be told apart by.
+    final numbered = imageBlocks.length > 1;
+    final images = <PiImage>[];
+    for (final block in imageBlocks) {
+      final image = PiImage.fromContentBlock(
+        block,
+        name: numbered ? 'image ${images.length + 1}' : null,
+      );
+      if (image != null) images.add(image);
+    }
+    return images;
   }
 
   /// Open the device's picker and queue whatever it returns.
@@ -1389,10 +1473,13 @@ class PiViewModel extends ChangeNotifier {
         }
         _messages.add(message);
       } else if (role == 'toolResult') {
-        // Attach saved tool output to the matching tool call.
+        // Attach saved tool output to the matching tool call - the text half and
+        // the image half, which is stored in the same content array. A resumed
+        // conversation that had a picture in it has to show the picture too.
         _finishTool(
           raw['toolCallId'] as String?,
           _resultText(raw),
+          images: _imagesOfResult(raw),
         );
       }
     }

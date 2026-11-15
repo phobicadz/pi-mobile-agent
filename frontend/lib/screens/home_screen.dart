@@ -1155,7 +1155,12 @@ class _HomeScreenState extends State<HomeScreen> {
                       maxWidth: ResponsiveSizes.inputAreaMaxWidth,
                     ),
                     child: Container(
-                      color: Colors.red.shade100,
+                      // An error is an error at any colour scheme: errorContainer /
+                      // onErrorContainer is the pair Material generates to be legible
+                      // on each other in every scheme (file_browser.dart already
+                      // draws its failure row this way). A hardcoded red.shade100 is
+                      // the same red in Dracula as in Blueprint.
+                      color: Theme.of(context).colorScheme.errorContainer,
                       padding: const EdgeInsets.all(12),
                       margin: EdgeInsets.symmetric(
                         horizontal: ResponsiveSizes.paddingLarge,
@@ -1165,11 +1170,19 @@ class _HomeScreenState extends State<HomeScreen> {
                           Expanded(
                             child: Text(
                               viewModel.error!,
-                              style: TextStyle(color: Colors.red.shade900),
+                              style: TextStyle(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onErrorContainer),
                             ),
                           ),
                           IconButton(
-                            icon: Icon(Icons.close, color: Colors.red.shade900),
+                            icon: Icon(
+                              Icons.close,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onErrorContainer,
+                            ),
                             onPressed: viewModel.clearError,
                           ),
                         ],
@@ -1322,10 +1335,15 @@ class _HomeScreenState extends State<HomeScreen> {
                                 padding: const EdgeInsets.only(right: 8),
                                 child: FloatingActionButton(
                                   mini: true,
-                                  backgroundColor: Colors.red,
                                   // Stopping a run is not a run finishing: the
                                   // person pressing stop is the one thing that
-                                  // already knows it ended.
+                                  // already knows it ended. The error *container*
+                                  // rather than `error` because the pair is legible
+                                  // at either brightness in every scheme, and the
+                                  // icon colour is derived from the background.
+                                  backgroundColor: Theme.of(context)
+                                      .colorScheme
+                                      .errorContainer,
                                   onPressed: () {
                                     _awaitingRunEnd = false;
                                     viewModel.abortCurrentTask();

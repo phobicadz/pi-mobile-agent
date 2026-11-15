@@ -73,14 +73,34 @@ class _SafeAreaTracker extends WidgetsBindingObserver {
   void _measure() {
     try {
       _pinDocumentToWindow();
+      final geometry = readPageGeometry();
+      _resetStrayScrollOffset(geometry);
       // The areas inside the canvas, not the areas the browser reports. Those are
       // only the same numbers when the canvas starts at the top of the screen,
       // and it no longer does.
-      final insets = readPageGeometry().overlappedInsets;
+      final insets = geometry.overlappedInsets;
       if (insets != _notifier.value) _notifier.value = insets;
     } catch (_) {
       // Keep whatever was measured last; a wrong inset is better than none.
     }
+  }
+
+  /// Put the visual viewport back at the top of the page when the browser left
+  /// it hanging above it.
+  ///
+  /// iOS Safari does this to itself when the on-screen keyboard closes: the
+  /// visual viewport keeps an offset of about the status-bar height (`offsetTop
+  /// -47` in the samples) even though the page cannot scroll at all. Every
+  /// fixed element then reports a rect 47px lower than its CSS says - the canvas
+  /// hangs below the screen and the layout reserves against a bottom that is no
+  /// longer there. The page is pinned and unscrollable, so asking the window for
+  /// position 0 is exactly a request to undo that stray offset; it does nothing
+  /// when there is none. Only at scale 1, so a user who pinch-zoomed keeps their
+  /// pan.
+  void _resetStrayScrollOffset(PageGeometry geometry) {
+    if (geometry.visualScale > 1.01) return;
+    if (geometry.visualOffsetTop >= -0.5) return;
+    globalContext.callMethod<JSAny?>('scrollTo'.toJS, 0.toJS, 0.toJS);
   }
 }
 

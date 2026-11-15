@@ -326,6 +326,11 @@ List<String> _gutterNumbers(WidgetTester tester) => tester
     .where((s) => RegExp(r'^\d+$').hasMatch(s))
     .toList();
 
+/// The surface these direct calls stand in for: the file viewer paints code on
+/// the code theme's own background, so a span tree built here must be keyed to
+/// it — the same rule `highlightedSpans` now enforces.
+final Color _codeBg = codePalette(true).background;
+
 void main() {
   group('languageForPath', () {
     test('maps the extensions a real repo contains', () {
@@ -433,7 +438,12 @@ void main() {
       ]) {
         final language = languageForPath(path);
         expect(language, isNotNull, reason: 'for $path');
-        expect(highlightedSpans('x = 1', language: language!, isDark: true),
+        expect(
+            highlightedSpans('x = 1',
+                language: language!,
+                isDark: true,
+                themeId: 'atom-one',
+                background: codePalette(true).background),
             isNotNull);
       }
     });
@@ -470,7 +480,11 @@ void main() {
 
     shapes.forEach((label, source) {
       test(label, () {
-        final spans = highlightedSpans(source, language: 'xml', isDark: true);
+        final spans = highlightedSpans(source,
+            language: 'xml',
+            isDark: true,
+            themeId: 'atom-one',
+            background: codePalette(true).background);
         final colours = <int>{};
         void collect(TextSpan t, TextStyle? inh) {
           final e = inh == null ? t.style : inh.merge(t.style);
@@ -494,7 +508,7 @@ void main() {
       // Mapping HTML to a grammar the highlighter does not know colours nothing,
       // which looks exactly like "the HTML colouring is broken again".
       expect(languageForPath('public/index.html'), 'xml');
-      final spans = highlightedSpans(htmlPage, language: 'xml', isDark: true);
+      final spans = highlightedSpans(htmlPage, language: 'xml', isDark: true, themeId: 'atom-one', background: _codeBg);
       final colours = <int>{};
       void collect(TextSpan t, TextStyle? inh) {
         final e = inh == null ? t.style : inh.merge(t.style);
@@ -522,9 +536,9 @@ void main() {
           '<!DOCTYPE html>\n<html><body>\n<script>$script</script>\n</body></html>\n';
 
       final insidePage =
-          _spanColours(highlightedSpans(page, language: 'xml', isDark: true));
+          _spanColours(highlightedSpans(page, language: 'xml', isDark: true, themeId: 'atom-one', background: _codeBg));
       final onItsOwn = _spanColours(
-          highlightedSpans(script, language: 'javascript', isDark: true));
+          highlightedSpans(script, language: 'javascript', isDark: true, themeId: 'atom-one', background: _codeBg));
 
       expect(onItsOwn.difference(insidePage), isEmpty,
           reason: 'the same code has to be coloured the same way inside a page '
@@ -537,9 +551,9 @@ void main() {
           '<!DOCTYPE html>\n<html><head><style>$style</style></head><body><p>x</p></body></html>\n';
 
       final insidePage =
-          _spanColours(highlightedSpans(page, language: 'xml', isDark: true));
+          _spanColours(highlightedSpans(page, language: 'xml', isDark: true, themeId: 'atom-one', background: _codeBg));
       final onItsOwn =
-          _spanColours(highlightedSpans(style, language: 'css', isDark: true));
+          _spanColours(highlightedSpans(style, language: 'css', isDark: true, themeId: 'atom-one', background: _codeBg));
 
       expect(onItsOwn.difference(insidePage), isEmpty,
           reason: 'a stylesheet inside a page has to be coloured like that '
@@ -548,7 +562,7 @@ void main() {
 
     test('reading a page as HTML loses none of it', () {
       expect(
-          _spanText(highlightedSpans(htmlPage, language: 'xml', isDark: true)),
+          _spanText(highlightedSpans(htmlPage, language: 'xml', isDark: true, themeId: 'atom-one', background: _codeBg)),
           htmlPage,
           reason: 'colouring is only worth having if the file still says the '
               'same thing afterwards');
@@ -597,7 +611,7 @@ void main() {
 
     test('the C# grammar reaches the viewer for a real file', () {
       final spans =
-          highlightedSpans(csharpFile, language: 'csharp', isDark: true);
+          highlightedSpans(csharpFile, language: 'csharp', isDark: true, themeId: 'atom-one', background: _codeBg);
       final colours = <int>{};
       void collect(TextSpan t, TextStyle? inh) {
         final e = inh == null ? t.style : inh.merge(t.style);
@@ -701,7 +715,7 @@ public class Greeter {
     test('splitSpansByLine keeps the text of every line', () {
       const source = 'let a = "one\nmulti";\nlet b = 2;\n';
       final spans =
-          highlightedSpans(source, language: 'javascript', isDark: true);
+          highlightedSpans(source, language: 'javascript', isDark: true, themeId: 'atom-one', background: _codeBg);
       final lines = splitSpansByLine(spans);
 
       expect(lines.length, source.split('\n').length);
@@ -723,7 +737,7 @@ public class Greeter {
       // Cutting a file into lines must not cut a token in half: a block comment
       // is one token, so every line of it has to stay a comment line.
       const source = '/* first\n   second */\nint x = 2;\n';
-      final spans = highlightedSpans(source, language: 'c++', isDark: true);
+      final spans = highlightedSpans(source, language: 'c++', isDark: true, themeId: 'atom-one', background: _codeBg);
       final lines = splitSpansByLine(spans);
 
       bool colouredAt(int i) => lines[i].any((s) => s.style?.color != null);

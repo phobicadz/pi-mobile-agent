@@ -108,15 +108,24 @@ const int _maxCachedBlocks = 200;
 /// [theme] is the token map to colour with and [themeId] names it: a rendered
 /// span tree has its colours baked in, so a cache keyed on source and language
 /// alone would hand back the previous theme's colours after a scheme change.
+///
+/// The *surface* the map was derived for is part of the key too, for the same
+/// reason: `CodeTheme.mapFor` re-derives the token colours per background, so
+/// the same theme id hands back different colours on the chat's code block and
+/// on the file viewer's own surface. Without the surface in the key whichever
+/// one was built first wins — which is exactly the illegibility `mapFor` exists
+/// to prevent. `themeId` has no default: a caller that does not name its theme
+/// would silently join the default theme's bucket.
 List<TextSpan> highlightedSpans(
   String source, {
   String? language,
   required bool isDark,
+  required String themeId,
+  required Color background,
   Map<String, TextStyle>? theme,
-  String themeId = 'atom-one',
 }) {
   final key =
-      '$themeId|${isDark ? 'd' : 'l'}|${language ?? 'auto'}|${source.length}|${source.hashCode}';
+      '$themeId|${background.toARGB32()}|${isDark ? 'd' : 'l'}|${language ?? 'auto'}|${source.length}|${source.hashCode}';
 
   final cached = _spanCache.remove(key);
   if (cached != null) {
@@ -417,6 +426,7 @@ class HighlightedCode extends StatelessWidget {
               source,
               language: language,
               isDark: isDark,
+              background: background,
               theme: code.mapFor(background),
               themeId: code.id,
             )),

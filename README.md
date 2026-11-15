@@ -209,8 +209,11 @@ working directory. Sent by the file browser.
 
 #### Read File
 
-Reads one file as text (up to 10 MB; a file whose bytes are not text comes back
-with `is_text: false` and no content). Sent by the file viewer.
+Reads one file. Text files come back as text (up to 10 MB). A file whose bytes
+are an image — recognised from the bytes, not the extension — comes back as
+`base64Data` with its `mimeType` and no `content`, which is what the file viewer
+draws. Any other binary file comes back with `isText: false` and its bytes as
+latin1. Sent by the file viewer.
 
 ```json
 {

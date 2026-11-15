@@ -143,6 +143,21 @@ void main() {
           'a command on its block': (chat.codeForeground, chat.codeBackground),
           'an added half of a diff': (chat.codeForeground, chat.addedBlock),
           'a removed half of a diff': (chat.codeForeground, chat.removedBlock),
+          // The surfaces an accent or a link is *actually* read on. `primary`
+          // and `tertiary` are raised against the bubble they seed from; a tool
+          // card and a link inside a reply are different surfaces, and an
+          // accent at 3.8:1 has stopped meaning anything.
+          'the Pi accent on a tool card': (chat.accentOnCard, chat.toolCard),
+          'a link in a reply': (chat.linkOnBubble, chat.assistantBubble),
+          'a link inside a card': (chat.linkOnCard, chat.toolCard),
+          // The one pair the palette never used to measure: the "You" header on
+          // the container it is drawn on.
+          'the "You" header': (chat.userHeader, chat.userBubble),
+          // The summary a compaction line carries is the card's content, not
+          // chrome on it.
+          'a card’s own body text': (chat.cardText, chat.toolCard),
+          // The compact view’s cut marker, part of the same line as the path.
+          'the cut marker on a reply': (chat.fileLine, chat.assistantBubble),
         };
 
         for (final entry in pairs.entries) {

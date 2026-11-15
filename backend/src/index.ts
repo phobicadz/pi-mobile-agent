@@ -251,6 +251,15 @@ wss.on("connection", (ws: WebSocket) => {
   console.log("New WebSocket client connected");
   connectedClients.add(ws);
 
+  // Keepalive: phone browsers drop idle websockets (screen off, backgrounded
+  // tab) after ~45-60s. A protocol-level ping every 20s keeps the NAT/browser
+  // path warm, and terminates sockets whose client is already gone so the
+  // client-side reconnect logic is the one that re-establishes the session.
+  (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+  ws.on("pong", () => {
+    (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+  });
+
   // The switch has to open in the state the agent is actually in, including on a
   // second device: the setting is one thing the extension acts on, not a
   // preference each browser keeps for itself.
@@ -271,8 +280,15 @@ wss.on("connection", (ws: WebSocket) => {
     }
   });
 
-  ws.on("close", () => {
-    console.log("WebSocket client disconnected");
+  ws.on("close", (code: number, reason: Buffer) => {
+    // The close code identifies who ended the socket and why, which is the only
+    // way to tell a browser-initiated drop (1006 = no close frame at all:
+    // network change, tab freeze, data-saver) from a clean app-initiated one
+    // (1000/1005) or a page reload (1001). Without it every phone drop looks
+    // identical in the log.
+    console.log(
+      `WebSocket client closed code=${code} reason=${reason?.toString() || "-"}`
+    );
     connectedClients.delete(ws);
   });
 
@@ -280,6 +296,24 @@ wss.on("connection", (ws: WebSocket) => {
     console.error("WebSocket error:", err);
   });
 });
+
+const heartbeat = setInterval(() => {
+  for (const ws of wss.clients) {
+    const tracked = ws as WebSocket & { isAlive?: boolean };
+    if (tracked.isAlive === false) {
+      console.log("WebSocket client missed pong; terminating");
+      ws.terminate();
+      continue;
+    }
+    tracked.isAlive = false;
+    try {
+      ws.ping();
+    } catch {
+      ws.terminate();
+    }
+  }
+}, 20000);
+wss.on("close", () => clearInterval(heartbeat));
 
 const MAX_IMAGES_PER_PROMPT = 8;
 const MAX_IMAGE_BASE64_CHARS = 8 * 1024 * 1024;

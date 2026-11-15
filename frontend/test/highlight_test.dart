@@ -164,16 +164,51 @@ def hello():
   test('identical code blocks reuse the same highlight result', () {
     const code = 'const x = 1;\nfunction f() {\n  return x;\n}';
 
-    final first = highlightedSpans(code, isDark: true);
-    final again = highlightedSpans(code, isDark: true);
+    // A cache hit is the *same surface* hit: the same code on another background
+    // is a different token map, because `mapFor` re-derives the colours per
+    // surface. Two surfaces under one theme id is the bug this key used to have.
+    final darkBg = codePalette(true).background;
+    final first =
+        highlightedSpans(code, isDark: true, themeId: 'atom-one', background: darkBg);
+    final again =
+        highlightedSpans(code, isDark: true, themeId: 'atom-one', background: darkBg);
     expect(identical(first, again), isTrue,
         reason: 'scrolling a chat must not re-parse the same code block');
 
-    expect(identical(first, highlightedSpans('$code\n// edited', isDark: true)),
+    expect(
+        identical(
+            first,
+            highlightedSpans('$code\n// edited',
+                isDark: true, themeId: 'atom-one', background: darkBg)),
         isFalse,
         reason: 'changed source must not hit the cache');
-    expect(identical(first, highlightedSpans(code, isDark: false)), isFalse,
+    expect(
+        identical(
+            first,
+            highlightedSpans(code,
+                isDark: false, themeId: 'atom-one', background: darkBg)),
+        isFalse,
         reason: 'the other theme has different colours');
+    expect(
+        identical(
+            first,
+            highlightedSpans(code,
+                isDark: true,
+                themeId: 'atom-one',
+                background: codePalette(false).background)),
+        isFalse,
+        reason: 'the same theme id on another surface is a different token map — '
+            "the chat's code block and the file viewer's own surface must not "
+            'share one cached span tree');
+    expect(
+        identical(
+            first,
+            highlightedSpans(code,
+                isDark: true,
+                themeId: 'dracula',
+                background: darkBg)),
+        isFalse,
+        reason: 'another theme is another colour set, as before');
   });
 
   testWidgets('an unchanged bubble reuses its cached rendering',

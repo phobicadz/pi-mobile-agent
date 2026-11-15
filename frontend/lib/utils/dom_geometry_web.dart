@@ -70,32 +70,45 @@ class PageGeometry {
 
   /// The part of each safe area that falls inside Flutter's element.
   ///
-  /// This is what the layout reserves. It was not, once, and the reason it wasn't
-  /// is the reason it is now: the element rect is read in *document* coordinates
-  /// while the safe areas belong to the *screen*, and while the page could scroll
-  /// those two were a different distance apart - a sample reporting the visual
-  /// viewport at `offsetTop -47` shows it. The page is pinned to the visual
-  /// viewport now, so they coincide and the overlap says what it appears to say.
+  /// This is what the layout reserves. Each inset is a band against one window
+  /// edge; the reservation is the intersection of that band with the element's
+  /// rect, both read in the same client coordinates - `getBoundingClientRect`
+  /// and the visual viewport agree with each other, while the layout viewport
+  /// does not always. Intersecting directly is what makes an off-screen edge
+  /// cost nothing instead of inflating the opposite one.
   ///
-  /// The far edges are measured the other way round: how much page is left between
-  /// the element and the edge of the window is how much of that inset the browser
-  /// already kept out of the canvas.
+  /// It used to subtract, from each inset, the distance between the window edge
+  /// and the element. That equals the overlap while the element sits inside the
+  /// window - and breaks the moment it does not: a sample with the visual
+  /// viewport at `offsetTop -47` (iOS after a keyboard closes) put the element's
+  /// bottom 47px below the window, the subtraction read that as *negative inset
+  /// kept out*, and the app reserved 81px at the bottom instead of 34 while the
+  /// canvas hung 47px low - a blank band at both ends of the screen at once.
   EdgeInsets get overlappedInsets {
     final host = hostRect;
     if (host == null) return cssInsets; // nothing measured: assume all of them
+    // The window as the user sees it. Client coordinates are the visual
+    // viewport's: the visible area is [0,0 .. visualWidth,visualHeight], and
+    // the element's rect is reported in those same coordinates.
     return EdgeInsets.only(
-      top: _overlap(cssInsets.top, host.top),
-      left: _overlap(cssInsets.left, host.left),
-      // The far edges: how much page is left between the element and the edge of
-      // the window is how much of the inset the browser already kept out.
-      right: _overlap(cssInsets.right, innerWidth - host.right),
-      bottom: _overlap(cssInsets.bottom, innerHeight - host.bottom),
+      top: _overlap(cssInsets.top, 0, cssInsets.top, host),
+      left: _overlap(cssInsets.left, 0, cssInsets.left, host),
+      right: _overlap(cssInsets.right, visualWidth - cssInsets.right,
+          visualWidth, host),
+      bottom: _overlap(
+          cssInsets.bottom, visualHeight - cssInsets.bottom, visualHeight,
+          host),
     );
   }
 
-  static double _overlap(double inset, double keptOutOfTheCanvas) {
-    final owned = inset - keptOutOfTheCanvas;
-    return owned < 0 ? 0 : owned;
+  /// How much of the window-edge band `[bandStart, bandEnd)` lies inside the
+  /// element. Never more than the inset itself.
+  static double _overlap(
+      double inset, double bandStart, double bandEnd, Rect host) {
+    if (inset <= 0) return 0;
+    final lo = bandStart > host.top ? bandStart : host.top;
+    final hi = bandEnd < host.bottom ? bandEnd : host.bottom;
+    return hi > lo ? hi - lo : 0;
   }
 
   Map<String, dynamic> report() => {

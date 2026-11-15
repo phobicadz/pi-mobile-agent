@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:uuid/uuid.dart';
 import '../models/pi_models.dart';
+import '../utils/page_foreground.dart';
 
 class PiService {
   late WebSocketChannel _channel;
@@ -13,6 +14,7 @@ class PiService {
   final Map<String, Completer> _pendingRequests = {};
   bool _isConnected = false;
   Timer? _reconnectTimer;
+  bool _foregroundHookInstalled = false;
   static const Duration _reconnectDelay = Duration(seconds: 5);
 
   PiService({this.serverUrl = 'ws://localhost:3000'});
@@ -49,6 +51,26 @@ class PiService {
 
   Future<void> connect() async {
     try {
+      // A phone browser drops a websocket the moment the page leaves the
+      // foreground, and it drops it silently - no done event reaches a frozen
+      // page. When the user comes back, reconnect then rather than after the
+      // delay, so the app is not showing a stale "Connection error" while a
+      // perfectly reachable server waits for a timer to expire.
+      if (!_foregroundHookInstalled) {
+        _foregroundHookInstalled = true;
+        onPageForeground(() {
+          if (!_isConnected) {
+            _reconnectTimer?.cancel();
+            connect();
+          }
+        });
+      }
+      // Keepalive is the backend's job: it pings every 20s and the browser
+      // answers those protocol pings by itself, which is what keeps an
+      // idle-but-visible chat open. A client-initiated ping is not available
+      // here (the web channel exposes no pingInterval), and it is not needed:
+      // the backend terminates a socket whose pong never arrives, and that
+      // close is what reaches this client as a reconnect.
       _channel = WebSocketChannel.connect(Uri.parse(serverUrl));
 
       _channel.stream.listen(

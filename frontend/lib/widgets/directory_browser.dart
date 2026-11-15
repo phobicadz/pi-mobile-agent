@@ -103,11 +103,16 @@ class _DirectoryBrowserState extends State<DirectoryBrowser> {
         if (_error != null)
           Container(
             width: double.infinity,
-            color: Colors.red.shade100,
+            // Same pair as every other failure row in the app: the scheme's own
+            // error container, not a red that survives a theme change.
+            color: Theme.of(context).colorScheme.errorContainer,
             padding: const EdgeInsets.all(10),
             child: Text(
               _error!,
-              style: TextStyle(color: Colors.red.shade900, fontSize: 13),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onErrorContainer,
+                fontSize: 13,
+              ),
             ),
           ),
         if (listing != null) ...[
