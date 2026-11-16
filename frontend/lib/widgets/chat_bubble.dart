@@ -14,6 +14,7 @@ import '../utils/format.dart';
 import '../utils/markdown_tables.dart';
 import '../utils/responsive.dart';
 import '../utils/toast.dart';
+import 'image_viewer.dart';
 
 class ChatBubble extends StatelessWidget {
   final PiMessage message;
@@ -456,7 +457,7 @@ class ChatBubble extends StatelessWidget {
       // Sent first: an image is the thing the user actually asked about, and a
       // caption under it is the comment on it.
       if (message.images.isNotEmpty)
-        _buildImages(context, message, palette),
+        _buildImages(message, palette),
       if (message.errorMessage != null)
         _buildModelError(context, message, palette),
       if (message.content.isNotEmpty)
@@ -499,11 +500,10 @@ class ChatBubble extends StatelessWidget {
 
   /// The images the user sent with this message.
   ///
-  /// Thumbnails in a wrap, each one opening full size on tap. A phone photo of a
-  /// whiteboard or an error on another screen is unreadable at 160px, and the
+  /// Thumbnails in a wrap, each one opening full screen on tap. A phone photo of
+  /// a whiteboard or an error on another screen is unreadable at 160px, and the
   /// only useful thing about a thumbnail is what it opens.
-  Widget _buildImages(
-      BuildContext context, PiMessage message, ChatPalette palette) {
+  Widget _buildImages(PiMessage message, ChatPalette palette) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Wrap(
@@ -511,87 +511,8 @@ class ChatBubble extends StatelessWidget {
         runSpacing: 8,
         children: [
           for (final image in message.images)
-            _buildThumbnail(context, image, palette),
+            _ImageThumbnail(image: image, palette: palette, fontScale: fontScale),
         ],
-      ),
-    );
-  }
-
-  Widget _buildThumbnail(
-      BuildContext context, PiImage image, ChatPalette palette) {
-    return InkWell(
-      onTap: () => _showImageFullSize(context, image),
-      borderRadius: BorderRadius.circular(8),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: _drawImage(image, width: 160, height: 160, outline: palette.outline),
-      ),
-    );
-  }
-
-  /// Draw a stored image, or say that it could not be drawn.
-  ///
-  /// The base64 is what Pi stored, so a `FormatException` here means the stored
-  /// value is not what it claims to be - which is a thing worth showing rather
-  /// than a thing to fail a bubble over.
-  Widget _drawImage(PiImage image,
-      {double? width, double? height, required Color outline}) {
-    try {
-      return Image.memory(
-        base64Decode(image.base64Data),
-        width: width,
-        height: height,
-        fit: width == null ? null : BoxFit.cover,
-        errorBuilder: (_, __, ___) => _unreadableImage(image, outline),
-      );
-    } on FormatException {
-      return _unreadableImage(image, outline);
-    }
-  }
-
-  /// A stored image the app cannot draw.
-  ///
-  /// The name and size are still worth showing: the message was sent, and the
-  /// model saw it or refused it. Saying the thumbnail failed is not the same as
-  /// hiding the message.
-  Widget _unreadableImage(PiImage image, Color outline) {
-    return Container(
-      width: 160,
-      height: 100,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        border: Border.all(color: outline),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.image_not_supported_outlined, size: 22),
-          const SizedBox(height: 4),
-          Text(
-            image.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: _font(11)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showImageFullSize(BuildContext context, PiImage image) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => Dialog(
-        insetPadding: const EdgeInsets.all(12),
-        child: InteractiveViewer(
-          maxScale: 6,
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 900, maxHeight: 700),
-            child: _drawImage(image,
-                outline: ChatPalette.from(Theme.of(dialogContext)).outline),
-          ),
-        ),
       ),
     );
   }
@@ -802,7 +723,7 @@ class ChatBubble extends StatelessWidget {
       if (tool.images.isEmpty) return call;
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: [call, ..._toolImages(context, tool, palette)],
+        children: [call, ..._toolImages(tool, palette)],
       );
     }
 
@@ -840,7 +761,7 @@ class ChatBubble extends StatelessWidget {
           // returns the thing that was asked for; the text beside it is the note
           // on it - for a `codemode` script, the wall of script output that ends
           // with the path the image was saved to.
-          ..._toolImages(context, tool, palette),
+          ..._toolImages(tool, palette),
           if (tool.result != null && tool.result!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
@@ -871,9 +792,9 @@ class ChatBubble extends StatelessWidget {
   /// for the same thing, applied to whichever half of the transcript it came from.
   ///
   /// `PiImage` is what a tool result's image block already is, so there is no
-  /// second kind of image to draw here: `_drawImage` and the full-size dialog are
-  /// the ones the user's own attachments go through.
-  List<Widget> _toolImages(BuildContext context, PiTool tool, ChatPalette palette) {
+  /// second kind of image to draw here: [_ImageThumbnail] and the full-screen
+  /// viewer are the ones the user's own images go through.
+  List<Widget> _toolImages(PiTool tool, ChatPalette palette) {
     if (tool.images.isEmpty) return const [];
     return [
       Padding(
@@ -883,7 +804,8 @@ class ChatBubble extends StatelessWidget {
           runSpacing: 8,
           children: [
             for (final image in tool.images)
-              _buildThumbnail(context, image, palette),
+              _ImageThumbnail(
+                  image: image, palette: palette, fontScale: fontScale),
           ],
         ),
       ),
@@ -1467,6 +1389,97 @@ class ChatBubble extends StatelessWidget {
   static bool _looksLikeCode(String source) {
     if (source.contains('\n')) return true;
     return RegExp(r'[{}<>;]|\[\w|\w\(').hasMatch(source);
+  }
+}
+
+/// One picture in the chat, at the size a bubble has room for.
+///
+/// A widget rather than a method on the bubble, for a reason the cache makes
+/// real: a bubble body is a cached subtree, so a tap handler written by
+/// `ChatBubble.build` is a closure made whenever that body was first built - and
+/// by the time the picture is tapped, the element it captured is long gone (the
+/// message scrolled out of the list and back). A widget's own `build` runs again
+/// when the cached subtree is mounted, so the context a tap is made with is the
+/// one that is on screen. `_LinkBuilder._handleLinkTap` and `_copyMessage` are
+/// the same rule from the other side: one takes no context at all, the other
+/// asks whether it still has one.
+///
+/// Tapping opens [openChatImage] - the whole screen, because a thumbnail is
+/// unreadable at exactly the size the chat has room for.
+class _ImageThumbnail extends StatelessWidget {
+  final PiImage image;
+  final ChatPalette palette;
+  final double fontScale;
+
+  const _ImageThumbnail({
+    required this.image,
+    required this.palette,
+    required this.fontScale,
+  });
+
+  double _font(double base) => base * fontScale;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => openChatImage(context, image),
+      borderRadius: BorderRadius.circular(8),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: _drawImage(),
+      ),
+    );
+  }
+
+  /// Draw the stored image, or say that it could not be drawn.
+  ///
+  /// The base64 is what Pi stored, so a `FormatException` here means the stored
+  /// value is not what it claims to be - which is a thing worth showing rather
+  /// than a thing to fail a bubble over.
+  Widget _drawImage() {
+    try {
+      return Image.memory(
+        base64Decode(image.base64Data),
+        width: _thumbnailSize,
+        height: _thumbnailSize,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _unreadable(),
+      );
+    } on FormatException {
+      return _unreadable();
+    }
+  }
+
+  static const double _thumbnailSize = 160;
+
+  /// A stored image the app cannot draw.
+  ///
+  /// The name and size are still worth showing: the message was sent, and the
+  /// model saw it or refused it. Saying the thumbnail failed is not the same as
+  /// hiding the message.
+  Widget _unreadable() {
+    return Container(
+      width: _thumbnailSize,
+      height: 100,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(color: palette.outline),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          const Icon(Icons.image_not_supported_outlined, size: 22),
+          const SizedBox(height: 4),
+          Text(
+            image.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(fontSize: _font(11)),
+          ),
+        ],
+      ),
+    );
   }
 }
 

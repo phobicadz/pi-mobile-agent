@@ -51,7 +51,7 @@ frontend/lib/providers/pi_view_model.dart  All app state (ChangeNotifier)
 frontend/lib/models/pi_models.dart      Wire types (PiState, PiMessage, PiModel, PiUsage, …)
 frontend/lib/screens/home_screen.dart   Chat screen + AppBar + drawer menu
 frontend/lib/widgets/                 chat_list, chat_bubble, file_browser, model_selector, context_meter,
-                                    github_clone_dialog
+                                    github_clone_dialog, image_viewer
 frontend/lib/utils/chat_palette.dart    The chat's colours, read off the active theme + colour scheme
 frontend/lib/utils/code_theme.dart      Which syntax palette the code is coloured with, on the ThemeData
 frontend/lib/utils/editor_palettes.dart The editor themes' surfaces *and* their syntax palettes
@@ -148,6 +148,21 @@ Pi does not carry (`set_notifications`) starts at the `case` in `index.ts` inste
   both are deliberate. Line references and text size are not offered for a picture; SVG stays
   text on purpose, because a drawing's source is readable and its bytes are not.
 
+- **A picture in the chat opens full screen, and the thumbnail that opens it is a widget, not a method.**
+  `openChatImage` (`widgets/image_viewer.dart`) is a `Dialog.fullscreen` around an `InteractiveViewer`:
+  the dialog this replaced capped the picture at 900×700, which on a phone is not the larger version of a
+  160px thumbnail that tapping one was asking for. Its backdrop is the dialog's own surface
+  (`Dialog.fullscreen` → `colorScheme.surface`) for the same reason `file_viewer.dart` keeps its own — an
+  image has colours of its own and a chat palette is not one. A close control is part of the dialog
+  because a full-screen dialog *covers* the modal barrier, so there is no outside left to tap; Escape
+  still works, because `ModalRoute` answers `DismissIntent`. And **a cached bubble body cannot hold a
+  build-time `BuildContext`**: `_ImageThumbnail` is a widget so that its own `build` hands the tap the
+  context that is on screen, since the body a bubble is drawn with may have been built the last time that
+  message was on screen — a closure written by `ChatBubble.build` would open the dialog on a defunct
+  element (`showDialog` asserts `This BuildContext is no longer valid`, and only in debug). That rule is
+  already followed twice over: `_LinkBuilder._handleLinkTap` takes no context at all, `_copyMessage`
+  asks whether it still has one. `test/image_fullscreen_test.dart` measures the dialog against the screen
+  it was opened on, at a phone and a desktop width, and re-mounts a cached bubble before tapping it.
 - **Port 3000 is unauthenticated LAN HTTP.** Don't expose it beyond the LAN without a
   reverse proxy with auth/WSS.
 
